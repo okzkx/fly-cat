@@ -1,3 +1,8 @@
+mod mcp;
+mod model;
+mod render;
+mod storage;
+mod sync;
 mod commands;
 
 use commands::{

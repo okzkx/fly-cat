@@ -1,3 +1,4 @@
+use crate::sync::sync_document_to_disk;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, sync::Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -232,28 +233,62 @@ fn discover_documents(selected_spaces: &[String]) -> Vec<KnowledgeBaseDocument> 
         .collect()
 }
 
+fn default_mcp_server_name() -> String {
+    "user-feishu-mcp".into()
+}
+
+fn default_image_dir_name() -> String {
+    "_assets".into()
+}
+
 fn spawn_sync_progress(task_id: String, app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let total_steps = {
+        let documents = {
             let state = app.state::<AppState>();
             let tasks = state.tasks.lock().expect("task state poisoned");
             tasks
                 .iter()
                 .find(|task| task.id == task_id)
-                .map(|task| task.counters.total)
-                .unwrap_or(1)
+                .map(|task| discover_documents(&task.selected_spaces))
+                .unwrap_or_default()
         };
 
-        for step in 1..=total_steps {
+        let total_steps = documents.len().max(1) as u32;
+        let documents = if documents.is_empty() {
+            vec![KnowledgeBaseDocument {
+                id: "doc-empty",
+                space_id: "kb-eng",
+                title: "Empty Placeholder",
+            }]
+        } else {
+            documents
+        };
+
+        for (index, document) in documents.iter().enumerate() {
+            let step = (index + 1) as u32;
             std::thread::sleep(std::time::Duration::from_millis(400));
+            let mcp_server_name = default_mcp_server_name();
+            let image_dir_name = default_image_dir_name();
             let state = app.state::<AppState>();
             let mut maybe_emit = None;
             {
                 let mut tasks = state.tasks.lock().expect("task state poisoned");
                 if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
+                    let sync_root = PathBuf::from(&task.output_path);
+                    let fetch_result =
+                        sync_document_to_disk(document.id, &sync_root, &image_dir_name, &mcp_server_name);
                     task.counters.processed = step;
                     task.progress = ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
-                    task.counters.skipped = if task.selected_spaces.len() > 1 { 1 } else { 0 };
+                    task.counters.skipped = 0;
+                    if let Err(error) = fetch_result {
+                        task.counters.failed += 1;
+                        task.errors.push(SyncRunError {
+                            document_id: document.id.into(),
+                            title: document.title.into(),
+                            category: "mcp".into(),
+                            message: error.to_string(),
+                        });
+                    }
                     task.counters.succeeded =
                         task.counters.processed.saturating_sub(task.counters.skipped + task.counters.failed);
                     task.updated_at = now_iso();
@@ -274,23 +309,9 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                     {
                         let mut tasks = state.tasks.lock().expect("task state poisoned");
                         if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
-                            if task.selected_spaces.iter().any(|space| space == "kb-product") {
-                                let failed_doc = discover_documents(&task.selected_spaces)
-                                    .into_iter()
-                                    .find(|document| document.space_id == "kb-product");
+                            if !task.errors.is_empty() {
                                 task.status = "partial-failed".into();
                                 task.lifecycle_state = "partial-failed".into();
-                                task.counters.failed = 1;
-                                task.counters.succeeded = task.counters.total.saturating_sub(1 + task.counters.skipped);
-                                task.errors = failed_doc
-                                    .map(|document| SyncRunError {
-                                        document_id: document.id.into(),
-                                        title: document.title.into(),
-                                        category: "mcp".into(),
-                                        message: "MCP request timeout".into(),
-                                    })
-                                    .into_iter()
-                                    .collect();
                             } else {
                                 task.status = "completed".into();
                                 task.lifecycle_state = "completed".into();

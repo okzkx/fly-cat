@@ -19,17 +19,17 @@
 
 ## 4. MCP Content Pipeline
 
-- [ ] 4.1 Implement MCP client integration in the backend for Feishu knowledge base content retrieval with validation and retry boundaries.
-- [ ] 4.2 Build a canonical intermediate document model decoupled from raw Feishu API payload structure.
-- [ ] 4.3 Implement deterministic Markdown rendering and stable local path mapping from backend-owned sync services.
-- [ ] 4.4 Persist manifest metadata needed for incremental synchronization, retries, and rename/move handling.
+- [x] 4.1 Implement MCP client integration in the backend for Feishu knowledge base content retrieval with validation and retry boundaries.
+- [x] 4.2 Build a canonical intermediate document model decoupled from raw Feishu API payload structure.
+- [x] 4.3 Implement deterministic Markdown rendering and stable local path mapping from backend-owned sync services.
+- [x] 4.4 Persist manifest metadata needed for incremental synchronization, retries, and rename/move handling.
 
 ## 5. Image Handling
 
-- [ ] 5.1 Implement remote-first image resolution in the backend and keep valid remote URLs in generated Markdown.
-- [ ] 5.2 Implement fallback image download with hashed filenames written to a fixed assets subdirectory under the sync root.
-- [ ] 5.3 Rewrite Markdown image references to local relative asset paths when fallback storage is required.
-- [ ] 5.4 Deduplicate downloaded assets by content hash across sync runs.
+- [x] 5.1 Implement remote-first image resolution in the backend and keep valid remote URLs in generated Markdown.
+- [x] 5.2 Implement fallback image download with hashed filenames written to a fixed assets subdirectory under the sync root.
+- [x] 5.3 Rewrite Markdown image references to local relative asset paths when fallback storage is required.
+- [x] 5.4 Deduplicate downloaded assets by content hash across sync runs.
 
 ## 6. UX and Task Experience
 
@@ -39,6 +39,6 @@
 
 ## 7. Validation and Rollout
 
-- [ ] 7.1 Add automated tests for incremental planning, Markdown output, image fallback behavior, and backend task-state recovery.
-- [ ] 7.2 Run the app through `npm run tauri dev` and verify the desktop shell, page flow, and frontend/backend event wiring work end-to-end.
+- [x] 7.1 Add automated tests for incremental planning, Markdown output, image fallback behavior, and backend task-state recovery.
+- [x] 7.2 Run the app through `npm run tauri dev` and verify the desktop shell, page flow, and frontend/backend event wiring work end-to-end.
 - [ ] 7.3 Run a controlled knowledge base sync against real MCP/Feishu context and verify repeated-run path stability plus retry behavior.
