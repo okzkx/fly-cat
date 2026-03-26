@@ -9,20 +9,18 @@ import "./styles.css";
 import type { AppPage, AppSettings, SyncTask, UserInfo } from "@/types/app";
 import type { KnowledgeBaseSpace } from "@/types/sync";
 import {
+  authorizeMockUser,
   createSyncTask,
+  getAppBootstrap,
   getRuntimeInfo,
   getSyncTasks,
   initializeTaskEventBridge,
+  logoutUser,
   resumeSyncTasks,
+  saveAppSettings,
   startSyncTask,
   TASK_EVENTS
 } from "@/utils/taskManager";
-
-const mockSpaces: KnowledgeBaseSpace[] = [
-  { id: "kb-eng", name: "研发知识库", selected: true },
-  { id: "kb-product", name: "产品知识库", selected: false },
-  { id: "kb-ops", name: "运维知识库", selected: false }
-];
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -32,33 +30,30 @@ export default function App(): React.JSX.Element {
   const [authed, setAuthed] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [spaces, setSpaces] = useState<KnowledgeBaseSpace[]>(mockSpaces);
+  const [spaces, setSpaces] = useState<KnowledgeBaseSpace[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
 
   useEffect(() => {
     let disposeBridge: (() => void) | undefined;
-    const storedSettings = localStorage.getItem("feishu_sync_settings");
-    const storedUser = localStorage.getItem("feishu_sync_user");
-
-    if (storedSettings) {
-      setSettings(JSON.parse(storedSettings) as AppSettings);
-      setCurrentPage(storedUser ? "home" : "auth");
-    } else {
-      setCurrentPage("settings");
-    }
-
-    if (storedUser) {
-      setUserInfo(JSON.parse(storedUser) as UserInfo);
-      setAuthed(true);
-      void resumeSyncTasks();
-    }
 
     const refreshTasks = async (): Promise<void> => setTasks(await getSyncTasks());
     const handleRefreshTasks = (): void => {
       void refreshTasks();
     };
-    handleRefreshTasks();
+
     void getRuntimeInfo();
+    void getAppBootstrap().then(async (bootstrap) => {
+      setSettings(bootstrap.settings);
+      setSpaces(bootstrap.spaces);
+      setUserInfo(bootstrap.user);
+      setAuthed(Boolean(bootstrap.user));
+      setCurrentPage(bootstrap.settings ? (bootstrap.user ? "home" : "auth") : "settings");
+      if (bootstrap.user) {
+        await resumeSyncTasks();
+      }
+      await refreshTasks();
+    });
+
     void initializeTaskEventBridge().then((cleanup) => {
       disposeBridge = cleanup;
     });
@@ -94,10 +89,11 @@ export default function App(): React.JSX.Element {
   }, [tasks]);
 
   const handleLogout = (): void => {
-    localStorage.removeItem("feishu_sync_user");
-    setAuthed(false);
-    setUserInfo(null);
-    setCurrentPage("auth");
+    void logoutUser().then(() => {
+      setAuthed(false);
+      setUserInfo(null);
+      setCurrentPage("auth");
+    });
   };
 
   const userMenuItems = [
@@ -144,16 +140,20 @@ export default function App(): React.JSX.Element {
           <Content style={{ padding: 24 }}>
             {currentPage === "settings" && (
               <SettingsPage
+                initialSettings={settings}
                 onSaved={(nextSettings) => {
-                  setSettings(nextSettings);
-                  setCurrentPage("auth");
+                  void saveAppSettings(nextSettings).then((saved) => {
+                    setSettings(saved);
+                    setCurrentPage("auth");
+                  });
                 }}
               />
             )}
 
             {currentPage === "auth" && (
               <AuthPage
-                onAuthorized={(user) => {
+                onAuthorized={async () => {
+                  const user = await authorizeMockUser();
                   setAuthed(true);
                   setUserInfo(user);
                   setCurrentPage("home");

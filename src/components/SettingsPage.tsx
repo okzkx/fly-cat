@@ -14,17 +14,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   imageDirName: "_assets"
 };
 
-export default function SettingsPage({ onSaved }: SettingsPageProps): React.JSX.Element {
+export default function SettingsPage({ initialSettings, onSaved }: SettingsPageProps): React.JSX.Element {
   const { message } = App.useApp();
   const [form] = Form.useForm<AppSettings>();
 
   useEffect(() => {
-    const stored = localStorage.getItem("feishu_sync_settings");
-    form.setFieldsValue(stored ? (JSON.parse(stored) as AppSettings) : DEFAULT_SETTINGS);
-  }, [form]);
+    form.setFieldsValue(initialSettings ?? DEFAULT_SETTINGS);
+  }, [form, initialSettings]);
 
   const handleFinish = (values: AppSettings): void => {
-    localStorage.setItem("feishu_sync_settings", JSON.stringify(values));
     message.success("配置保存成功");
     onSaved(values);
   };

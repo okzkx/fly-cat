@@ -1,4 +1,6 @@
 export {
+  authorizeMockUser,
+  getAppBootstrap,
   TASK_EVENTS,
   createSyncTask,
   deleteSyncTask,
@@ -6,7 +8,9 @@ export {
   getSyncTasks,
   initializeTaskEventBridge,
   isTauriRuntime,
+  logoutUser,
   resumeSyncTasks,
   retryFailedTask,
+  saveAppSettings,
   startSyncTask
 } from "@/utils/tauriRuntime";

@@ -7,14 +7,9 @@ const { Title, Paragraph, Text } = Typography;
 export default function AuthPage({ onAuthorized, onGoToSettings }: AuthPageProps): React.JSX.Element {
   const { message } = App.useApp();
 
-  const handleAuthorize = (): void => {
-    const user = {
-      name: "同步测试用户",
-      avatar: ""
-    };
-    localStorage.setItem("feishu_sync_user", JSON.stringify(user));
+  const handleAuthorize = async (): Promise<void> => {
+    await onAuthorized();
     message.success("授权成功");
-    onAuthorized(user);
   };
 
   return (
@@ -26,7 +21,7 @@ export default function AuthPage({ onAuthorized, onGoToSettings }: AuthPageProps
           保留参考工程中的独立授权页和状态说明，当前使用本地模拟授权，后续可替换为真实 Tauri OAuth + MCP 会话。
         </Paragraph>
         <Space direction="vertical" style={{ width: "100%" }}>
-          <Button type="primary" block onClick={handleAuthorize}>
+          <Button type="primary" block onClick={() => void handleAuthorize()}>
             模拟授权并进入应用
           </Button>
           <Button block icon={<SettingOutlined />} onClick={onGoToSettings}>

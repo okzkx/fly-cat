@@ -36,6 +36,12 @@ export interface HomeSyncResult {
   task: SyncTask;
 }
 
+export interface AppBootstrap {
+  settings: AppSettings | null;
+  user: UserInfo | null;
+  spaces: KnowledgeBaseSpace[];
+}
+
 export interface SyncProgressEventDetail {
   task: SyncTask;
 }
@@ -54,10 +60,11 @@ export interface TaskListPageProps {
 }
 
 export interface AuthPageProps {
-  onAuthorized: (user: UserInfo) => void;
+  onAuthorized: () => Promise<void>;
   onGoToSettings: () => void;
 }
 
 export interface SettingsPageProps {
+  initialSettings: AppSettings | null;
   onSaved: (settings: AppSettings) => void;
 }

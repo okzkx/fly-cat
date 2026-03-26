@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
-import type { SyncTask } from "@/types/app";
+import type { AppBootstrap, AppSettings, SyncTask, UserInfo } from "@/types/app";
 import {
   TASK_EVENTS,
   createSyncTask as createBrowserSyncTask,
@@ -66,6 +66,48 @@ export async function getRuntimeInfo(): Promise<RuntimeInfo> {
     };
   }
   return invoke<RuntimeInfo>("get_runtime_info");
+}
+
+export async function getAppBootstrap(): Promise<AppBootstrap> {
+  if (!isTauriRuntime()) {
+    const settingsRaw = localStorage.getItem("feishu_sync_settings");
+    const userRaw = localStorage.getItem("feishu_sync_user");
+    return {
+      settings: settingsRaw ? (JSON.parse(settingsRaw) as AppSettings) : null,
+      user: userRaw ? (JSON.parse(userRaw) as UserInfo) : null,
+      spaces: [
+        { id: "kb-eng", name: "研发知识库", selected: true },
+        { id: "kb-product", name: "产品知识库", selected: false },
+        { id: "kb-ops", name: "运维知识库", selected: false }
+      ]
+    };
+  }
+  return invoke<AppBootstrap>("get_app_bootstrap");
+}
+
+export async function saveAppSettings(settings: AppSettings): Promise<AppSettings> {
+  if (!isTauriRuntime()) {
+    localStorage.setItem("feishu_sync_settings", JSON.stringify(settings));
+    return settings;
+  }
+  return invoke<AppSettings>("save_app_settings", { settings });
+}
+
+export async function authorizeMockUser(): Promise<UserInfo> {
+  if (!isTauriRuntime()) {
+    const user = { name: "同步测试用户", avatar: "" };
+    localStorage.setItem("feishu_sync_user", JSON.stringify(user));
+    return user;
+  }
+  return invoke<UserInfo>("authorize_mock_user");
+}
+
+export async function logoutUser(): Promise<void> {
+  if (!isTauriRuntime()) {
+    localStorage.removeItem("feishu_sync_user");
+    return;
+  }
+  await invoke("logout_user");
 }
 
 export async function getSyncTasks(): Promise<SyncTask[]> {
