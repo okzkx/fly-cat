@@ -242,68 +242,106 @@ impl FeishuOpenApiClient {
 
     pub fn list_spaces(&self) -> Result<Vec<FeishuSpace>, McpError> {
         let token = self.tenant_access_token()?;
-        let response = ureq::get(&self.endpoint("/wiki/v2/spaces"))
-            .set("Authorization", &format!("Bearer {token}"))
-            .query("page_size", "50")
-            .call()
-            .map_err(|err| McpError::Transport(format!("List spaces request failed: {err}")))?;
+        let mut page_token: Option<String> = None;
+        let mut spaces = Vec::new();
 
-        let value: Value = response
-            .into_json()
-            .map_err(|err| McpError::InvalidResponse(format!("Invalid spaces response: {err}")))?;
+        loop {
+            let mut request = ureq::get(&self.endpoint("/wiki/v2/spaces"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .query("page_size", "50")
+                .query("user_id_type", "user_id");
 
-        if let Some(error) = extract_openapi_error(&value, "获取知识空间列表") {
-            return Err(error);
-        }
+            if let Some(current_page_token) = page_token.as_deref() {
+                request = request.query("page_token", current_page_token);
+            }
 
-        let items = value
-            .get("data")
-            .and_then(|data| data.get("items"))
-            .and_then(|items| items.as_array())
-            .ok_or_else(|| McpError::InvalidResponse("Space list missing items".into()))?;
+            let response = request
+                .call()
+                .map_err(|err| McpError::Transport(format!("List spaces request failed: {err}")))?;
 
-        Ok(items
-            .iter()
-            .filter_map(|item| {
+            let value: Value = response
+                .into_json()
+                .map_err(|err| McpError::InvalidResponse(format!("Invalid spaces response: {err}")))?;
+
+            if let Some(error) = extract_openapi_error(&value, "获取知识空间列表") {
+                return Err(error);
+            }
+
+            let data = value
+                .get("data")
+                .ok_or_else(|| McpError::InvalidResponse("Space list missing data".into()))?;
+            let items = data
+                .get("items")
+                .and_then(|items| items.as_array())
+                .ok_or_else(|| McpError::InvalidResponse("Space list missing items".into()))?;
+
+            spaces.extend(items.iter().filter_map(|item| {
                 Some(FeishuSpace {
                     space_id: item.get("space_id")?.as_str()?.to_string(),
                     name: item.get("name")?.as_str()?.to_string(),
                 })
-            })
-            .collect())
+            }));
+
+            let has_more = data
+                .get("has_more")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            if !has_more {
+                break;
+            }
+
+            page_token = data
+                .get("page_token")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        Ok(spaces)
     }
 
     pub fn list_child_nodes(&self, space_id: &str, parent_node_token: Option<&str>) -> Result<Vec<FeishuWikiNode>, McpError> {
         let token = self.tenant_access_token()?;
-        let mut request = ureq::get(&self.endpoint(&format!("/wiki/v2/spaces/{space_id}/nodes")))
-            .set("Authorization", &format!("Bearer {token}"))
-            .query("page_size", "50");
+        let mut page_token: Option<String> = None;
+        let mut nodes = Vec::new();
 
-        if let Some(parent) = parent_node_token {
-            request = request.query("parent_node_token", parent);
-        }
+        loop {
+            let mut request = ureq::get(&self.endpoint(&format!("/wiki/v2/spaces/{space_id}/nodes")))
+                .set("Authorization", &format!("Bearer {token}"))
+                .query("page_size", "50")
+                .query("user_id_type", "user_id");
 
-        let response = request
-            .call()
-            .map_err(|err| McpError::Transport(format!("List child nodes request failed: {err}")))?;
+            if let Some(parent) = parent_node_token {
+                request = request.query("parent_node_token", parent);
+            }
+            if let Some(current_page_token) = page_token.as_deref() {
+                request = request.query("page_token", current_page_token);
+            }
 
-        let value: Value = response
-            .into_json()
-            .map_err(|err| McpError::InvalidResponse(format!("Invalid child node response: {err}")))?;
+            let response = request
+                .call()
+                .map_err(|err| McpError::Transport(format!("List child nodes request failed: {err}")))?;
 
-        if let Some(error) = extract_openapi_error(&value, "获取知识空间子节点列表") {
-            return Err(error);
-        }
+            let value: Value = response
+                .into_json()
+                .map_err(|err| McpError::InvalidResponse(format!("Invalid child node response: {err}")))?;
 
-        let items = value
-            .get("data")
-            .and_then(|data| data.get("items"))
-            .and_then(|items| items.as_array())
-            .ok_or_else(|| McpError::InvalidResponse("Wiki node list missing items".into()))?;
+            if let Some(error) = extract_openapi_error(&value, "获取知识空间子节点列表") {
+                return Err(error);
+            }
 
-        Ok(items
-            .iter()
-            .filter_map(|item| {
+            let data = value
+                .get("data")
+                .ok_or_else(|| McpError::InvalidResponse("Wiki node list missing data".into()))?;
+            let items = data
+                .get("items")
+                .and_then(|items| items.as_array())
+                .ok_or_else(|| McpError::InvalidResponse("Wiki node list missing items".into()))?;
+
+            nodes.extend(items.iter().filter_map(|item| {
                 Some(FeishuWikiNode {
                     space_id: item.get("space_id")?.as_str()?.to_string(),
                     node_token: item.get("node_token")?.as_str()?.to_string(),
@@ -312,8 +350,27 @@ impl FeishuOpenApiClient {
                     title: item.get("title")?.as_str()?.to_string(),
                     has_child: item.get("has_child").and_then(|v| v.as_bool()).unwrap_or(false),
                 })
-            })
-            .collect())
+            }));
+
+            let has_more = data
+                .get("has_more")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            if !has_more {
+                break;
+            }
+
+            page_token = data
+                .get("page_token")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+
+            if page_token.is_none() {
+                break;
+            }
+        }
+
+        Ok(nodes)
     }
 
     pub fn fetch_document(&self, document_id: &str) -> Result<RawDocument, McpError> {

@@ -5,6 +5,22 @@ export interface UserInfo {
   avatar?: string;
 }
 
+export type ConnectionValidationStatus =
+  | "not-configured"
+  | "connected-with-spaces"
+  | "connected-no-spaces"
+  | "permission-denied"
+  | "request-failed"
+  | "unexpected-response";
+
+export interface ConnectionValidation {
+  status: ConnectionValidationStatus;
+  usable: boolean;
+  message: string;
+  diagnostics?: string;
+  spacesLoaded: boolean;
+}
+
 export interface AppSettings {
   appId: string;
   appSecret: string;
@@ -41,6 +57,13 @@ export interface AppBootstrap {
   settings: AppSettings | null;
   user: UserInfo | null;
   spaces: KnowledgeBaseSpace[];
+  connectionValidation: ConnectionValidation | null;
+}
+
+export interface ConnectionCheckResult {
+  user: UserInfo | null;
+  spaces: KnowledgeBaseSpace[];
+  validation: ConnectionValidation;
 }
 
 export interface SyncProgressEventDetail {
@@ -50,6 +73,7 @@ export interface SyncProgressEventDetail {
 export interface HomePageProps {
   spaces: KnowledgeBaseSpace[];
   syncRoot: string;
+  connectionValidation: ConnectionValidation | null;
   onSpacesChange: (spaces: KnowledgeBaseSpace[]) => void;
   onOpenTasks: () => void;
   activeTaskSummary: string;
@@ -61,7 +85,8 @@ export interface TaskListPageProps {
 }
 
 export interface AuthPageProps {
-  onAuthorized: () => Promise<void>;
+  validation: ConnectionValidation | null;
+  onAuthorized: () => Promise<ConnectionCheckResult>;
   onGoToSettings: () => void;
 }
 

@@ -6,7 +6,7 @@ import HomePage from "@/components/HomePage";
 import SettingsPage from "@/components/SettingsPage";
 import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
-import type { AppPage, AppSettings, SyncTask, UserInfo } from "@/types/app";
+import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
 import type { KnowledgeBaseSpace } from "@/types/sync";
 import {
   createSyncTask,
@@ -32,6 +32,7 @@ export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [spaces, setSpaces] = useState<KnowledgeBaseSpace[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
+  const [connectionValidation, setConnectionValidation] = useState<ConnectionValidation | null>(null);
 
   useEffect(() => {
     let disposeBridge: (() => void) | undefined;
@@ -46,6 +47,7 @@ export default function App(): React.JSX.Element {
       setSettings(bootstrap.settings);
       setSpaces(bootstrap.spaces);
       setUserInfo(bootstrap.user);
+       setConnectionValidation(bootstrap.connectionValidation);
       setAuthed(Boolean(bootstrap.user));
       setCurrentPage(bootstrap.settings ? (bootstrap.user ? "home" : "auth") : "settings");
       if (bootstrap.user) {
@@ -92,6 +94,7 @@ export default function App(): React.JSX.Element {
     void logoutUser().then(() => {
       setAuthed(false);
       setUserInfo(null);
+      setConnectionValidation(null);
       setCurrentPage("auth");
     });
   };
@@ -144,6 +147,7 @@ export default function App(): React.JSX.Element {
                 onSaved={(nextSettings) => {
                   void saveAppSettings(nextSettings).then((saved) => {
                     setSettings(saved);
+                    setConnectionValidation(null);
                     setCurrentPage("auth");
                   });
                 }}
@@ -152,12 +156,21 @@ export default function App(): React.JSX.Element {
 
             {currentPage === "auth" && (
               <AuthPage
+                validation={connectionValidation}
                 onAuthorized={async () => {
-                  const user = await validateFeishuConnection();
-                  setAuthed(true);
-                  setUserInfo(user);
-                  setSpaces((await getAppBootstrap()).spaces);
-                  setCurrentPage("home");
+                  const result = await validateFeishuConnection();
+                  setConnectionValidation(result.validation);
+                  setSpaces(result.spaces);
+                  if (result.validation.usable && result.user) {
+                    setAuthed(true);
+                    setUserInfo(result.user);
+                    setCurrentPage("home");
+                  } else {
+                    setAuthed(false);
+                    setUserInfo(null);
+                    setCurrentPage("auth");
+                  }
+                  return result;
                 }}
                 onGoToSettings={() => setCurrentPage("settings")}
               />
@@ -167,6 +180,7 @@ export default function App(): React.JSX.Element {
               <HomePage
                 spaces={spaces}
                 syncRoot={syncTarget}
+                connectionValidation={connectionValidation}
                 onSpacesChange={setSpaces}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}

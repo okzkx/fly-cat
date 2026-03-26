@@ -1,0 +1,64 @@
+# knowledge-base-source-sync Specification
+
+## Purpose
+TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
+## Requirements
+### Requirement: Knowledge Base Scoped Discovery
+The system MUST discover and queue only documents that belong to Feishu knowledge base spaces selected by the user.
+
+#### Scenario: Ignore non-knowledge-base sources
+- **WHEN** the source enumeration includes Feishu document containers outside selected knowledge base spaces
+- **THEN** the sync planner excludes those items from the sync queue
+
+#### Scenario: Build queue from selected spaces
+- **WHEN** the user selects one or more knowledge base spaces and starts synchronization
+- **THEN** the system builds a sync queue containing only documents from those spaces
+
+### Requirement: Incremental Synchronization Planning
+The system MUST perform incremental synchronization using persisted sync state, and MUST skip unchanged documents safely.
+
+#### Scenario: Skip unchanged document
+- **WHEN** a document's remote version metadata matches the local manifest state
+- **THEN** the planner marks the document as no-op and does not re-fetch content
+
+#### Scenario: Include changed document
+- **WHEN** a document's remote version metadata differs from the local manifest state
+- **THEN** the planner marks the document for re-fetch and output regeneration
+
+### Requirement: Persistent Sync Manifest
+The system MUST persist per-document sync metadata sufficient for retry, audit, and subsequent incremental runs.
+
+#### Scenario: Record successful sync entry
+- **WHEN** a document sync completes successfully
+- **THEN** the manifest stores document identifier, source version metadata, output path, and last successful sync timestamp
+
+#### Scenario: Record failed sync entry
+- **WHEN** a document sync fails
+- **THEN** the manifest stores failure status and error classification without deleting prior successful metadata for other documents
+
+### Requirement: Knowledge Space Discovery Uses Authoritative Access Check
+The system MUST determine Feishu knowledge space accessibility using the same effective backend access path as space discovery or synchronization planning, and MUST NOT reject a configuration solely because a narrower preflight check failed first.
+
+#### Scenario: Valid configuration is not blocked by false-negative preflight
+- **WHEN** an initial connection validation probe fails but the configured Feishu/MCP integration can successfully enumerate accessible knowledge spaces through the authoritative discovery path
+- **THEN** the system reports the connection as usable and returns the discovered knowledge spaces
+
+#### Scenario: Discovery path determines final failure
+- **WHEN** connection validation starts and the authoritative knowledge space discovery path fails due to transport, authentication, or permission errors
+- **THEN** the system classifies the connection as failed using the authoritative discovery error rather than a generic preflight failure
+
+### Requirement: Knowledge Space Discovery Classifies Empty And Error Outcomes
+The system MUST distinguish an authoritative empty result from an error result when loading knowledge spaces.
+
+#### Scenario: No joined knowledge spaces
+- **WHEN** authoritative discovery completes successfully and returns zero accessible knowledge spaces
+- **THEN** the system classifies the result as `connected-no-spaces` rather than a connection failure
+
+#### Scenario: Permission denied during space discovery
+- **WHEN** authoritative discovery fails because the app lacks required wiki read access or equivalent knowledge base access permission
+- **THEN** the system classifies the result as `permission-denied` and includes a diagnostic that indicates missing knowledge base access rather than returning an empty list
+
+#### Scenario: Unexpected response shape during discovery
+- **WHEN** the discovery response is received but does not contain the fields required to determine knowledge space accessibility
+- **THEN** the system classifies the result as `unexpected-response` and does not present the result as a normal empty space list
+

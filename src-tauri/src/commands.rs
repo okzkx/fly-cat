@@ -1,7 +1,7 @@
-use crate::mcp::{FeishuOpenApiClient, FeishuOpenApiConfig, FeishuWikiNode};
+use crate::mcp::{FeishuOpenApiClient, FeishuOpenApiConfig, FeishuWikiNode, McpError};
 use crate::sync::sync_document_to_disk;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{collections::HashSet, fs, path::PathBuf, sync::Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
@@ -69,10 +69,29 @@ pub struct KnowledgeBaseSpace {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ConnectionValidation {
+    pub status: String,
+    pub usable: bool,
+    pub message: String,
+    pub diagnostics: Option<String>,
+    pub spaces_loaded: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionCheckResult {
+    pub user: Option<UserInfo>,
+    pub spaces: Vec<KnowledgeBaseSpace>,
+    pub validation: ConnectionValidation,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppBootstrap {
     pub settings: Option<AppSettings>,
     pub user: Option<UserInfo>,
     pub spaces: Vec<KnowledgeBaseSpace>,
+    pub connection_validation: Option<ConnectionValidation>,
 }
 
 #[derive(Clone)]
@@ -178,26 +197,6 @@ fn emit_task_event(app: &AppHandle, event_name: &str, task: &SyncTask) {
     let _ = app.emit(event_name, task.clone());
 }
 
-fn knowledge_base_spaces() -> Vec<KnowledgeBaseSpace> {
-    vec![
-        KnowledgeBaseSpace {
-            id: "kb-eng".into(),
-            name: "研发知识库".into(),
-            selected: true,
-        },
-        KnowledgeBaseSpace {
-            id: "kb-product".into(),
-            name: "产品知识库".into(),
-            selected: false,
-        },
-        KnowledgeBaseSpace {
-            id: "kb-ops".into(),
-            name: "运维知识库".into(),
-            selected: false,
-        },
-    ]
-}
-
 fn knowledge_base_catalog() -> Vec<KnowledgeBaseDocument> {
     vec![
         KnowledgeBaseDocument {
@@ -274,47 +273,293 @@ fn configured_space_ids(settings: &AppSettings) -> Option<Vec<String>> {
         .filter(|items| !items.is_empty())
 }
 
-fn fetch_real_spaces(settings: &AppSettings) -> Result<Vec<KnowledgeBaseSpace>, String> {
-    validate_settings_for_connection(settings)?;
-    let config = app_settings_to_openapi_config(settings)
-        .ok_or_else(|| "飞书 OpenAPI 配置不完整，请检查 App ID / App Secret / Endpoint".to_string())?;
+fn build_validation(
+    status: &str,
+    usable: bool,
+    message: impl Into<String>,
+    diagnostics: Option<String>,
+    spaces_loaded: bool,
+) -> ConnectionValidation {
+    ConnectionValidation {
+        status: status.to_string(),
+        usable,
+        message: message.into(),
+        diagnostics,
+        spaces_loaded,
+    }
+}
+
+fn build_connected_user(spaces: &[KnowledgeBaseSpace]) -> UserInfo {
+    UserInfo {
+        name: format!("已连接_{}个知识空间", spaces.len()),
+        avatar: None,
+    }
+}
+
+fn build_connected_result(
+    spaces: Vec<KnowledgeBaseSpace>,
+    message: impl Into<String>,
+    diagnostics: Option<String>,
+) -> ConnectionCheckResult {
+    let user = Some(build_connected_user(&spaces));
+    ConnectionCheckResult {
+        user,
+        spaces,
+        validation: build_validation("connected-with-spaces", true, message, diagnostics, true),
+    }
+}
+
+fn build_empty_connected_result(message: impl Into<String>, diagnostics: Option<String>) -> ConnectionCheckResult {
+    ConnectionCheckResult {
+        user: Some(build_connected_user(&[])),
+        spaces: vec![],
+        validation: build_validation("connected-no-spaces", true, message, diagnostics, true),
+    }
+}
+
+fn to_knowledge_base_spaces(spaces: Vec<(String, String)>) -> Vec<KnowledgeBaseSpace> {
+    let first_space_id = spaces.first().map(|(space_id, _)| space_id.clone());
+    spaces
+        .into_iter()
+        .map(|(id, name)| KnowledgeBaseSpace {
+            selected: first_space_id
+                .as_ref()
+                .map(|space_id| space_id == &id)
+                .unwrap_or(false),
+            id,
+            name,
+        })
+        .collect()
+}
+
+fn is_permission_error(message: &str) -> bool {
+    let normalized = message.to_lowercase();
+    [
+        "permission",
+        "forbidden",
+        "scope",
+        "unauthorized",
+        "permission denied",
+        "access denied",
+        "无权限",
+        "权限",
+    ]
+    .iter()
+    .any(|keyword| normalized.contains(keyword))
+}
+
+fn classify_discovery_error(error: &McpError, context: &str) -> ConnectionValidation {
+    let diagnostics = Some(format!("{context}: {error}"));
+    if is_permission_error(&error.to_string()) {
+        return build_validation(
+            "permission-denied",
+            false,
+            "连接已建立，但缺少知识库读取权限。请确认应用具备 wiki 读取权限，并已被加入目标知识空间。",
+            diagnostics,
+            false,
+        );
+    }
+
+    match error {
+        McpError::Transport(_) => build_validation(
+            "request-failed",
+            false,
+            "知识空间加载失败，请检查 Endpoint、网络连通性和飞书接口状态后重试。",
+            diagnostics,
+            false,
+        ),
+        McpError::InvalidResponse(_) => build_validation(
+            "unexpected-response",
+            false,
+            "知识空间接口返回了当前应用无法识别的响应格式，请检查接口兼容性。",
+            diagnostics,
+            false,
+        ),
+    }
+}
+
+fn log_discovery(stage: &str, message: &str) {
+    eprintln!("[knowledge-space-discovery] {stage}: {message}");
+}
+
+fn probe_configured_spaces(
+    client: &FeishuOpenApiClient,
+    space_ids: &[String],
+) -> Result<Vec<KnowledgeBaseSpace>, McpError> {
+    let mut accessible_space_ids = Vec::new();
+    let mut last_error: Option<McpError> = None;
+
+    for space_id in space_ids {
+        match client.list_child_nodes(space_id, None) {
+            Ok(_) => accessible_space_ids.push(space_id.clone()),
+            Err(error) => {
+                log_discovery("probe_configured_spaces", &format!("space_id={space_id}, error={error}"));
+                last_error = Some(error);
+            }
+        }
+    }
+
+    if accessible_space_ids.is_empty() {
+        return Err(last_error.unwrap_or_else(|| {
+            McpError::InvalidResponse("Configured Wiki Space IDs are not accessible".into())
+        }));
+    }
+
+    Ok(to_knowledge_base_spaces(
+        accessible_space_ids
+            .into_iter()
+            .map(|space_id| {
+                let name = if space_id.chars().count() > 12 {
+                    format!("知识空间 {}", &space_id[..12])
+                } else {
+                    format!("知识空间 {space_id}")
+                };
+                (space_id, name)
+            })
+            .collect(),
+    ))
+}
+
+fn resolve_connection_check(settings: &AppSettings) -> ConnectionCheckResult {
+    if let Err(message) = validate_settings_for_connection(settings) {
+        return ConnectionCheckResult {
+            user: None,
+            spaces: vec![],
+            validation: build_validation("not-configured", false, message, None, false),
+        };
+    }
+
+    let config = match app_settings_to_openapi_config(settings) {
+        Some(config) => config,
+        None => {
+            return ConnectionCheckResult {
+                user: None,
+                spaces: vec![],
+                validation: build_validation(
+                    "not-configured",
+                    false,
+                    "飞书 OpenAPI 配置不完整，请检查 App ID / App Secret / Endpoint。",
+                    None,
+                    false,
+                ),
+            }
+        }
+    };
+
     let client = FeishuOpenApiClient::new(config);
     let allowed_space_ids = configured_space_ids(settings);
 
-    let spaces = client
-        .list_spaces()
-        .map_err(|err| format!("获取知识空间列表失败: {err}"))?;
+    match client.list_spaces() {
+        Ok(spaces) => {
+            log_discovery("list_spaces", &format!("loaded {} spaces", spaces.len()));
+            let mut filtered = spaces
+                .iter()
+                .filter(|space| {
+                    allowed_space_ids
+                        .as_ref()
+                        .map(|ids| ids.iter().any(|id| id == &space.space_id))
+                        .unwrap_or(true)
+                })
+                .map(|space| (space.space_id.clone(), space.name.clone()))
+                .collect::<Vec<_>>();
 
-    let filtered = spaces
-        .into_iter()
-        .filter(|space| {
-            allowed_space_ids
-                .as_ref()
-                .map(|ids| ids.iter().any(|id| id == &space.space_id))
-                .unwrap_or(true)
-        })
-        .collect::<Vec<_>>();
+            if filtered.is_empty() {
+                if let Some(space_ids) = allowed_space_ids.as_ref() {
+                    match probe_configured_spaces(&client, space_ids) {
+                        Ok(spaces) => {
+                            return build_connected_result(
+                                spaces,
+                                "已通过配置的 Wiki Space IDs 验证到可访问的知识空间。",
+                                Some("list_spaces did not return configured spaces; used node probe fallback".into()),
+                            );
+                        }
+                        Err(probe_error) => {
+                            log_discovery(
+                                "probe_configured_spaces",
+                                &format!("fallback probe failed after list_spaces success: {probe_error}"),
+                            );
 
-    if filtered.is_empty() {
-        if let Some(space_ids) = allowed_space_ids {
-            return Err(format!(
-                "未找到可访问的知识空间。请确认应用已加入这些空间，或检查 Wiki Space IDs 是否正确: {}",
-                space_ids.join(",")
-            ));
+                            let available_space_ids = spaces
+                                .iter()
+                                .map(|space| space.space_id.clone())
+                                .collect::<HashSet<_>>();
+                            let matched_space_ids = space_ids
+                                .iter()
+                                .filter(|space_id| available_space_ids.contains(*space_id))
+                                .cloned()
+                                .collect::<Vec<_>>();
+
+                            if matched_space_ids.is_empty() && !spaces.is_empty() {
+                                return build_empty_connected_result(
+                                    format!(
+                                        "当前连接可用，但未发现与 `Wiki Space IDs` 匹配的知识空间：{}。",
+                                        space_ids.join(", ")
+                                    ),
+                                    Some(format!(
+                                        "loaded {} spaces, none matched configured ids",
+                                        spaces.len()
+                                    )),
+                                );
+                            }
+
+                            return ConnectionCheckResult {
+                                user: None,
+                                spaces: vec![],
+                                validation: classify_discovery_error(
+                                    &probe_error,
+                                    "configured_space_probe_after_empty_filter",
+                                ),
+                            };
+                        }
+                    }
+                }
+
+                return build_empty_connected_result(
+                    "连接已建立，但当前账号下没有可访问的知识空间。请确认应用已被加入至少一个知识空间。",
+                    Some("list_spaces succeeded with zero accessible spaces".into()),
+                );
+            }
+
+            filtered.sort_by(|left, right| left.1.cmp(&right.1));
+            let selected_spaces = to_knowledge_base_spaces(filtered);
+            let selected_space_count = selected_spaces.len();
+            build_connected_result(
+                selected_spaces,
+                format!("连接校验成功，已发现 {} 个可访问知识空间。", selected_space_count),
+                None,
+            )
         }
-        return Err("知识空间列表为空。请确认应用已被加入至少一个知识空间，并具备 wiki 读取权限。".into());
-    }
+        Err(list_error) => {
+            log_discovery("list_spaces", &format!("request failed: {list_error}"));
+            if let Some(space_ids) = allowed_space_ids.as_ref() {
+                match probe_configured_spaces(&client, space_ids) {
+                    Ok(spaces) => {
+                        return build_connected_result(
+                            spaces,
+                            "知识空间列表接口未返回可用结果，但已通过配置的 Wiki Space IDs 验证到可访问空间。",
+                            Some(format!("list_spaces failed before configured-id probe succeeded: {list_error}")),
+                        );
+                    }
+                    Err(probe_error) => {
+                        return ConnectionCheckResult {
+                            user: None,
+                            spaces: vec![],
+                            validation: classify_discovery_error(
+                                &probe_error,
+                                &format!("list_spaces_failed_then_probe_failed; list_spaces_error={list_error}"),
+                            ),
+                        };
+                    }
+                }
+            }
 
-    let first_space_id = filtered.first().map(|space| space.space_id.clone());
-    Ok(filtered
-        .into_iter()
-        .map(|space| KnowledgeBaseSpace {
-            selected: first_space_id.as_ref().map(|id| id == &space.space_id).unwrap_or(false),
-            id: space.space_id,
-            name: space.name,
-        })
-        .collect())
-    
+            ConnectionCheckResult {
+                user: None,
+                spaces: vec![],
+                validation: classify_discovery_error(&list_error, "list_spaces"),
+            }
+        }
+    }
 }
 
 fn collect_nodes_recursive(
@@ -484,14 +729,25 @@ pub fn get_runtime_info() -> RuntimeInfo {
 #[tauri::command]
 pub fn get_app_bootstrap(app: AppHandle) -> Result<AppBootstrap, String> {
     let settings = load_json_file(settings_file_path(&app)?)?;
-    let user = load_json_file(user_file_path(&app)?)?;
-    let spaces = settings
-        .as_ref()
-        .and_then(|settings| fetch_real_spaces(settings).ok())
-        .filter(|spaces| !spaces.is_empty())
-        .unwrap_or_else(knowledge_base_spaces);
+    let persisted_user: Option<UserInfo> = load_json_file(user_file_path(&app)?)?;
+    let connection_check = settings.as_ref().map(resolve_connection_check);
 
-    Ok(AppBootstrap { settings, user, spaces })
+    let user = connection_check
+        .as_ref()
+        .and_then(|result| result.validation.usable.then(|| result.user.clone()).flatten())
+        .or(persisted_user.filter(|_| connection_check.is_none()));
+    let spaces = connection_check
+        .as_ref()
+        .map(|result| result.spaces.clone())
+        .unwrap_or_default();
+    let connection_validation = connection_check.map(|result| result.validation);
+
+    Ok(AppBootstrap {
+        settings,
+        user,
+        spaces,
+        connection_validation,
+    })
 }
 
 #[tauri::command]
@@ -501,17 +757,23 @@ pub fn save_app_settings(app: AppHandle, settings: AppSettings) -> Result<AppSet
 }
 
 #[tauri::command]
-pub fn validate_feishu_connection(app: AppHandle) -> Result<UserInfo, String> {
+pub fn validate_feishu_connection(app: AppHandle) -> Result<ConnectionCheckResult, String> {
     let settings: AppSettings = load_json_file(settings_file_path(&app)?)?
         .ok_or_else(|| "请先在设置页保存飞书应用配置".to_string())?;
-    let spaces = fetch_real_spaces(&settings)?;
+    let result = resolve_connection_check(&settings);
 
-    let user = UserInfo {
-        name: format!("已连接_{}个知识空间", spaces.len()),
-        avatar: None,
-    };
-    save_json_file(user_file_path(&app)?, &user)?;
-    Ok(user)
+    if result.validation.usable {
+        if let Some(user) = result.user.as_ref() {
+            save_json_file(user_file_path(&app)?, user)?;
+        }
+    } else {
+        let user_path = user_file_path(&app)?;
+        if user_path.exists() {
+            fs::remove_file(user_path).map_err(|err| err.to_string())?;
+        }
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -634,4 +896,65 @@ pub fn resume_sync_tasks(app: AppHandle, state: State<'_, AppState>) -> Result<V
     }
 
     Ok(resumable)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_space(id: &str, name: &str) -> KnowledgeBaseSpace {
+        KnowledgeBaseSpace {
+            id: id.into(),
+            name: name.into(),
+            selected: false,
+        }
+    }
+
+    #[test]
+    fn false_negative_preflight_can_recover_when_spaces_are_accessible() {
+        let recovered = build_connected_result(
+            vec![sample_space("space-a", "研发知识库")],
+            "已通过配置的 Wiki Space IDs 验证到可访问的知识空间。",
+            Some("list_spaces failed before configured-id probe succeeded".into()),
+        );
+
+        assert_eq!(recovered.validation.status, "connected-with-spaces");
+        assert!(recovered.validation.usable);
+        assert_eq!(recovered.spaces.len(), 1);
+    }
+
+    #[test]
+    fn permission_errors_are_classified_explicitly() {
+        let validation = classify_discovery_error(
+            &McpError::Transport("List spaces request failed: permission denied".into()),
+            "list_spaces",
+        );
+
+        assert_eq!(validation.status, "permission-denied");
+        assert!(!validation.usable);
+    }
+
+    #[test]
+    fn invalid_responses_are_classified_as_unexpected_response() {
+        let validation = classify_discovery_error(
+            &McpError::InvalidResponse("Space list missing items".into()),
+            "list_spaces",
+        );
+
+        assert_eq!(validation.status, "unexpected-response");
+        assert!(!validation.usable);
+    }
+
+    #[test]
+    fn empty_connected_result_is_not_treated_as_failure() {
+        let result = build_empty_connected_result(
+            "连接已建立，但当前账号下没有可访问的知识空间。",
+            Some("list_spaces succeeded with zero accessible spaces".into()),
+        );
+
+        assert_eq!(result.validation.status, "connected-no-spaces");
+        assert!(result.validation.usable);
+        assert!(result.spaces.is_empty());
+        assert_eq!(result.user.as_ref().map(|user| user.name.as_str()), Some("已连接_0个知识空间"));
+    }
 }

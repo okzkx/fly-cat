@@ -1,7 +1,8 @@
 import { CloudSyncOutlined, FolderOpenOutlined, SyncOutlined } from "@ant-design/icons";
-import { App, Button, Card, Checkbox, Space, Tree, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, Empty, Space, Tree, Typography } from "antd";
 import type { DataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
+import { getHomePageEmptyState } from "@/utils/connectionValidation";
 
 const { Text } = Typography;
 
@@ -22,6 +23,7 @@ function buildTreeData(spaces: HomePageProps["spaces"]): DataNode[] {
 export default function HomePage({
   spaces,
   syncRoot,
+  connectionValidation,
   onSpacesChange,
   onOpenTasks,
   activeTaskSummary,
@@ -29,6 +31,7 @@ export default function HomePage({
 }: HomePageProps): React.JSX.Element {
   const { message } = App.useApp();
   const checkedKeys = spaces.filter((space) => space.selected).map((space) => space.id);
+  const emptyState = getHomePageEmptyState(connectionValidation, spaces.length);
 
   const toggleSpace = (spaceId: string, checked: boolean): void => {
     onSpacesChange(spaces.map((space) => (space.id === spaceId ? { ...space, selected: checked } : space)));
@@ -39,7 +42,7 @@ export default function HomePage({
     if (result) {
       message.success(`已创建同步任务：${result.task.name}`);
     } else {
-      message.warning("请至少选择一个知识库空间");
+      message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请至少选择一个知识库空间");
     }
   };
 
@@ -55,7 +58,7 @@ export default function HomePage({
           </div>
         }
         extra={
-          <Button type="primary" icon={<SyncOutlined />} onClick={() => void handleStartSync()}>
+          <Button type="primary" icon={<SyncOutlined />} disabled={spaces.length === 0} onClick={() => void handleStartSync()}>
             开始同步
           </Button>
         }
@@ -68,26 +71,39 @@ export default function HomePage({
             </Space>
           </div>
 
-          <Tree
-            defaultExpandAll
-            treeData={buildTreeData(spaces)}
-            titleRender={(node) => {
-              if (node.key === "wiki-root") {
+          {emptyState && (
+            <Alert
+              type="info"
+              showIcon
+              message={emptyState.title}
+              description={emptyState.description}
+            />
+          )}
+
+          {spaces.length > 0 ? (
+            <Tree
+              defaultExpandAll
+              treeData={buildTreeData(spaces)}
+              titleRender={(node) => {
+                if (node.key === "wiki-root") {
+                  return (
+                    <Space>
+                      <CloudSyncOutlined style={{ color: "#722ed1" }} />
+                      <span>{String(node.title)}</span>
+                    </Space>
+                  );
+                }
+                const checked = checkedKeys.includes(String(node.key));
                 return (
-                  <Space>
-                    <CloudSyncOutlined style={{ color: "#722ed1" }} />
-                    <span>{String(node.title)}</span>
-                  </Space>
+                  <Checkbox checked={checked} onChange={(event) => toggleSpace(String(node.key), event.target.checked)}>
+                    {String(node.title)}
+                  </Checkbox>
                 );
-              }
-              const checked = checkedKeys.includes(String(node.key));
-              return (
-                <Checkbox checked={checked} onChange={(event) => toggleSpace(String(node.key), event.target.checked)}>
-                  {String(node.title)}
-                </Checkbox>
-              );
-            }}
-          />
+              }}
+            />
+          ) : (
+            <Empty description="暂无知识空间可供选择" />
+          )}
         </Space>
       </Card>
     </Space>

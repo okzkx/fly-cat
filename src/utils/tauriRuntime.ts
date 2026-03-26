@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AppBootstrap, AppSettings, SyncTask, UserInfo } from "@/types/app";
+import type { AppBootstrap, AppSettings, ConnectionCheckResult, SyncTask, UserInfo } from "@/types/app";
 import {
   TASK_EVENTS,
   createSyncTask as createBrowserSyncTask,
@@ -75,6 +75,14 @@ export async function getAppBootstrap(): Promise<AppBootstrap> {
     return {
       settings: settingsRaw ? (JSON.parse(settingsRaw) as AppSettings) : null,
       user: userRaw ? (JSON.parse(userRaw) as UserInfo) : null,
+      connectionValidation: userRaw
+        ? {
+            status: "connected-with-spaces",
+            usable: true,
+            message: "当前处于浏览器模拟环境，已加载默认知识空间。",
+            spacesLoaded: true
+          }
+        : null,
       spaces: [
         { id: "kb-eng", name: "研发知识库", selected: true },
         { id: "kb-product", name: "产品知识库", selected: false },
@@ -93,13 +101,27 @@ export async function saveAppSettings(settings: AppSettings): Promise<AppSetting
   return invoke<AppSettings>("save_app_settings", { settings });
 }
 
-export async function validateFeishuConnection(): Promise<UserInfo> {
+export async function validateFeishuConnection(): Promise<ConnectionCheckResult> {
   if (!isTauriRuntime()) {
     const user = { name: "已连接_模拟环境", avatar: "" };
+    const result: ConnectionCheckResult = {
+      user,
+      spaces: [
+        { id: "kb-eng", name: "研发知识库", selected: true },
+        { id: "kb-product", name: "产品知识库", selected: false },
+        { id: "kb-ops", name: "运维知识库", selected: false }
+      ],
+      validation: {
+        status: "connected-with-spaces",
+        usable: true,
+        message: "当前处于浏览器模拟环境，已加载默认知识空间。",
+        spacesLoaded: true
+      }
+    };
     localStorage.setItem("feishu_sync_user", JSON.stringify(user));
-    return user;
+    return result;
   }
-  return invoke<UserInfo>("validate_feishu_connection");
+  return invoke<ConnectionCheckResult>("validate_feishu_connection");
 }
 
 export async function logoutUser(): Promise<void> {
