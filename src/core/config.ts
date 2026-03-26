@@ -6,7 +6,15 @@ export interface AppConfig {
   requestTimeoutMs: number;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+type EnvSource = Record<string, string | undefined>;
+
+function resolveBrowserEnv(): EnvSource {
+  const viteEnv = (import.meta as ImportMeta & { env?: EnvSource }).env ?? {};
+  const processEnv = (globalThis as typeof globalThis & { process?: { env?: EnvSource } }).process?.env ?? {};
+  return { ...processEnv, ...viteEnv };
+}
+
+export function loadConfig(env: EnvSource = resolveBrowserEnv()): AppConfig {
   return {
     syncRoot: env.SYNC_ROOT ?? "./synced-docs",
     imageDirName: env.SYNC_IMAGE_DIR ?? "_assets",

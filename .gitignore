@@ -2,3 +2,5 @@ node_modules/
 dist/
 *.tsbuildinfo
 synced-docs/
+src-tauri/target/
+src-tauri/gen/schemas/

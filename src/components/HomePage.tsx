@@ -1,0 +1,95 @@
+import { CloudSyncOutlined, FolderOpenOutlined, SyncOutlined } from "@ant-design/icons";
+import { App, Button, Card, Checkbox, Space, Tree, Typography } from "antd";
+import type { DataNode } from "antd/es/tree";
+import type { HomePageProps } from "@/types/app";
+
+const { Text } = Typography;
+
+function buildTreeData(spaces: HomePageProps["spaces"]): DataNode[] {
+  return [
+    {
+      title: "知识库",
+      key: "wiki-root",
+      children: spaces.map((space) => ({
+        title: space.name,
+        key: space.id,
+        isLeaf: true
+      }))
+    }
+  ];
+}
+
+export default function HomePage({
+  spaces,
+  syncRoot,
+  onSpacesChange,
+  onOpenTasks,
+  activeTaskSummary,
+  onCreateTask
+}: HomePageProps): React.JSX.Element {
+  const { message } = App.useApp();
+  const checkedKeys = spaces.filter((space) => space.selected).map((space) => space.id);
+
+  const toggleSpace = (spaceId: string, checked: boolean): void => {
+    onSpacesChange(spaces.map((space) => (space.id === spaceId ? { ...space, selected: checked } : space)));
+  };
+
+  const handleStartSync = async (): Promise<void> => {
+    const result = await onCreateTask();
+    if (result) {
+      message.success(`已创建同步任务：${result.task.name}`);
+    } else {
+      message.warning("请至少选择一个知识库空间");
+    }
+  };
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <Card
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span>知识库同步列表</span>
+            <Button type="text" onClick={onOpenTasks}>
+              {activeTaskSummary}
+            </Button>
+          </div>
+        }
+        extra={
+          <Button type="primary" icon={<SyncOutlined />} onClick={() => void handleStartSync()}>
+            开始同步
+          </Button>
+        }
+      >
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          <div style={{ padding: 12, background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0" }}>
+            <Space>
+              <FolderOpenOutlined />
+              <Text>同步目录：{syncRoot}</Text>
+            </Space>
+          </div>
+
+          <Tree
+            defaultExpandAll
+            treeData={buildTreeData(spaces)}
+            titleRender={(node) => {
+              if (node.key === "wiki-root") {
+                return (
+                  <Space>
+                    <CloudSyncOutlined style={{ color: "#722ed1" }} />
+                    <span>{String(node.title)}</span>
+                  </Space>
+                );
+              }
+              const checked = checkedKeys.includes(String(node.key));
+              return (
+                <Checkbox checked={checked} onChange={(event) => toggleSpace(String(node.key), event.target.checked)}>
+                  {String(node.title)}
+                </Checkbox>
+              );
+            }}
+          />
+        </Space>
+      </Card>
+    </Space>
+  );
+}

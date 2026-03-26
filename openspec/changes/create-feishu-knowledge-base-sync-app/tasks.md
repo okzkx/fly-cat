@@ -1,38 +1,44 @@
-## 1. Project Bootstrap and Baseline Architecture
+## 1. Tauri Foundation
 
-- [x] 1.1 Initialize the new application skeleton and module layout, referencing reusable structure patterns from `F:\okzkx\feishu_docs_export`.
-- [x] 1.2 Define core configuration model for sync root, knowledge base scope, MCP endpoint settings, and runtime environment variables.
-- [x] 1.3 Set up foundational logging and error taxonomy for sync workflow, MCP calls, transform errors, and file I/O failures.
+- [x] 1.1 Rebuild the project into a real Tauri desktop structure by adding `src-tauri`, Tauri scripts, and config files aligned with `F:\okzkx\feishu_docs_export`.
+- [x] 1.2 Port the reference project's essential frontend and Tauri plugin dependencies (`@tauri-apps/api`, CLI, dialog/fs/http/opener/shell/oauth/sql plugins where needed) and make `npm run tauri dev` the primary development entrypoint.
+- [x] 1.3 Define the frontend/backend contract for sync commands and events so long-running sync work no longer depends on browser-only mocks or localStorage-only runtime behavior.
 
-## 2. Knowledge Base Discovery and Sync Planning
+## 2. Reference Shell Alignment
 
-- [x] 2.1 Implement knowledge-base-only source discovery service and filter out non-knowledge-base document containers.
-- [x] 2.2 Implement sync manifest schema and persistence layer storing document IDs, version metadata, output paths, and last status.
-- [x] 2.3 Build incremental sync planner that classifies documents into `sync`, `skip`, and `retry` sets from manifest + remote metadata.
+- [ ] 2.1 Rebuild the top-level app shell to match the reference project's Tauri + Ant Design layout, header, and page-switching structure.
+- [ ] 2.2 Restore the reference-style page decomposition (`SettingsPage`, `AuthPage`, `HomePage`, `TaskListPage`) and adapt each page from export semantics to sync semantics.
+- [ ] 2.3 Reintroduce the reference project's configuration guidance and dedicated auth flow, replacing export-related scope/help text with sync and MCP-oriented guidance.
+- [ ] 2.4 Replace temporary/mock auth and task behaviors with Tauri-backed flows while preserving the same user-facing interaction rhythm as the reference project.
 
-## 3. MCP Content Retrieval and Markdown Pipeline
+## 3. Backend Sync Orchestration
 
-- [x] 3.1 Implement MCP client integration for Feishu document content retrieval with request/response validation and retry boundaries.
-- [x] 3.2 Build canonical intermediate document model decoupled from raw Feishu API payload structure.
-- [x] 3.3 Implement deterministic Markdown renderer that preserves document hierarchy and stable output formatting.
-- [x] 3.4 Implement deterministic local path mapping rules and manifest update logic for renamed/moved documents.
+- [ ] 3.1 Implement Rust-side sync commands that discover selected knowledge base documents and start synchronization tasks from the backend.
+- [ ] 3.2 Implement backend-owned task persistence and state restoration so sync tasks survive app refresh/restart in a reference-style task model.
+- [ ] 3.3 Emit Tauri events for sync progress, completion, partial failure, and retry/resume updates, and wire frontend listeners to them.
 
-## 4. Image Resolution and Asset Fallback
+## 4. MCP Content Pipeline
 
-- [x] 4.1 Implement remote-first image resolution checks and keep valid remote URLs in generated Markdown.
-- [x] 4.2 Implement fallback image downloader writing hashed filenames to a fixed assets subdirectory under sync root.
-- [x] 4.3 Implement Markdown image-link rewriting to local relative asset paths for fallback images.
-- [x] 4.4 Add asset deduplication by hash to avoid duplicate local image files across documents.
+- [ ] 4.1 Implement MCP client integration in the backend for Feishu knowledge base content retrieval with validation and retry boundaries.
+- [ ] 4.2 Build a canonical intermediate document model decoupled from raw Feishu API payload structure.
+- [ ] 4.3 Implement deterministic Markdown rendering and stable local path mapping from backend-owned sync services.
+- [ ] 4.4 Persist manifest metadata needed for incremental synchronization, retries, and rename/move handling.
 
-## 5. Sync-Focused UX and Runtime Orchestration
+## 5. Image Handling
 
-- [x] 5.1 Implement sync-oriented UI flow for source selection, sync target preview, and explicit "start sync" interaction.
-- [x] 5.2 Implement sync lifecycle state machine (`idle`, `preparing`, `syncing`, `partial-failed`, `completed`) and state transitions.
-- [x] 5.3 Add run-level and document-level progress/status views including succeeded, skipped, and failed counters.
-- [x] 5.4 Add actionable error display and failed-item retry action without reprocessing successful no-op items.
+- [ ] 5.1 Implement remote-first image resolution in the backend and keep valid remote URLs in generated Markdown.
+- [ ] 5.2 Implement fallback image download with hashed filenames written to a fixed assets subdirectory under the sync root.
+- [ ] 5.3 Rewrite Markdown image references to local relative asset paths when fallback storage is required.
+- [ ] 5.4 Deduplicate downloaded assets by content hash across sync runs.
 
-## 6. Validation and Hardening
+## 6. UX and Task Experience
 
-- [x] 6.1 Add automated tests for incremental planning, deterministic Markdown output, image fallback behavior, and manifest persistence.
-- [ ] 6.2 Run end-to-end pilot sync against a controlled knowledge base and verify path stability across repeated runs.
-- [x] 6.3 Verify failure recovery by injecting MCP/API and file-system errors, then validating retry and partial-failure reporting behavior.
+- [ ] 6.1 Implement sync-oriented home-page actions for selecting knowledge base scopes and creating synchronization tasks.
+- [ ] 6.2 Implement task list views showing run-level and document-level progress, status, retry, and resume actions.
+- [ ] 6.3 Surface actionable sync error feedback in the UI, including failed-item diagnostics and recovery entry points.
+
+## 7. Validation and Rollout
+
+- [ ] 7.1 Add automated tests for incremental planning, Markdown output, image fallback behavior, and backend task-state recovery.
+- [ ] 7.2 Run the app through `npm run tauri dev` and verify the desktop shell, page flow, and frontend/backend event wiring work end-to-end.
+- [ ] 7.3 Run a controlled knowledge base sync against real MCP/Feishu context and verify repeated-run path stability plus retry behavior.
