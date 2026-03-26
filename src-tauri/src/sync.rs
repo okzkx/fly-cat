@@ -1,4 +1,7 @@
-use crate::mcp::{fetch_with_retry, FixtureMcpClient, McpError, RawBlock, RetryPolicy};
+use crate::mcp::{
+    fetch_openapi_with_retry, fetch_with_retry, FeishuOpenApiClient, FeishuOpenApiConfig,
+    FixtureMcpClient, McpError, RawBlock, RetryPolicy,
+};
 use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord};
 use crate::render::{markdown_output_path, render_markdown, source_signature, stable_hash};
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
@@ -12,14 +15,23 @@ fn normalize_block(raw_block: RawBlock) -> CanonicalBlock {
     }
 }
 
-pub fn fetch_canonical_document(document_id: &str, mcp_server_name: &str) -> Result<CanonicalDocument, McpError> {
-    let client = FixtureMcpClient::new(mcp_server_name.to_string());
+pub fn fetch_canonical_document(
+    document_id: &str,
+    mcp_server_name: &str,
+    openapi_config: Option<&FeishuOpenApiConfig>,
+) -> Result<CanonicalDocument, McpError> {
     let retry_policy = RetryPolicy {
         max_attempts: 2,
         backoff_ms: 150,
     };
 
-    let raw_document = fetch_with_retry(&client, document_id, &retry_policy)?;
+    let raw_document = if let Some(config) = openapi_config {
+        let client = FeishuOpenApiClient::new(config.clone());
+        fetch_openapi_with_retry(&client, document_id, &retry_policy)?
+    } else {
+        let client = FixtureMcpClient::new(mcp_server_name.to_string());
+        fetch_with_retry(&client, document_id, &retry_policy)?
+    };
     let blocks = raw_document
         .blocks
         .into_iter()
@@ -46,10 +58,17 @@ pub fn sync_document_to_disk(
     sync_root: &Path,
     image_dir_name: &str,
     mcp_server_name: &str,
+    openapi_config: Option<&FeishuOpenApiConfig>,
 ) -> Result<SyncWriteResult, String> {
-    let canonical = fetch_canonical_document(document_id, mcp_server_name).map_err(|err| err.to_string())?;
-    let client = FixtureMcpClient::new(mcp_server_name.to_string());
-    let rendered = render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(|err| err.to_string())?;
+    let canonical =
+        fetch_canonical_document(document_id, mcp_server_name, openapi_config).map_err(|err| err.to_string())?;
+    let rendered = if let Some(config) = openapi_config {
+        let client = FeishuOpenApiClient::new(config.clone());
+        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(|err| err.to_string())?
+    } else {
+        let client = FixtureMcpClient::new(mcp_server_name.to_string());
+        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(|err| err.to_string())?
+    };
     let output_path = markdown_output_path(sync_root, &canonical);
 
     if let Some(parent) = output_path.parent() {
@@ -108,7 +127,8 @@ mod tests {
     #[test]
     fn maps_raw_document_to_canonical_model() {
         let document =
-            fetch_canonical_document("doc-eng-api", "user-feishu-mcp").expect("canonical fetch should succeed");
+            fetch_canonical_document("doc-eng-api", "user-feishu-mcp", None)
+                .expect("canonical fetch should succeed");
 
         assert_eq!(document.document_id, "doc-eng-api");
         assert_eq!(document.space_id, "kb-eng");
@@ -125,7 +145,7 @@ mod tests {
             .as_millis();
         let sync_root = env::temp_dir().join(format!("feishu-sync-output-{unique}"));
 
-        let result = sync_document_to_disk("doc-eng-api", &sync_root, "_assets", "user-feishu-mcp")
+        let result = sync_document_to_disk("doc-eng-api", &sync_root, "_assets", "user-feishu-mcp", None)
             .expect("sync to disk should succeed");
 
         assert!(result.output_path.ends_with(".md"));

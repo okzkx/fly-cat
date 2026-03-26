@@ -12,6 +12,7 @@ export interface AppSettings {
   syncRoot: string;
   mcpServerName: string;
   imageDirName: string;
+  wikiSpaceIds?: string;
 }
 
 export type AppPage = "settings" | "auth" | "home" | "tasks";

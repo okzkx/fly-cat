@@ -9,7 +9,6 @@ import "./styles.css";
 import type { AppPage, AppSettings, SyncTask, UserInfo } from "@/types/app";
 import type { KnowledgeBaseSpace } from "@/types/sync";
 import {
-  authorizeMockUser,
   createSyncTask,
   getAppBootstrap,
   getRuntimeInfo,
@@ -19,7 +18,8 @@ import {
   resumeSyncTasks,
   saveAppSettings,
   startSyncTask,
-  TASK_EVENTS
+  TASK_EVENTS,
+  validateFeishuConnection
 } from "@/utils/taskManager";
 
 const { Header, Content } = Layout;
@@ -153,9 +153,10 @@ export default function App(): React.JSX.Element {
             {currentPage === "auth" && (
               <AuthPage
                 onAuthorized={async () => {
-                  const user = await authorizeMockUser();
+                  const user = await validateFeishuConnection();
                   setAuthed(true);
                   setUserInfo(user);
+                  setSpaces((await getAppBootstrap()).spaces);
                   setCurrentPage("home");
                 }}
                 onGoToSettings={() => setCurrentPage("settings")}

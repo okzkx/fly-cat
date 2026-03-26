@@ -1,4 +1,4 @@
-use crate::mcp::{FixtureMcpClient, ImageResource, McpError};
+use crate::mcp::{ImageProvider, ImageResource, McpError};
 use crate::model::{CanonicalBlock, CanonicalDocument};
 use std::path::{Path, PathBuf};
 
@@ -70,7 +70,7 @@ pub fn render_markdown(
     document: &CanonicalDocument,
     sync_root: &Path,
     image_dir_name: &str,
-    mcp_client: &FixtureMcpClient,
+    image_provider: &impl ImageProvider,
 ) -> Result<RenderedDocument, McpError> {
     let markdown_path = markdown_output_path(sync_root, document);
     let markdown_dir = markdown_path.parent().unwrap_or(sync_root);
@@ -89,7 +89,7 @@ pub fn render_markdown(
                 lines.push(String::new());
             }
             CanonicalBlock::Image { media_id, alt } => {
-                match mcp_client.fetch_image_resource(media_id)? {
+                match image_provider.fetch_image_resource(media_id)? {
                     ImageResource::RemoteUrl(url) => {
                         lines.push(format!("![{}]({})", alt, url));
                     }

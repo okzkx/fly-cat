@@ -93,13 +93,13 @@ export async function saveAppSettings(settings: AppSettings): Promise<AppSetting
   return invoke<AppSettings>("save_app_settings", { settings });
 }
 
-export async function authorizeMockUser(): Promise<UserInfo> {
+export async function validateFeishuConnection(): Promise<UserInfo> {
   if (!isTauriRuntime()) {
-    const user = { name: "同步测试用户", avatar: "" };
+    const user = { name: "已连接_模拟环境", avatar: "" };
     localStorage.setItem("feishu_sync_user", JSON.stringify(user));
     return user;
   }
-  return invoke<UserInfo>("authorize_mock_user");
+  return invoke<UserInfo>("validate_feishu_connection");
 }
 
 export async function logoutUser(): Promise<void> {

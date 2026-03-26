@@ -1,3 +1,4 @@
+use crate::mcp::{FeishuOpenApiClient, FeishuOpenApiConfig, FeishuWikiNode};
 use crate::sync::sync_document_to_disk;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, sync::Mutex};
@@ -55,6 +56,7 @@ pub struct AppSettings {
     pub sync_root: String,
     pub mcp_server_name: String,
     pub image_dir_name: String,
+    pub wiki_space_ids: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -75,9 +77,9 @@ pub struct AppBootstrap {
 
 #[derive(Clone)]
 struct KnowledgeBaseDocument {
-    id: &'static str,
-    space_id: &'static str,
-    title: &'static str,
+    id: String,
+    space_id: String,
+    title: String,
 }
 
 #[derive(Deserialize)]
@@ -199,29 +201,29 @@ fn knowledge_base_spaces() -> Vec<KnowledgeBaseSpace> {
 fn knowledge_base_catalog() -> Vec<KnowledgeBaseDocument> {
     vec![
         KnowledgeBaseDocument {
-            id: "doc-eng-architecture",
-            space_id: "kb-eng",
-            title: "研发架构设计",
+            id: "doc-eng-architecture".into(),
+            space_id: "kb-eng".into(),
+            title: "研发架构设计".into(),
         },
         KnowledgeBaseDocument {
-            id: "doc-eng-api",
-            space_id: "kb-eng",
-            title: "研发API概览",
+            id: "doc-eng-api".into(),
+            space_id: "kb-eng".into(),
+            title: "研发API概览".into(),
         },
         KnowledgeBaseDocument {
-            id: "doc-product-overview",
-            space_id: "kb-product",
-            title: "Product Overview",
+            id: "doc-product-overview".into(),
+            space_id: "kb-product".into(),
+            title: "Product Overview".into(),
         },
         KnowledgeBaseDocument {
-            id: "doc-product-roadmap",
-            space_id: "kb-product",
-            title: "产品路线图",
+            id: "doc-product-roadmap".into(),
+            space_id: "kb-product".into(),
+            title: "产品路线图".into(),
         },
         KnowledgeBaseDocument {
-            id: "doc-ops-playbook",
-            space_id: "kb-ops",
-            title: "运维值班手册",
+            id: "doc-ops-playbook".into(),
+            space_id: "kb-ops".into(),
+            title: "运维值班手册".into(),
         },
     ]
 }
@@ -229,8 +231,135 @@ fn knowledge_base_catalog() -> Vec<KnowledgeBaseDocument> {
 fn discover_documents(selected_spaces: &[String]) -> Vec<KnowledgeBaseDocument> {
     knowledge_base_catalog()
         .into_iter()
-        .filter(|document| selected_spaces.iter().any(|space| space == document.space_id))
+        .filter(|document| selected_spaces.iter().any(|space| space == &document.space_id))
         .collect()
+}
+
+fn app_settings_to_openapi_config(settings: &AppSettings) -> Option<FeishuOpenApiConfig> {
+    if settings.app_id.trim().is_empty() || settings.app_secret.trim().is_empty() {
+        return None;
+    }
+
+    Some(FeishuOpenApiConfig {
+        app_id: settings.app_id.clone(),
+        app_secret: settings.app_secret.clone(),
+        endpoint: settings.endpoint.clone(),
+    })
+}
+
+fn validate_settings_for_connection(settings: &AppSettings) -> Result<(), String> {
+    if settings.app_id.trim().is_empty() {
+        return Err("请先填写 App ID".into());
+    }
+    if settings.app_secret.trim().is_empty() {
+        return Err("请先填写 App Secret".into());
+    }
+    if settings.endpoint.trim().is_empty() {
+        return Err("请先填写 OpenAPI Endpoint".into());
+    }
+    Ok(())
+}
+
+fn configured_space_ids(settings: &AppSettings) -> Option<Vec<String>> {
+    settings
+        .wiki_space_ids
+        .as_ref()
+        .map(|value| {
+            value
+                .split(',')
+                .map(|item| item.trim().to_string())
+                .filter(|item| !item.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty())
+}
+
+fn fetch_real_spaces(settings: &AppSettings) -> Result<Vec<KnowledgeBaseSpace>, String> {
+    validate_settings_for_connection(settings)?;
+    let config = app_settings_to_openapi_config(settings)
+        .ok_or_else(|| "飞书 OpenAPI 配置不完整，请检查 App ID / App Secret / Endpoint".to_string())?;
+    let client = FeishuOpenApiClient::new(config);
+    let allowed_space_ids = configured_space_ids(settings);
+
+    let spaces = client
+        .list_spaces()
+        .map_err(|err| format!("获取知识空间列表失败: {err}"))?;
+
+    let filtered = spaces
+        .into_iter()
+        .filter(|space| {
+            allowed_space_ids
+                .as_ref()
+                .map(|ids| ids.iter().any(|id| id == &space.space_id))
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+
+    if filtered.is_empty() {
+        if let Some(space_ids) = allowed_space_ids {
+            return Err(format!(
+                "未找到可访问的知识空间。请确认应用已加入这些空间，或检查 Wiki Space IDs 是否正确: {}",
+                space_ids.join(",")
+            ));
+        }
+        return Err("知识空间列表为空。请确认应用已被加入至少一个知识空间，并具备 wiki 读取权限。".into());
+    }
+
+    let first_space_id = filtered.first().map(|space| space.space_id.clone());
+    Ok(filtered
+        .into_iter()
+        .map(|space| KnowledgeBaseSpace {
+            selected: first_space_id.as_ref().map(|id| id == &space.space_id).unwrap_or(false),
+            id: space.space_id,
+            name: space.name,
+        })
+        .collect())
+    
+}
+
+fn collect_nodes_recursive(
+    client: &FeishuOpenApiClient,
+    space_id: &str,
+    parent_node_token: Option<&str>,
+    out: &mut Vec<FeishuWikiNode>,
+) -> Result<(), String> {
+    let nodes = client
+        .list_child_nodes(space_id, parent_node_token)
+        .map_err(|err| err.to_string())?;
+
+    for node in nodes {
+        let recurse = node.has_child;
+        let node_token = node.node_token.clone();
+        out.push(node);
+        if recurse {
+            collect_nodes_recursive(client, space_id, Some(&node_token), out)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn discover_documents_from_openapi(
+    selected_spaces: &[String],
+    settings: &AppSettings,
+) -> Result<Vec<KnowledgeBaseDocument>, String> {
+    let config = app_settings_to_openapi_config(settings).ok_or_else(|| "Feishu OpenAPI config missing".to_string())?;
+    let client = FeishuOpenApiClient::new(config);
+    let mut nodes = Vec::new();
+
+    for space_id in selected_spaces {
+        collect_nodes_recursive(&client, space_id, None, &mut nodes)?;
+    }
+
+    Ok(nodes
+        .into_iter()
+        .filter(|node| node.obj_type == "docx")
+        .map(|node| KnowledgeBaseDocument {
+            id: node.obj_token,
+            space_id: node.space_id,
+            title: node.title,
+        })
+        .collect())
 }
 
 fn default_mcp_server_name() -> String {
@@ -242,7 +371,7 @@ fn default_image_dir_name() -> String {
 }
 
 fn spawn_sync_progress(task_id: String, app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
+    std::thread::spawn(move || {
         let documents = {
             let state = app.state::<AppState>();
             let tasks = state.tasks.lock().expect("task state poisoned");
@@ -256,9 +385,9 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
         let total_steps = documents.len().max(1) as u32;
         let documents = if documents.is_empty() {
             vec![KnowledgeBaseDocument {
-                id: "doc-empty",
-                space_id: "kb-eng",
-                title: "Empty Placeholder",
+                id: "doc-empty".into(),
+                space_id: "kb-eng".into(),
+                title: "Empty Placeholder".into(),
             }]
         } else {
             documents
@@ -275,16 +404,21 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 let mut tasks = state.tasks.lock().expect("task state poisoned");
                 if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
                     let sync_root = PathBuf::from(&task.output_path);
+                    let app_settings: Option<AppSettings> =
+                        load_json_file(settings_file_path(&app).expect("settings path"))
+                            .expect("settings json should load");
+                    let openapi_config =
+                        app_settings.as_ref().and_then(app_settings_to_openapi_config);
                     let fetch_result =
-                        sync_document_to_disk(document.id, &sync_root, &image_dir_name, &mcp_server_name);
+                        sync_document_to_disk(&document.id, &sync_root, &image_dir_name, &mcp_server_name, openapi_config.as_ref());
                     task.counters.processed = step;
                     task.progress = ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
                     task.counters.skipped = 0;
                     if let Err(error) = fetch_result {
                         task.counters.failed += 1;
                         task.errors.push(SyncRunError {
-                            document_id: document.id.into(),
-                            title: document.title.into(),
+                            document_id: document.id.clone(),
+                            title: document.title.clone(),
                             category: "mcp".into(),
                             message: error.to_string(),
                         });
@@ -351,7 +485,11 @@ pub fn get_runtime_info() -> RuntimeInfo {
 pub fn get_app_bootstrap(app: AppHandle) -> Result<AppBootstrap, String> {
     let settings = load_json_file(settings_file_path(&app)?)?;
     let user = load_json_file(user_file_path(&app)?)?;
-    let spaces = knowledge_base_spaces();
+    let spaces = settings
+        .as_ref()
+        .and_then(|settings| fetch_real_spaces(settings).ok())
+        .filter(|spaces| !spaces.is_empty())
+        .unwrap_or_else(knowledge_base_spaces);
 
     Ok(AppBootstrap { settings, user, spaces })
 }
@@ -363,9 +501,13 @@ pub fn save_app_settings(app: AppHandle, settings: AppSettings) -> Result<AppSet
 }
 
 #[tauri::command]
-pub fn authorize_mock_user(app: AppHandle) -> Result<UserInfo, String> {
+pub fn validate_feishu_connection(app: AppHandle) -> Result<UserInfo, String> {
+    let settings: AppSettings = load_json_file(settings_file_path(&app)?)?
+        .ok_or_else(|| "请先在设置页保存飞书应用配置".to_string())?;
+    let spaces = fetch_real_spaces(&settings)?;
+
     let user = UserInfo {
-        name: "同步测试用户".into(),
+        name: format!("已连接_{}个知识空间", spaces.len()),
         avatar: None,
     };
     save_json_file(user_file_path(&app)?, &user)?;
@@ -396,8 +538,13 @@ pub fn create_sync_task(
     request: CreateSyncTaskRequest,
     state: State<'_, AppState>,
 ) -> Result<SyncTask, String> {
+    let settings: Option<AppSettings> = load_json_file(settings_file_path(&app)?)?;
     with_tasks(&app, state, |tasks| {
-        let discovered_documents = discover_documents(&request.selected_spaces);
+        let discovered_documents = settings
+            .as_ref()
+            .and_then(|settings| discover_documents_from_openapi(&request.selected_spaces, settings).ok())
+            .filter(|documents| !documents.is_empty())
+            .unwrap_or_else(|| discover_documents(&request.selected_spaces));
         let total = discovered_documents.len().max(1) as u32;
         let task = SyncTask {
             id: Uuid::new_v4().to_string(),

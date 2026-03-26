@@ -1,3 +1,4 @@
+use serde_json::{json, Value};
 use std::{fmt, thread, time::Duration};
 
 #[derive(Clone)]
@@ -52,6 +53,45 @@ impl fmt::Display for McpError {
 }
 
 impl std::error::Error for McpError {}
+
+fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
+    let code = value.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+    if code == 0 {
+        return None;
+    }
+    let msg = value
+        .get("msg")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown error");
+    Some(McpError::Transport(format!("{context}失败(code={code}): {msg}")))
+}
+
+#[derive(Clone, Debug)]
+pub struct FeishuOpenApiConfig {
+    pub app_id: String,
+    pub app_secret: String,
+    pub endpoint: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct FeishuSpace {
+    pub space_id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct FeishuWikiNode {
+    pub space_id: String,
+    pub node_token: String,
+    pub obj_token: String,
+    pub obj_type: String,
+    pub title: String,
+    pub has_child: bool,
+}
+
+pub trait ImageProvider {
+    fn fetch_image_resource(&self, media_id: &str) -> Result<ImageResource, McpError>;
+}
 
 pub struct FixtureMcpClient {
     pub config: McpClientConfig,
@@ -154,6 +194,203 @@ impl FixtureMcpClient {
     }
 }
 
+impl ImageProvider for FixtureMcpClient {
+    fn fetch_image_resource(&self, media_id: &str) -> Result<ImageResource, McpError> {
+        self.fetch_image_resource(media_id)
+    }
+}
+
+pub struct FeishuOpenApiClient {
+    config: FeishuOpenApiConfig,
+}
+
+impl FeishuOpenApiClient {
+    pub fn new(config: FeishuOpenApiConfig) -> Self {
+        Self { config }
+    }
+
+    fn endpoint(&self, path: &str) -> String {
+        format!("{}/{}", self.config.endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+    }
+
+    fn tenant_access_token(&self) -> Result<String, McpError> {
+        let response = ureq::post(&self.endpoint("/auth/v3/tenant_access_token/internal"))
+            .send_json(json!({
+                "app_id": self.config.app_id,
+                "app_secret": self.config.app_secret
+            }))
+            .map_err(|err| McpError::Transport(format!("Tenant token request failed: {err}")))?;
+
+        let value: Value = response
+            .into_json()
+            .map_err(|err| McpError::InvalidResponse(format!("Invalid tenant token response: {err}")))?;
+
+        if let Some(error) = extract_openapi_error(&value, "获取tenant_access_token") {
+            return Err(error);
+        }
+
+        value
+            .get("tenant_access_token")
+            .and_then(|value| value.as_str())
+            .map(|token| token.to_string())
+            .ok_or_else(|| {
+                McpError::InvalidResponse(
+                    "获取tenant_access_token失败: 响应中缺少tenant_access_token，请检查App ID/App Secret是否正确".into(),
+                )
+            })
+    }
+
+    pub fn list_spaces(&self) -> Result<Vec<FeishuSpace>, McpError> {
+        let token = self.tenant_access_token()?;
+        let response = ureq::get(&self.endpoint("/wiki/v2/spaces"))
+            .set("Authorization", &format!("Bearer {token}"))
+            .query("page_size", "50")
+            .call()
+            .map_err(|err| McpError::Transport(format!("List spaces request failed: {err}")))?;
+
+        let value: Value = response
+            .into_json()
+            .map_err(|err| McpError::InvalidResponse(format!("Invalid spaces response: {err}")))?;
+
+        if let Some(error) = extract_openapi_error(&value, "获取知识空间列表") {
+            return Err(error);
+        }
+
+        let items = value
+            .get("data")
+            .and_then(|data| data.get("items"))
+            .and_then(|items| items.as_array())
+            .ok_or_else(|| McpError::InvalidResponse("Space list missing items".into()))?;
+
+        Ok(items
+            .iter()
+            .filter_map(|item| {
+                Some(FeishuSpace {
+                    space_id: item.get("space_id")?.as_str()?.to_string(),
+                    name: item.get("name")?.as_str()?.to_string(),
+                })
+            })
+            .collect())
+    }
+
+    pub fn list_child_nodes(&self, space_id: &str, parent_node_token: Option<&str>) -> Result<Vec<FeishuWikiNode>, McpError> {
+        let token = self.tenant_access_token()?;
+        let mut request = ureq::get(&self.endpoint(&format!("/wiki/v2/spaces/{space_id}/nodes")))
+            .set("Authorization", &format!("Bearer {token}"))
+            .query("page_size", "50");
+
+        if let Some(parent) = parent_node_token {
+            request = request.query("parent_node_token", parent);
+        }
+
+        let response = request
+            .call()
+            .map_err(|err| McpError::Transport(format!("List child nodes request failed: {err}")))?;
+
+        let value: Value = response
+            .into_json()
+            .map_err(|err| McpError::InvalidResponse(format!("Invalid child node response: {err}")))?;
+
+        if let Some(error) = extract_openapi_error(&value, "获取知识空间子节点列表") {
+            return Err(error);
+        }
+
+        let items = value
+            .get("data")
+            .and_then(|data| data.get("items"))
+            .and_then(|items| items.as_array())
+            .ok_or_else(|| McpError::InvalidResponse("Wiki node list missing items".into()))?;
+
+        Ok(items
+            .iter()
+            .filter_map(|item| {
+                Some(FeishuWikiNode {
+                    space_id: item.get("space_id")?.as_str()?.to_string(),
+                    node_token: item.get("node_token")?.as_str()?.to_string(),
+                    obj_token: item.get("obj_token")?.as_str()?.to_string(),
+                    obj_type: item.get("obj_type")?.as_str()?.to_string(),
+                    title: item.get("title")?.as_str()?.to_string(),
+                    has_child: item.get("has_child").and_then(|v| v.as_bool()).unwrap_or(false),
+                })
+            })
+            .collect())
+    }
+
+    pub fn fetch_document(&self, document_id: &str) -> Result<RawDocument, McpError> {
+        let token = self.tenant_access_token()?;
+        let info_response = ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
+            .set("Authorization", &format!("Bearer {token}"))
+            .call()
+            .map_err(|err| McpError::Transport(format!("Document info request failed: {err}")))?;
+
+        let info_value: Value = info_response
+            .into_json()
+            .map_err(|err| McpError::InvalidResponse(format!("Invalid document info response: {err}")))?;
+
+        if let Some(error) = extract_openapi_error(&info_value, "获取文档信息") {
+            return Err(error);
+        }
+
+        let title = info_value
+            .get("data")
+            .and_then(|data| data.get("document"))
+            .and_then(|document| document.get("title"))
+            .and_then(|value| value.as_str())
+            .unwrap_or(document_id)
+            .to_string();
+
+        let raw_response = ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/raw_content")))
+            .set("Authorization", &format!("Bearer {token}"))
+            .call()
+            .map_err(|err| McpError::Transport(format!("Document raw_content request failed: {err}")))?;
+
+        let raw_value: Value = raw_response
+            .into_json()
+            .map_err(|err| McpError::InvalidResponse(format!("Invalid raw_content response: {err}")))?;
+
+        if let Some(error) = extract_openapi_error(&raw_value, "获取文档原始内容") {
+            return Err(error);
+        }
+
+        let raw_text = raw_value
+            .get("data")
+            .and_then(|data| data.get("content"))
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| McpError::InvalidResponse("raw_content missing content".into()))?;
+
+        let blocks = raw_text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| RawBlock::Paragraph {
+                text: line.to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        Ok(RawDocument {
+            document_id: document_id.to_string(),
+            space_id: "wiki-openapi".into(),
+            title,
+            blocks: if blocks.is_empty() {
+                vec![RawBlock::Paragraph {
+                    text: raw_text.to_string(),
+                }]
+            } else {
+                blocks
+            },
+        })
+    }
+}
+
+impl ImageProvider for FeishuOpenApiClient {
+    fn fetch_image_resource(&self, media_id: &str) -> Result<ImageResource, McpError> {
+        Ok(ImageResource::RemoteUrl(format!(
+            "{}/open-apis/drive/v1/medias/{}",
+            self.config.endpoint.trim_end_matches('/'),
+            media_id
+        )))
+    }
+}
+
 pub fn fetch_with_retry(
     client: &FixtureMcpClient,
     document_id: &str,
@@ -175,6 +412,29 @@ pub fn fetch_with_retry(
     }
 
     Err(last_error.unwrap_or_else(|| McpError::Transport("Unknown MCP transport failure".into())))
+}
+
+pub fn fetch_openapi_with_retry(
+    client: &FeishuOpenApiClient,
+    document_id: &str,
+    retry_policy: &RetryPolicy,
+) -> Result<RawDocument, McpError> {
+    let mut last_error: Option<McpError> = None;
+
+    for attempt in 0..retry_policy.max_attempts.max(1) {
+        match client.fetch_document(document_id) {
+            Ok(document) => return Ok(document),
+            Err(McpError::Transport(message)) => {
+                last_error = Some(McpError::Transport(message));
+                if attempt + 1 < retry_policy.max_attempts.max(1) {
+                    thread::sleep(Duration::from_millis(retry_policy.backoff_ms));
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| McpError::Transport("Unknown Feishu OpenAPI failure".into())))
 }
 
 #[cfg(test)]

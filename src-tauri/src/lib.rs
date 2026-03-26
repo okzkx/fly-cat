@@ -6,9 +6,9 @@ mod sync;
 mod commands;
 
 use commands::{
-    authorize_mock_user, create_sync_task, delete_sync_task, get_app_bootstrap,
+    create_sync_task, delete_sync_task, get_app_bootstrap,
     get_runtime_info, list_sync_tasks, logout_user, retry_sync_task, resume_sync_tasks,
-    save_app_settings, start_sync_task, AppState,
+    save_app_settings, start_sync_task, validate_feishu_connection, AppState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,7 +19,7 @@ pub fn run() {
             get_runtime_info,
             get_app_bootstrap,
             save_app_settings,
-            authorize_mock_user,
+            validate_feishu_connection,
             logout_user,
             list_sync_tasks,
             create_sync_task,

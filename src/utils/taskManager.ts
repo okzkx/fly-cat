@@ -1,5 +1,4 @@
 export {
-  authorizeMockUser,
   getAppBootstrap,
   TASK_EVENTS,
   createSyncTask,
@@ -14,3 +13,4 @@ export {
   saveAppSettings,
   startSyncTask
 } from "@/utils/tauriRuntime";
+export { validateFeishuConnection } from "@/utils/tauriRuntime";
