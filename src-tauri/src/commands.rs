@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::{fs, path::PathBuf, sync::Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
@@ -61,6 +61,42 @@ fn now_iso() -> String {
     format!("{:?}", std::time::SystemTime::now())
 }
 
+fn tasks_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
+    Ok(app_data_dir.join("sync-tasks.json"))
+}
+
+fn load_tasks_from_disk(app: &AppHandle) -> Result<Vec<SyncTask>, String> {
+    let file_path = tasks_file_path(app)?;
+    if !file_path.exists() {
+        return Ok(vec![]);
+    }
+    let content = fs::read_to_string(&file_path).map_err(|err| err.to_string())?;
+    serde_json::from_str(&content).map_err(|err| err.to_string())
+}
+
+fn save_tasks_to_disk(app: &AppHandle, tasks: &[SyncTask]) -> Result<(), String> {
+    let file_path = tasks_file_path(app)?;
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let content = serde_json::to_string_pretty(tasks).map_err(|err| err.to_string())?;
+    fs::write(file_path, content).map_err(|err| err.to_string())
+}
+
+fn with_tasks<T, F>(app: &AppHandle, state: State<'_, AppState>, updater: F) -> Result<T, String>
+where
+    F: FnOnce(&mut Vec<SyncTask>) -> Result<T, String>,
+{
+    let mut tasks = state.tasks.lock().map_err(|err| err.to_string())?;
+    if tasks.is_empty() {
+        *tasks = load_tasks_from_disk(app)?;
+    }
+    let result = updater(&mut tasks)?;
+    save_tasks_to_disk(app, &tasks)?;
+    Ok(result)
+}
+
 fn emit_task_event(app: &AppHandle, event_name: &str, task: &SyncTask) {
     let _ = app.emit(event_name, task.clone());
 }
@@ -85,6 +121,11 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
             }
 
             if let Some(task) = maybe_emit {
+                {
+                    let state = app.state::<AppState>();
+                    let tasks = state.tasks.lock().expect("task state poisoned");
+                    let _ = save_tasks_to_disk(&app, &tasks);
+                }
                 emit_task_event(&app, "sync-progress", &task);
                 if step == 6 {
                     let state = app.state::<AppState>();
@@ -112,6 +153,11 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                         }
                     }
                     if let Some(task) = finished_task {
+                        {
+                            let state = app.state::<AppState>();
+                            let tasks = state.tasks.lock().expect("task state poisoned");
+                            let _ = save_tasks_to_disk(&app, &tasks);
+                        }
                         let event_name = if task.errors.is_empty() {
                             "sync-task-completed"
                         } else {
@@ -134,49 +180,57 @@ pub fn get_runtime_info() -> RuntimeInfo {
 }
 
 #[tauri::command]
-pub fn list_sync_tasks(state: State<'_, AppState>) -> Result<Vec<SyncTask>, String> {
-    let tasks = state.tasks.lock().map_err(|err| err.to_string())?;
+pub fn list_sync_tasks(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<SyncTask>, String> {
+    let mut tasks = state.tasks.lock().map_err(|err| err.to_string())?;
+    if tasks.is_empty() {
+        *tasks = load_tasks_from_disk(&app)?;
+    }
     Ok(tasks.clone())
 }
 
 #[tauri::command]
-pub fn create_sync_task(request: CreateSyncTaskRequest, state: State<'_, AppState>) -> Result<SyncTask, String> {
-    let task = SyncTask {
-        id: Uuid::new_v4().to_string(),
-        name: format!("同步任务 - {}", now_iso()),
-        selected_spaces: request.selected_spaces,
-        output_path: request.output_path,
-        status: "pending".into(),
-        progress: 0,
-        counters: SyncCounters {
-            total: 6,
-            processed: 0,
-            succeeded: 0,
-            skipped: 0,
-            failed: 0,
-        },
-        lifecycle_state: "idle".into(),
-        errors: vec![],
-        created_at: now_iso(),
-        updated_at: now_iso(),
-    };
+pub fn create_sync_task(
+    app: AppHandle,
+    request: CreateSyncTaskRequest,
+    state: State<'_, AppState>,
+) -> Result<SyncTask, String> {
+    with_tasks(&app, state, |tasks| {
+        let task = SyncTask {
+            id: Uuid::new_v4().to_string(),
+            name: format!("同步任务 - {}", now_iso()),
+            selected_spaces: request.selected_spaces,
+            output_path: request.output_path,
+            status: "pending".into(),
+            progress: 0,
+            counters: SyncCounters {
+                total: 6,
+                processed: 0,
+                succeeded: 0,
+                skipped: 0,
+                failed: 0,
+            },
+            lifecycle_state: "idle".into(),
+            errors: vec![],
+            created_at: now_iso(),
+            updated_at: now_iso(),
+        };
 
-    let mut tasks = state.tasks.lock().map_err(|err| err.to_string())?;
-    tasks.insert(0, task.clone());
-    Ok(task)
+        tasks.insert(0, task.clone());
+        Ok(task)
+    })
 }
 
 #[tauri::command]
-pub fn delete_sync_task(task_id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let mut tasks = state.tasks.lock().map_err(|err| err.to_string())?;
-    tasks.retain(|task| task.id != task_id);
-    Ok(())
+pub fn delete_sync_task(app: AppHandle, task_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    with_tasks(&app, state, |tasks| {
+        tasks.retain(|task| task.id != task_id);
+        Ok(())
+    })
 }
 
 #[tauri::command]
 pub fn retry_sync_task(task_id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    {
-        let mut tasks = state.tasks.lock().map_err(|err| err.to_string())?;
+    with_tasks(&app, state.clone(), |tasks| {
         if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
             task.status = "pending".into();
             task.progress = 0;
@@ -187,21 +241,22 @@ pub fn retry_sync_task(task_id: String, app: AppHandle, state: State<'_, AppStat
             task.errors.clear();
             task.updated_at = now_iso();
         }
-    }
+        Ok(())
+    })?;
     start_sync_task(task_id, app, state)
 }
 
 #[tauri::command]
 pub fn start_sync_task(task_id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    {
-        let mut tasks = state.tasks.lock().map_err(|err| err.to_string())?;
+    with_tasks(&app, state, |tasks| {
         if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
             task.status = "syncing".into();
             task.lifecycle_state = "syncing".into();
             task.updated_at = now_iso();
             emit_task_event(&app, "sync-status-changed", task);
         }
-    }
+        Ok(())
+    })?;
 
     spawn_sync_progress(task_id, app);
 
@@ -210,10 +265,13 @@ pub fn start_sync_task(task_id: String, app: AppHandle, state: State<'_, AppStat
 
 #[tauri::command]
 pub fn resume_sync_tasks(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<SyncTask>, String> {
-    let tasks = {
-        let tasks = state.tasks.lock().map_err(|err| err.to_string())?;
-        tasks.clone()
-    };
+    {
+        let mut tasks = state.tasks.lock().map_err(|err| err.to_string())?;
+        if tasks.is_empty() {
+            *tasks = load_tasks_from_disk(&app)?;
+        }
+    }
+    let tasks = state.tasks.lock().map_err(|err| err.to_string())?.clone();
 
     let resumable: Vec<SyncTask> = tasks
         .into_iter()

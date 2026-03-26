@@ -6,16 +6,16 @@
 
 ## 2. Reference Shell Alignment
 
-- [ ] 2.1 Rebuild the top-level app shell to match the reference project's Tauri + Ant Design layout, header, and page-switching structure.
-- [ ] 2.2 Restore the reference-style page decomposition (`SettingsPage`, `AuthPage`, `HomePage`, `TaskListPage`) and adapt each page from export semantics to sync semantics.
-- [ ] 2.3 Reintroduce the reference project's configuration guidance and dedicated auth flow, replacing export-related scope/help text with sync and MCP-oriented guidance.
+- [x] 2.1 Rebuild the top-level app shell to match the reference project's Tauri + Ant Design layout, header, and page-switching structure.
+- [x] 2.2 Restore the reference-style page decomposition (`SettingsPage`, `AuthPage`, `HomePage`, `TaskListPage`) and adapt each page from export semantics to sync semantics.
+- [x] 2.3 Reintroduce the reference project's configuration guidance and dedicated auth flow, replacing export-related scope/help text with sync and MCP-oriented guidance.
 - [ ] 2.4 Replace temporary/mock auth and task behaviors with Tauri-backed flows while preserving the same user-facing interaction rhythm as the reference project.
 
 ## 3. Backend Sync Orchestration
 
 - [ ] 3.1 Implement Rust-side sync commands that discover selected knowledge base documents and start synchronization tasks from the backend.
-- [ ] 3.2 Implement backend-owned task persistence and state restoration so sync tasks survive app refresh/restart in a reference-style task model.
-- [ ] 3.3 Emit Tauri events for sync progress, completion, partial failure, and retry/resume updates, and wire frontend listeners to them.
+- [x] 3.2 Implement backend-owned task persistence and state restoration so sync tasks survive app refresh/restart in a reference-style task model.
+- [x] 3.3 Emit Tauri events for sync progress, completion, partial failure, and retry/resume updates, and wire frontend listeners to them.
 
 ## 4. MCP Content Pipeline
 
@@ -33,9 +33,9 @@
 
 ## 6. UX and Task Experience
 
-- [ ] 6.1 Implement sync-oriented home-page actions for selecting knowledge base scopes and creating synchronization tasks.
-- [ ] 6.2 Implement task list views showing run-level and document-level progress, status, retry, and resume actions.
-- [ ] 6.3 Surface actionable sync error feedback in the UI, including failed-item diagnostics and recovery entry points.
+- [x] 6.1 Implement sync-oriented home-page actions for selecting knowledge base scopes and creating synchronization tasks.
+- [x] 6.2 Implement task list views showing run-level and document-level progress, status, retry, and resume actions.
+- [x] 6.3 Surface actionable sync error feedback in the UI, including failed-item diagnostics and recovery entry points.
 
 ## 7. Validation and Rollout
 
