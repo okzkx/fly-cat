@@ -114,6 +114,15 @@ Use it when the user wants the whole workflow handled for them rather than calli
    - assess delta spec sync state
    - prompt when archive safeguards require confirmation
    - archive the change only after the required checks
+   - after archive succeeds, generate a Chinese Markdown report at `openspec/changes/archive/YYYY-MM-DD-<name>/change-report.zh-CN.md`
+   - build the report from archived artifacts already present in that directory, especially `proposal.md`, `design.md`, `specs/**/*.md`, and `tasks.md`
+   - keep the report concise and user-facing; include at least:
+     - basic info (change name, schema, archive path)
+     - change motivation summary
+     - change scope summary
+     - spec impact summary
+     - task completion summary
+   - if `design.md` is missing, omit the design section instead of failing the workflow
 
 10. **Commit related changes**
 
@@ -166,6 +175,7 @@ On completion, summarize:
 - change name
 - whether validation passed
 - whether archive completed
+- whether `change-report.zh-CN.md` was generated
 - whether git commit succeeded
 - any remaining issues
 
@@ -177,3 +187,4 @@ On completion, summarize:
 - Keep code and artifact edits scoped to the chosen change
 - Never push unless the user explicitly asks
 - If the repo contains unrelated dirty changes, avoid mixing them into the final commit
+- Do not modify OpenSpec CLI/source code just to support report generation; generate the archive report as part of the skill-driven workflow
