@@ -24,6 +24,7 @@ export interface SyncScope {
   nodeToken?: string;
   documentId?: string;
   pathSegments: string[];
+  includesDescendants?: boolean;
 }
 
 export interface SyncSelectionSummary {
@@ -34,6 +35,8 @@ export interface SyncSelectionSummary {
   displayPath: string;
   documentCount: number;
   previewPaths: string[];
+  includesDescendants?: boolean;
+  rootCount?: number;
 }
 
 export interface KnowledgeBaseNode {

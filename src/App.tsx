@@ -9,7 +9,7 @@ import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
 import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
-import { dedupeSelectedSources, getEffectiveSelectedSources } from "@/utils/syncSelection";
+import { getEffectiveSelectedSources } from "@/utils/syncSelection";
 import {
   createSyncTask,
   getAppBootstrap,
@@ -23,7 +23,7 @@ import {
   startSyncTask,
   TASK_EVENTS
 } from "@/utils/taskManager";
-import { attachLoadedChildren, mergeDocumentSubtreeSelection } from "@/utils/treeSelection";
+import { attachLoadedChildren, normalizeDocumentRootSources, selectDocumentRootSources, unselectDocumentRootSources } from "@/utils/treeSelection";
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -300,7 +300,36 @@ export default function App(): React.JSX.Element {
                 syncRoot={syncTarget}
                 connectionValidation={connectionValidation}
                 onScopeChange={setSelectedScope}
-                onSelectedDocumentSourcesChange={setSelectedDocumentSources}
+                onToggleDocumentSource={async (scope, checked) => {
+                  let replacedCrossSpaceSelection = false;
+                  const normalizedScope =
+                    scope.kind === "document" && scope.includesDescendants && scope.nodeToken
+                      ? { ...scope, includesDescendants: true }
+                      : scope;
+
+                  if (normalizedScope.kind === "document" && normalizedScope.includesDescendants && normalizedScope.nodeToken) {
+                    const descendantNodes = await loadTreeBranch(normalizedScope.spaceId, normalizedScope.nodeToken);
+                    setLoadedSpaceTrees((current) => ({
+                      ...current,
+                      [normalizedScope.spaceId]: attachLoadedChildren(
+                        current[normalizedScope.spaceId] ?? [],
+                        normalizedScope.nodeToken!,
+                        descendantNodes
+                      )
+                    }));
+                  }
+
+                  setSelectedDocumentSources((current) => {
+                    if (checked) {
+                      const nextSelection = selectDocumentRootSources(current, normalizedScope);
+                      replacedCrossSpaceSelection = nextSelection.replacedCrossSpaceSelection;
+                      return nextSelection.sources;
+                    }
+                    return unselectDocumentRootSources(current, normalizedScope);
+                  });
+
+                  return { replacedCrossSpaceSelection };
+                }}
                 onLoadTreeChildren={async (spaceId, parentNodeToken) => {
                   if (!parentNodeToken && loadedSpaceTrees[spaceId]) {
                     return;
@@ -313,22 +342,6 @@ export default function App(): React.JSX.Element {
                       : nodes
                   }));
                 }}
-                onSelectDocumentSubtree={async (scope) => {
-                  if (scope.kind !== "document" || !scope.nodeToken) {
-                    setSelectedDocumentSources((current) => dedupeSelectedSources([...current, scope]));
-                    return 1;
-                  }
-
-                  const descendantNodes = await loadTreeBranch(scope.spaceId, scope.nodeToken);
-                  setLoadedSpaceTrees((current) => ({
-                    ...current,
-                    [scope.spaceId]: attachLoadedChildren(current[scope.spaceId] ?? [], scope.nodeToken!, descendantNodes)
-                  }));
-
-                  const subtreeSelectionCount = mergeDocumentSubtreeSelection([], scope, descendantNodes).length;
-                  setSelectedDocumentSources((current) => mergeDocumentSubtreeSelection(current, scope, descendantNodes));
-                  return subtreeSelectionCount;
-                }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
                 onCreateTask={async () => {
@@ -336,7 +349,10 @@ export default function App(): React.JSX.Element {
                   if (selectedSources.length === 0) {
                     return null;
                   }
-                  const task = await createSyncTask(selectedSources, syncTarget);
+                  const task = await createSyncTask(
+                    selectedDocumentSources.length > 0 ? normalizeDocumentRootSources(selectedDocumentSources) : selectedSources,
+                    syncTarget
+                  );
                   await startSyncTask(task.id);
                   setTasks(await getSyncTasks());
                   return { task };

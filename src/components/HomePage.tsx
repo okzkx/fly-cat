@@ -11,7 +11,8 @@ import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
 import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
-import { buildSelectionSummary, dedupeSelectedSources, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
+import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
+import { buildScopeFromNode, collectCoveredDescendantKeys } from "@/utils/treeSelection";
 
 const { Text } = Typography;
 
@@ -37,22 +38,6 @@ function buildSpaceScope(space: KnowledgeBaseSpace): SyncScope {
   };
 }
 
-function buildNodeScope(node: KnowledgeBaseNode): SyncScope | undefined {
-  if (node.kind === "bitable") {
-    return undefined;
-  }
-  return {
-    kind: node.kind,
-    spaceId: node.spaceId,
-    spaceName: node.spaceName,
-    title: node.title,
-    displayPath: node.displayPath,
-    nodeToken: node.nodeToken,
-    documentId: node.documentId,
-    pathSegments: node.pathSegments
-  };
-}
-
 function selectedKey(scope: SyncScope | null): string[] {
   if (!scope) {
     return [];
@@ -60,26 +45,33 @@ function selectedKey(scope: SyncScope | null): string[] {
   return [scopeKey(scope)];
 }
 
-function buildTreeNodes(nodes: KnowledgeBaseNode[]): ScopeTreeDataNode[] {
-  return nodes.map((node) => ({
-    title: node.title,
-    key: node.key,
-    isLeaf: !node.isExpandable,
-    selectable: node.kind !== "bitable",
-    disableCheckbox: node.kind !== "document",
-    nodeKind: node.kind,
-    spaceId: node.spaceId,
-    nodeToken: node.nodeToken,
-    hasChildren: node.hasChildren,
-    isExpandable: node.isExpandable,
-    scopeValue: buildNodeScope(node),
-    children: node.children && node.children.length > 0 ? buildTreeNodes(node.children) : undefined
-  }));
+function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledDocumentKeys: Set<string>): ScopeTreeDataNode[] {
+  return nodes.map((node) => {
+    const scopeValue = buildScopeFromNode(node) ?? undefined;
+    const isDisabledDocument =
+      node.kind === "document" && scopeValue ? disabledDocumentKeys.has(scopeKey(scopeValue)) : false;
+
+    return {
+      title: node.title,
+      key: node.key,
+      isLeaf: !node.isExpandable,
+      selectable: node.kind !== "bitable",
+      disableCheckbox: node.kind !== "document" || isDisabledDocument,
+      nodeKind: node.kind,
+      spaceId: node.spaceId,
+      nodeToken: node.nodeToken,
+      hasChildren: node.hasChildren,
+      isExpandable: node.isExpandable,
+      scopeValue,
+      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledDocumentKeys) : undefined
+    };
+  });
 }
 
 function buildTreeData(
   spaces: HomePageProps["spaces"],
-  loadedSpaceTrees: HomePageProps["loadedSpaceTrees"]
+  loadedSpaceTrees: HomePageProps["loadedSpaceTrees"],
+  selectedDocumentSources: SyncScope[]
 ): ScopeTreeDataNode[] {
   return [
     {
@@ -95,7 +87,12 @@ function buildTreeData(
         nodeKind: "space",
         spaceId: space.id,
         disableCheckbox: true,
-        children: loadedSpaceTrees[space.id] ? buildTreeNodes(loadedSpaceTrees[space.id]) : undefined
+        children: loadedSpaceTrees[space.id]
+          ? buildTreeNodes(
+              loadedSpaceTrees[space.id],
+              new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedDocumentSources))
+            )
+          : undefined
       }))
     }
   ];
@@ -121,9 +118,9 @@ function getSelectionLabel(selectionSummary: ReturnType<typeof buildSelectionSum
   }
   switch (selectionSummary.kind) {
     case "multi-document":
-      return "多篇文档";
+      return selectionSummary.includesDescendants ? "多个文档分支" : "多篇文档";
     case "document":
-      return "单个文档";
+      return selectionSummary.includesDescendants ? "文档分支" : "单个文档";
     case "folder":
       return "目录子树";
     case "space":
@@ -141,9 +138,8 @@ export default function HomePage({
   syncRoot,
   connectionValidation,
   onScopeChange,
-  onSelectedDocumentSourcesChange,
+  onToggleDocumentSource,
   onLoadTreeChildren,
-  onSelectDocumentSubtree,
   onOpenTasks,
   activeTaskSummary,
   onCreateTask
@@ -167,7 +163,7 @@ export default function HomePage({
     }
   };
 
-  const treeData = buildTreeData(spaces, loadedSpaceTrees);
+  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedDocumentSources);
 
   const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
     const node = info.node as ScopeTreeDataNode;
@@ -177,16 +173,6 @@ export default function HomePage({
   };
 
   const checkedDocumentKeys = selectedDocumentSources.map((source) => scopeKey(source));
-
-  const handleSelectDocumentSubtree = async (scope: SyncScope): Promise<void> => {
-    const replacedCrossSpaceSelection =
-      selectedDocumentSources.length > 0 && selectedDocumentSources.some((source) => source.spaceId !== scope.spaceId);
-    const selectedCount = await onSelectDocumentSubtree(scope);
-    if (replacedCrossSpaceSelection) {
-      message.info("已切换为当前知识库的父子文档选择。");
-    }
-    message.success(`已一键选中父文档及其子文档，共 ${selectedCount} 篇。`);
-  };
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -226,7 +212,11 @@ export default function HomePage({
               {selectionSummary?.kind === "multi-document" && (
                 <Space wrap>
                   <FileTextOutlined />
-                  <Text>{selectionSummary.documentCount} 篇文档</Text>
+                  <Text>
+                    {selectionSummary.includesDescendants
+                      ? `${selectionSummary.rootCount ?? selectionSummary.previewPaths.length} 个文档分支`
+                      : `${selectionSummary.documentCount} 篇文档`}
+                  </Text>
                   <Text type="secondary">{selectionSummary.previewPaths.join("；")}</Text>
                 </Space>
               )}
@@ -262,22 +252,16 @@ export default function HomePage({
                 await onLoadTreeChildren(node.spaceId, node.nodeToken);
               }}
               onCheck={(_checkedKeys, info) => {
-                const checkedNodes = dedupeSelectedSources(
-                  info.checkedNodes
-                    .map((checkedNode) => (checkedNode as ScopeTreeDataNode).scopeValue)
-                    .filter((scope): scope is SyncScope => Boolean(scope && scope.kind === "document"))
-                );
                 const changedNode = info.node as ScopeTreeDataNode;
                 const changedScope = changedNode.scopeValue;
-                const selectedSpaces = new Set(checkedNodes.map((scope) => scope.spaceId));
-
-                if (selectedSpaces.size > 1 && info.checked && changedScope?.kind === "document") {
-                  message.warning("一次只能多选同一知识库内的文档，已切换到当前知识库。");
-                  onSelectedDocumentSourcesChange([changedScope]);
+                if (!changedScope || changedScope.kind !== "document") {
                   return;
                 }
-
-                onSelectedDocumentSourcesChange(checkedNodes);
+                void onToggleDocumentSource(changedScope, info.checked).then(({ replacedCrossSpaceSelection }) => {
+                  if (replacedCrossSpaceSelection) {
+                    message.warning("一次只能多选同一知识库内的文档分支，已切换到当前知识库。");
+                  }
+                });
               }}
               onSelect={handleSelect}
               titleRender={(node) => {
@@ -311,20 +295,8 @@ export default function HomePage({
                     {nodeKind === "space" && <Tag color="purple">整库</Tag>}
                     {nodeKind === "folder" && <Tag color="gold">目录</Tag>}
                     {nodeKind === "document" && <Tag color="blue">文档</Tag>}
+                    {nodeKind === "document" && scope?.includesDescendants && <Tag color="geekblue">含子文档</Tag>}
                     {nodeKind === "bitable" && <Tag color="cyan">多维表格</Tag>}
-                    {nodeKind === "document" && treeNode.isExpandable && scope && (
-                      <Button
-                        type="link"
-                        size="small"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void handleSelectDocumentSubtree(scope);
-                        }}
-                      >
-                        一键选中父子文档
-                      </Button>
-                    )}
                   </Space>
                 );
               }}

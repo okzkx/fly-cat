@@ -11,17 +11,19 @@ export function scopeKey(scope: SyncScope): string {
 }
 
 export function dedupeSelectedSources(sources: SyncScope[]): SyncScope[] {
-  const seen = new Set<string>();
-  const deduped: SyncScope[] = [];
+  const deduped = new Map<string, SyncScope>();
   for (const source of sources) {
     const key = scopeKey(source);
-    if (seen.has(key)) {
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, source);
       continue;
     }
-    seen.add(key);
-    deduped.push(source);
+    if (source.includesDescendants && !existing.includesDescendants) {
+      deduped.set(key, source);
+    }
   }
-  return deduped;
+  return Array.from(deduped.values());
 }
 
 export function getEffectiveSelectedSources(selectedScope: SyncScope | null, selectedDocumentSources: SyncScope[]): SyncScope[] {
@@ -35,7 +37,11 @@ export function getLegacySelectedScope(selectedSources: SyncScope[]): SyncScope 
   return selectedSources.length === 1 ? selectedSources[0] : null;
 }
 
-export function buildSelectionSummary(selectedSources: SyncScope[], selectedScope?: SyncScope | null): SyncSelectionSummary | null {
+export function buildSelectionSummary(
+  selectedSources: SyncScope[],
+  selectedScope?: SyncScope | null,
+  options?: { effectiveDocumentCount?: number }
+): SyncSelectionSummary | null {
   const sources = dedupeSelectedSources(selectedSources);
   if (sources.length === 0) {
     return selectedScope
@@ -46,32 +52,44 @@ export function buildSelectionSummary(selectedSources: SyncScope[], selectedScop
           title: selectedScope.title,
           displayPath: selectedScope.displayPath,
           documentCount: selectedScope.kind === "document" ? 1 : 0,
-          previewPaths: [selectedScope.displayPath]
+          previewPaths: [selectedScope.displayPath],
+          includesDescendants: Boolean(selectedScope.includesDescendants),
+          rootCount: selectedScope.kind === "document" ? 1 : 0
         }
       : null;
   }
 
   if (sources.length === 1) {
     const source = sources[0];
+    const effectiveDocumentCount =
+      options?.effectiveDocumentCount ?? (source.kind === "document" ? 1 : 0);
     return {
       kind: source.kind,
       spaceId: source.spaceId,
       spaceName: source.spaceName,
       title: source.title,
       displayPath: source.displayPath,
-      documentCount: source.kind === "document" ? 1 : 0,
-      previewPaths: [source.displayPath]
+      documentCount: effectiveDocumentCount,
+      previewPaths: [source.displayPath],
+      includesDescendants: Boolean(source.includesDescendants),
+      rootCount: source.kind === "document" ? 1 : 0
     };
   }
 
   const [first] = sources;
+  const includesDescendants = sources.some((source) => source.includesDescendants);
+  const rootCount = sources.length;
   return {
     kind: "multi-document",
     spaceId: first.spaceId,
     spaceName: first.spaceName,
-    title: `${first.spaceName} 多文档同步`,
-    displayPath: `${first.spaceName}（已选 ${sources.length} 篇文档）`,
-    documentCount: sources.length,
-    previewPaths: sources.slice(0, 3).map((source) => source.displayPath)
+    title: includesDescendants ? `${first.spaceName} 文档分支同步` : `${first.spaceName} 多文档同步`,
+    displayPath: includesDescendants
+      ? `${first.spaceName}（已选 ${rootCount} 个文档分支）`
+      : `${first.spaceName}（已选 ${rootCount} 篇文档）`,
+    documentCount: options?.effectiveDocumentCount ?? rootCount,
+    previewPaths: sources.slice(0, 3).map((source) => source.displayPath),
+    includesDescendants,
+    rootCount
   };
 }

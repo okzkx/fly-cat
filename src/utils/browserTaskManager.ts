@@ -1,6 +1,7 @@
 import type { SyncTask } from "@/types/app";
 import type { KnowledgeBaseNode, SyncRunError, SyncScope } from "@/types/sync";
 import { buildSelectionSummary, dedupeSelectedSources, getLegacySelectedScope } from "@/utils/syncSelection";
+import { normalizeDocumentRootSources } from "@/utils/treeSelection";
 
 const TASK_STORAGE_KEY = "feishu_sync_tasks";
 
@@ -184,7 +185,8 @@ function buildNodeScope(node: KnowledgeBaseNode): SyncScope | null {
     displayPath: node.displayPath,
     nodeToken: node.nodeToken,
     documentId: node.documentId,
-    pathSegments: node.pathSegments
+    pathSegments: node.pathSegments,
+    includesDescendants: node.kind === "document" && node.hasChildren
   };
 }
 
@@ -206,6 +208,23 @@ function collectDocumentScopes(nodes: KnowledgeBaseNode[]): SyncScope[] {
 
 function scopesForSelectionSource(source: SyncScope): SyncScope[] {
   if (source.kind === "document") {
+    if (!source.includesDescendants) {
+      return [source];
+    }
+
+    const tree = SAMPLE_TREES[source.spaceId] ?? [];
+    const stack = [...tree];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) {
+        continue;
+      }
+      if (current.nodeToken === source.nodeToken) {
+        return collectDocumentScopes([current]);
+      }
+      stack.push(...(current.children ?? []));
+    }
+
     return [source];
   }
 
@@ -230,7 +249,10 @@ function scopesForSelectionSource(source: SyncScope): SyncScope[] {
 }
 
 function resolveSelectedSources(selectedSources: SyncScope[]): SyncScope[] {
-  return dedupeSelectedSources(selectedSources);
+  const normalized = dedupeSelectedSources(selectedSources);
+  return normalized.every((source) => source.kind === "document")
+    ? normalizeDocumentRootSources(normalized)
+    : normalized;
 }
 
 function discoverDocumentScopes(selectedSources: SyncScope[]): SyncScope[] {
@@ -239,7 +261,7 @@ function discoverDocumentScopes(selectedSources: SyncScope[]): SyncScope[] {
 }
 
 function countScopeDocuments(scope: SyncScope): number {
-  if (scope.kind === "document") {
+  if (scope.kind === "document" && !scope.includesDescendants) {
     return 1;
   }
 
@@ -266,7 +288,11 @@ function countScopeDocuments(scope: SyncScope): number {
 function normalizeTask(task: SyncTask): SyncTask {
   const selectedSources = resolveSelectedSources(task.selectedSources ?? (task.selectedScope ? [task.selectedScope] : []));
   const selectedScope = task.selectedScope ?? getLegacySelectedScope(selectedSources);
-  const selectionSummary = task.selectionSummary ?? buildSelectionSummary(selectedSources, selectedScope);
+  const selectionSummary =
+    task.selectionSummary ??
+    buildSelectionSummary(selectedSources, selectedScope, {
+      effectiveDocumentCount: task.counters.total > 0 ? task.counters.total : undefined
+    });
   const selectedSpaces =
     task.selectedSpaces.length > 0
       ? task.selectedSpaces
@@ -341,7 +367,9 @@ export function createSyncTask(selectedSources: SyncScope[], outputPath: string)
     selectedSpaces: Array.from(new Set(normalizedSources.map((source) => source.spaceId))),
     selectedSources: normalizedSources,
     selectedScope: legacyScope,
-    selectionSummary: buildSelectionSummary(normalizedSources, legacyScope),
+    selectionSummary: buildSelectionSummary(normalizedSources, legacyScope, {
+      effectiveDocumentCount: discoveredDocuments.length
+    }),
     outputPath,
     status: "pending",
     progress: 0,

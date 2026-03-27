@@ -67,15 +67,14 @@ Use it when the user wants the whole workflow handled for them rather than calli
    - Fix straightforward issues and re-run validation
    - If the fix is unclear or risky, pause and report the blocker
 
-5. **Pause after propose for complex work**
+5. **Continue automatically after propose**
 
-   If the request was classified as **complex**, stop here and ask whether to continue to implementation.
+   If proposal validation passes, continue directly to implementation without asking for confirmation, even for **complex** work.
 
-   Summarize:
-   - change name
-   - artifacts created
-   - validation result
-   - key assumptions or design choices
+   Only pause here if a defined pause condition applies, such as:
+   - the request is too ambiguous to propose safely
+   - validation cannot be repaired confidently
+   - the proposal/design reveals a blocker that needs a user decision
 
 6. **Run implementation workflow**
 
@@ -97,15 +96,15 @@ Use it when the user wants the whole workflow handled for them rather than calli
    - Repair obvious issues and re-run
    - Do not continue to archive while validation is still meaningfully broken unless the user explicitly approves
 
-8. **Pause after apply for complex work**
+8. **Continue automatically after apply**
 
-   If the request was classified as **complex**, stop here and ask whether to continue to `archive + git commit`.
+   If implementation validation passes, continue directly to `archive + git commit` without asking for confirmation, even for **complex** work.
 
-   Summarize:
-   - implementation progress
-   - completed tasks
-   - validation result
-   - any remaining risks
+   Only pause here if a defined pause condition applies, such as:
+   - implementation uncovers a design issue that should update artifacts first
+   - validation cannot be repaired confidently
+   - archiving would ignore meaningful unfinished work
+   - committing would mix in unrelated changes
 
 9. **Run archive workflow**
 
@@ -114,6 +113,11 @@ Use it when the user wants the whole workflow handled for them rather than calli
    - assess delta spec sync state
    - prompt when archive safeguards require confirmation
    - archive the change only after the required checks
+   - if the normal archive move fails because the change directory is access-denied or otherwise locked, use a safe fallback:
+     1. copy the full change directory into the intended archive target
+     2. verify key files (such as `.openspec.yaml` and `tasks.md`) exist in the archive copy
+     3. remove the original source directory only after verification succeeds
+     4. report clearly that archive completed via copy+delete fallback
 
 10. **Commit related changes**
 
@@ -134,19 +138,20 @@ Use it when the user wants the whole workflow handled for them rather than calli
 
 ## Default Behavior
 
-- **Simple request**: run the whole workflow continuously unless blocked
-- **Complex request**: pause twice
-  - once after `propose + validate`
-  - once after `apply + validate`
+- When the user explicitly invokes `openspec-all-in-one`, run the whole workflow continuously through `proposal -> validate -> apply -> validate -> archive -> git commit`.
+- Keep the `simple|complex` classification for risk awareness, progress reporting, and decision quality, but do **not** use complexity alone as a reason to pause.
+- Pause only when a listed pause condition or a repository safety rule requires user confirmation.
 
 ## Pause Conditions
 
 Pause and ask the user when:
 - the request is too ambiguous to propose safely
+- proposal, design, or implementation reveals a decision that materially changes scope or behavior
 - implementation uncovers a design change that should update artifacts first
 - validation cannot be repaired confidently
 - archiving would ignore meaningful unfinished work
 - committing would mix in unrelated changes
+- a git safety rule requires explicit user confirmation before continuing
 
 ## Output Format
 
@@ -173,7 +178,8 @@ On completion, summarize:
 
 - Reuse the existing OpenSpec skills' logic instead of inventing a parallel workflow
 - Always read CLI-provided context files before implementation
-- Prefer momentum on simple requests, but do not guess through ambiguity
+- Prefer end-to-end momentum whenever this skill is explicitly invoked, but do not guess through ambiguity
 - Keep code and artifact edits scoped to the chosen change
 - Never push unless the user explicitly asks
 - If the repo contains unrelated dirty changes, avoid mixing them into the final commit
+- When archive move fails due to filesystem locking, prefer verified copy+delete fallback over repeated blind retries

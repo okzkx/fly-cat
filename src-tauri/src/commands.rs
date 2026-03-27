@@ -120,6 +120,8 @@ pub struct SelectedSyncScope {
     pub document_id: Option<String>,
     #[serde(default)]
     pub path_segments: Vec<String>,
+    #[serde(default)]
+    pub includes_descendants: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -133,6 +135,10 @@ pub struct SyncSelectionSummary {
     pub document_count: u32,
     #[serde(default)]
     pub preview_paths: Vec<String>,
+    #[serde(default)]
+    pub includes_descendants: bool,
+    #[serde(default)]
+    pub root_count: u32,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -492,15 +498,56 @@ fn selected_source_key(source: &SelectedSyncScope) -> String {
 }
 
 fn dedupe_selected_sources(selected_sources: &[SelectedSyncScope]) -> Vec<SelectedSyncScope> {
-    let mut seen = HashSet::new();
-    let mut deduped = Vec::new();
+    let mut index_by_key: HashMap<String, usize> = HashMap::new();
+    let mut deduped: Vec<SelectedSyncScope> = Vec::new();
     for source in selected_sources {
         let key = selected_source_key(source);
-        if seen.insert(key) {
+        if let Some(index) = index_by_key.get(&key).copied() {
+            if let Some(existing) = deduped.get_mut(index) {
+                if source.includes_descendants && !existing.includes_descendants {
+                    *existing = source.clone();
+                }
+            }
+        } else {
+            index_by_key.insert(key, deduped.len());
             deduped.push(source.clone());
         }
     }
     deduped
+}
+
+fn source_covers_descendant(ancestor: &SelectedSyncScope, descendant: &SelectedSyncScope) -> bool {
+    ancestor.kind == "document"
+        && ancestor.includes_descendants
+        && descendant.kind == "document"
+        && ancestor.space_id == descendant.space_id
+        && ancestor.document_id != descendant.document_id
+        && ancestor.path_segments.len() < descendant.path_segments.len()
+        && ancestor
+            .path_segments
+            .iter()
+            .zip(descendant.path_segments.iter())
+            .all(|(ancestor_segment, descendant_segment)| ancestor_segment == descendant_segment)
+}
+
+fn normalize_document_root_sources(selected_sources: &[SelectedSyncScope]) -> Vec<SelectedSyncScope> {
+    let mut normalized = Vec::new();
+    for source in dedupe_selected_sources(selected_sources)
+        .into_iter()
+        .filter(|source| source.kind == "document")
+    {
+        if normalized
+            .iter()
+            .any(|existing| source_covers_descendant(existing, &source))
+        {
+            continue;
+        }
+        if source.includes_descendants {
+            normalized.retain(|existing| !source_covers_descendant(&source, existing));
+        }
+        normalized.push(source);
+    }
+    normalized
 }
 
 fn legacy_selected_scope(selected_sources: &[SelectedSyncScope]) -> Option<SelectedSyncScope> {
@@ -510,6 +557,7 @@ fn legacy_selected_scope(selected_sources: &[SelectedSyncScope]) -> Option<Selec
 fn build_selection_summary(
     selected_sources: &[SelectedSyncScope],
     selected_scope: Option<&SelectedSyncScope>,
+    effective_document_count: Option<u32>,
 ) -> Option<SyncSelectionSummary> {
     let sources = dedupe_selected_sources(selected_sources);
     if sources.is_empty() {
@@ -521,6 +569,8 @@ fn build_selection_summary(
             display_path: scope.display_path.clone(),
             document_count: u32::from(scope.kind == "document"),
             preview_paths: vec![scope.display_path.clone()],
+            includes_descendants: scope.includes_descendants,
+            root_count: u32::from(scope.kind == "document"),
         });
     }
 
@@ -532,20 +582,34 @@ fn build_selection_summary(
             space_name: source.space_name.clone(),
             title: source.title.clone(),
             display_path: source.display_path.clone(),
-            document_count: u32::from(source.kind == "document"),
+            document_count: effective_document_count.unwrap_or(u32::from(source.kind == "document")),
             preview_paths: vec![source.display_path.clone()],
+            includes_descendants: source.includes_descendants,
+            root_count: u32::from(source.kind == "document"),
         });
     }
 
     let first = &sources[0];
+    let includes_descendants = sources.iter().any(|source| source.includes_descendants);
+    let root_count = sources.len() as u32;
     Some(SyncSelectionSummary {
         kind: "multi-document".into(),
         space_id: first.space_id.clone(),
         space_name: first.space_name.clone(),
-        title: format!("{} 多文档同步", first.space_name),
-        display_path: format!("{}（已选 {} 篇文档）", first.space_name, sources.len()),
-        document_count: sources.len() as u32,
+        title: if includes_descendants {
+            format!("{} 文档分支同步", first.space_name)
+        } else {
+            format!("{} 多文档同步", first.space_name)
+        },
+        display_path: if includes_descendants {
+            format!("{}（已选 {} 个文档分支）", first.space_name, root_count)
+        } else {
+            format!("{}（已选 {} 篇文档）", first.space_name, root_count)
+        },
+        document_count: effective_document_count.unwrap_or(root_count),
         preview_paths: sources.iter().take(3).map(|source| source.display_path.clone()).collect(),
+        includes_descendants,
+        root_count,
     })
 }
 
@@ -567,7 +631,13 @@ fn normalize_task(task: &mut SyncTask, app: &AppHandle) -> Result<(), String> {
     task.selection_summary = task
         .selection_summary
         .clone()
-        .or_else(|| build_selection_summary(&task.selected_sources, task.selected_scope.as_ref()));
+        .or_else(|| {
+            build_selection_summary(
+                &task.selected_sources,
+                task.selected_scope.as_ref(),
+                (task.counters.total > 0).then_some(task.counters.total),
+            )
+        });
     if !Path::new(&task.output_path).is_absolute() {
         task.output_path = resolve_sync_root_string(app, &task.output_path)?;
     }
@@ -596,13 +666,23 @@ fn normalize_task(task: &mut SyncTask, app: &AppHandle) -> Result<(), String> {
 
 fn effective_selected_sources(task: &SyncTask) -> Vec<SelectedSyncScope> {
     if !task.selected_sources.is_empty() {
-        return dedupe_selected_sources(&task.selected_sources);
+        let deduped = dedupe_selected_sources(&task.selected_sources);
+        return if deduped.iter().all(|source| source.kind == "document") {
+            normalize_document_root_sources(&deduped)
+        } else {
+            deduped
+        };
     }
     task.selected_scope.clone().into_iter().collect()
 }
 
 fn validate_selected_sources(selected_sources: &[SelectedSyncScope]) -> Result<Vec<SelectedSyncScope>, String> {
-    let normalized = dedupe_selected_sources(selected_sources);
+    let deduped = dedupe_selected_sources(selected_sources);
+    let normalized = if deduped.iter().all(|source| source.kind == "document") {
+        normalize_document_root_sources(&deduped)
+    } else {
+        deduped
+    };
     if normalized.is_empty() {
         return Err("请先选择一个同步范围。".into());
     }
@@ -863,6 +943,10 @@ fn fixture_documents_for_scope(scope: &SelectedSyncScope) -> Vec<SyncSourceDocum
         ],
         ("kb-product", "document", Some("doc-product-overview"), _) => vec![
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-overview", "doc-product-overview", &["方案库", "Product Overview"], "v3", "2026-03-27T11:00:00Z"),
+        ],
+        ("kb-product", "document", Some("doc-product-roadmap"), _) if scope.includes_descendants => vec![
+            make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品方案总览"], "v4", "2026-03-27T11:05:00Z"),
+            make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap-h1", "doc-product-roadmap-h1", &["方案库", "产品方案总览", "2026 H1 路线图"], "v5", "2026-03-27T11:10:00Z"),
         ],
         ("kb-product", "document", Some("doc-product-roadmap"), _) => vec![
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品方案总览"], "v4", "2026-03-27T11:05:00Z"),
@@ -1339,6 +1423,7 @@ fn build_scope_from_node(node: &KnowledgeBaseNode) -> SelectedSyncScope {
         node_token: Some(node.node_token.clone()),
         document_id: node.document_id.clone(),
         path_segments: node.path_segments.clone(),
+        includes_descendants: node.kind == "document" && node.has_children,
     }
 }
 
@@ -1352,6 +1437,7 @@ fn build_space_scope(space: &KnowledgeBaseSpace) -> SelectedSyncScope {
         node_token: None,
         document_id: None,
         path_segments: vec![],
+        includes_descendants: false,
     }
 }
 
@@ -1513,13 +1599,65 @@ fn discover_documents_from_openapi(
         .ok_or_else(|| "Feishu OpenAPI user session missing".to_string())?;
     let client = FeishuOpenApiClient::new(config);
 
+    fn collect_documents_from_child_nodes(
+        client: &FeishuOpenApiClient,
+        scope: &SelectedSyncScope,
+        base_path: &[String],
+    ) -> Result<Vec<SyncSourceDocument>, String> {
+        let nodes = client
+            .list_child_nodes(&scope.space_id, scope.node_token.as_deref())
+            .map_err(|err| err.to_string())?;
+        let mut documents = Vec::new();
+
+        for node in nodes {
+            let mut path_segments = base_path.to_vec();
+            path_segments.push(node.title.clone());
+            let kind = node_kind_from_obj_type(&node.obj_type, node.has_child);
+            let is_expandable = is_expandable_node(&kind, node.has_child);
+
+            if kind == "document" {
+                let summary = client
+                    .fetch_document_summary(&node.obj_token)
+                    .map_err(|err| err.to_string())?;
+                documents.push(SyncSourceDocument {
+                    document_id: node.obj_token.clone(),
+                    space_id: node.space_id.clone(),
+                    space_name: scope.space_name.clone(),
+                    node_token: node.node_token.clone(),
+                    title: summary.title,
+                    version: summary.version,
+                    update_time: summary.update_time,
+                    source_path: join_display_path(&scope.space_name, &path_segments).replace(" / ", "/"),
+                    path_segments: path_segments.clone(),
+                });
+            }
+
+            if is_expandable {
+                let child_scope = SelectedSyncScope {
+                    kind: if kind == "document" { "document".into() } else { "folder".into() },
+                    space_id: scope.space_id.clone(),
+                    space_name: scope.space_name.clone(),
+                    title: node.title.clone(),
+                    display_path: join_display_path(&scope.space_name, &path_segments),
+                    node_token: Some(node.node_token.clone()),
+                    document_id: (kind == "document").then_some(node.obj_token.clone()),
+                    path_segments: path_segments.clone(),
+                    includes_descendants: kind == "document",
+                };
+                documents.extend(collect_documents_from_child_nodes(client, &child_scope, &path_segments)?);
+            }
+        }
+
+        Ok(documents)
+    }
+
     if selected_scope.kind == "document" {
         let document_id = selected_scope
             .document_id
             .as_deref()
             .ok_or_else(|| "缺少文档标识，无法创建同步任务。".to_string())?;
         let summary = client.fetch_document_summary(document_id).map_err(|err| err.to_string())?;
-        return Ok(vec![SyncSourceDocument {
+        let mut documents = vec![SyncSourceDocument {
             document_id: document_id.to_string(),
             space_id: selected_scope.space_id.clone(),
             space_name: selected_scope.space_name.clone(),
@@ -1529,7 +1667,15 @@ fn discover_documents_from_openapi(
             update_time: summary.update_time,
             source_path: join_display_path(&selected_scope.space_name, &selected_scope.path_segments).replace(" / ", "/"),
             path_segments: selected_scope.path_segments.clone(),
-        }]);
+        }];
+        if selected_scope.includes_descendants {
+            documents.extend(collect_documents_from_child_nodes(
+                &client,
+                selected_scope,
+                &selected_scope.path_segments,
+            )?);
+        }
+        return Ok(documents);
     }
 
     let base_path = if selected_scope.kind == "folder" {
@@ -1537,50 +1683,7 @@ fn discover_documents_from_openapi(
     } else {
         vec![]
     };
-    let nodes = client
-        .list_child_nodes(&selected_scope.space_id, selected_scope.node_token.as_deref())
-        .map_err(|err| err.to_string())?;
-    let mut documents = Vec::new();
-
-    for node in nodes {
-        let mut path_segments = base_path.clone();
-        path_segments.push(node.title.clone());
-        let kind = node_kind_from_obj_type(&node.obj_type, node.has_child);
-        let is_expandable = is_expandable_node(&kind, node.has_child);
-
-        if kind == "document" {
-            let summary = client
-                .fetch_document_summary(&node.obj_token)
-                .map_err(|err| err.to_string())?;
-            documents.push(SyncSourceDocument {
-                document_id: node.obj_token.clone(),
-                space_id: node.space_id.clone(),
-                space_name: selected_scope.space_name.clone(),
-                node_token: node.node_token.clone(),
-                title: summary.title,
-                version: summary.version,
-                update_time: summary.update_time,
-                source_path: join_display_path(&selected_scope.space_name, &path_segments).replace(" / ", "/"),
-                path_segments: path_segments.clone(),
-            });
-        }
-
-        if is_expandable {
-            let child_scope = SelectedSyncScope {
-                kind: "folder".into(),
-                space_id: selected_scope.space_id.clone(),
-                space_name: selected_scope.space_name.clone(),
-                title: node.title.clone(),
-                display_path: join_display_path(&selected_scope.space_name, &path_segments),
-                node_token: Some(node.node_token.clone()),
-                document_id: None,
-                path_segments,
-            };
-            documents.extend(discover_documents_from_openapi(&child_scope, settings, session)?);
-        }
-    }
-
-    Ok(documents)
+    collect_documents_from_child_nodes(&client, selected_scope, &base_path)
 }
 
 fn discover_documents_from_sources(
@@ -1670,6 +1773,7 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                                 node_token: None,
                                 document_id: None,
                                 path_segments: vec![],
+                                includes_descendants: false,
                             }]
                         })
                     })
@@ -1760,8 +1864,11 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
                     task.selected_sources = selected_sources.clone().unwrap_or_default();
                     task.selected_scope = selected_scope.clone();
-                    task.selection_summary =
-                        build_selection_summary(&task.selected_sources, task.selected_scope.as_ref());
+                    task.selection_summary = build_selection_summary(
+                        &task.selected_sources,
+                        task.selected_scope.as_ref(),
+                        (task.counters.total > 0).then_some(task.counters.total),
+                    );
                     task.progress = 100;
                     task.counters.total = task.counters.total.max(1);
                     task.counters.processed = task.counters.total;
@@ -1827,7 +1934,11 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
             if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
                 task.selected_sources = selected_sources.clone().unwrap_or_default();
                 task.selected_scope = selected_scope.clone();
-                task.selection_summary = build_selection_summary(&task.selected_sources, task.selected_scope.as_ref());
+                task.selection_summary = build_selection_summary(
+                    &task.selected_sources,
+                    task.selected_scope.as_ref(),
+                    (task.counters.total > 0).then_some(task.counters.total),
+                );
                 task.counters.total = (queued_documents.len() + skipped_documents.len()).max(1) as u32;
                 task.counters.processed = skipped_documents.len() as u32;
                 task.counters.skipped = skipped_documents.len() as u32;
@@ -2133,7 +2244,11 @@ pub fn create_sync_task(
                 .collect(),
             selected_sources: selected_sources.clone(),
             selected_scope: legacy_scope.clone(),
-            selection_summary: build_selection_summary(&selected_sources, legacy_scope.as_ref()),
+            selection_summary: build_selection_summary(
+                &selected_sources,
+                legacy_scope.as_ref(),
+                Some(total),
+            ),
             output_path: resolved_output_path,
             status: "pending".into(),
             progress: 0,
@@ -2280,6 +2395,7 @@ mod tests {
             node_token: Some(format!("node-{document_id}")),
             document_id: Some(document_id.into()),
             path_segments: vec![title.into()],
+            includes_descendants: false,
         }
     }
 
@@ -2374,12 +2490,26 @@ mod tests {
             sample_document_scope("kb-eng", "研发知识库", "doc-b", "B"),
         ];
 
-        let summary = build_selection_summary(&selected_sources, None).expect("summary should exist");
+        let summary = build_selection_summary(&selected_sources, None, None).expect("summary should exist");
 
         assert_eq!(summary.kind, "multi-document");
         assert_eq!(summary.space_id, "kb-eng");
         assert_eq!(summary.document_count, 2);
         assert_eq!(summary.preview_paths.len(), 2);
+    }
+
+    #[test]
+    fn builds_subtree_selection_summary_with_effective_document_count() {
+        let mut selected_scope = sample_document_scope("kb-product", "产品知识库", "doc-product-roadmap", "产品方案总览");
+        selected_scope.path_segments = vec!["方案库".into(), "产品方案总览".into()];
+        selected_scope.includes_descendants = true;
+
+        let summary = build_selection_summary(&[selected_scope], None, Some(2)).expect("summary should exist");
+
+        assert_eq!(summary.kind, "document");
+        assert!(summary.includes_descendants);
+        assert_eq!(summary.document_count, 2);
+        assert_eq!(summary.root_count, 1);
     }
 
     #[test]

@@ -97,9 +97,11 @@ export interface HomePageProps {
   syncRoot: string;
   connectionValidation: ConnectionValidation | null;
   onScopeChange: (scope: SyncScope) => void;
-  onSelectedDocumentSourcesChange: (sources: SyncScope[]) => void;
+  onToggleDocumentSource: (
+    source: SyncScope,
+    checked: boolean
+  ) => Promise<{ replacedCrossSpaceSelection: boolean }>;
   onLoadTreeChildren: (spaceId: string, parentNodeToken?: string) => Promise<void>;
-  onSelectDocumentSubtree: (scope: SyncScope) => Promise<number>;
   onOpenTasks: () => void;
   activeTaskSummary: string;
   onCreateTask: () => Promise<HomeSyncResult | null>;

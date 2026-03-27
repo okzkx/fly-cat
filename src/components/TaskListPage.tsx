@@ -88,9 +88,13 @@ function scopeLabel(task: SyncTask): string {
   if (selectionSummary) {
     switch (selectionSummary.kind) {
       case "multi-document":
-        return `多篇文档: ${selectionSummary.spaceName}（${selectionSummary.documentCount} 篇）`;
+        return selectionSummary.includesDescendants
+          ? `多个文档分支: ${selectionSummary.spaceName}（${selectionSummary.documentCount} 篇文档）`
+          : `多篇文档: ${selectionSummary.spaceName}（${selectionSummary.documentCount} 篇）`;
       case "document":
-        return `文档: ${selectionSummary.displayPath}`;
+        return selectionSummary.includesDescendants
+          ? `文档分支: ${selectionSummary.displayPath}`
+          : `文档: ${selectionSummary.displayPath}`;
       case "folder":
         return `目录: ${selectionSummary.displayPath}`;
       default:
@@ -247,11 +251,15 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
             expandedRowRender: (record) => (
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 <Text>同步范围：{scopeLabel(record)}</Text>
+                {record.selectionSummary?.includesDescendants && record.selectionSummary.kind === "document" && (
+                  <Text type="secondary">该文档分支共解析 {record.selectionSummary.documentCount} 篇文档。</Text>
+                )}
                 {record.selectionSummary?.kind === "multi-document" && (
                   <Text type="secondary">
-                    已选文档：{record.selectionSummary.previewPaths.join("；")}
+                    {record.selectionSummary.includesDescendants ? "已选分支：" : "已选文档："}
+                    {record.selectionSummary.previewPaths.join("；")}
                     {record.selectionSummary.documentCount > record.selectionSummary.previewPaths.length
-                      ? ` 等 ${record.selectionSummary.documentCount} 篇`
+                      ? ` 等 ${record.selectionSummary.documentCount}${record.selectionSummary.includesDescendants ? " 篇文档" : " 篇"}`
                       : ""}
                   </Text>
                 )}
