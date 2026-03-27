@@ -114,6 +114,7 @@ Use it when the user wants the whole workflow handled for them rather than calli
    - assess delta spec sync state
    - prompt when archive safeguards require confirmation
    - archive the change only after the required checks
+   - use the repository-supported archive entry so the archived directory receives `change-report.zh-CN.md`
 
 10. **Commit related changes**
 
@@ -177,3 +178,4 @@ On completion, summarize:
 - Keep code and artifact edits scoped to the chosen change
 - Never push unless the user explicitly asks
 - If the repo contains unrelated dirty changes, avoid mixing them into the final commit
+- When archive succeeds, ensure `change-report.zh-CN.md` exists in the archived directory

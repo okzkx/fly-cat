@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "openspec:archive": "node scripts/run-openspec-archive.mjs",
+    "openspec:archive-report": "node scripts/generate-archive-report.mjs",
     "preview": "vite preview",
     "tauri": "node scripts/run-tauri.mjs",
     "typecheck": "tsc --noEmit",

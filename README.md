@@ -94,6 +94,28 @@ npm run test
 npm run typecheck
 ```
 
+### OpenSpec 归档报告
+
+归档 OpenSpec change 时，优先使用仓库提供的包装入口：
+
+```bash
+npm run openspec:archive -- <change-name> --yes
+```
+
+这个入口会先执行 `openspec archive`，成功后自动在归档目录内生成 `change-report.zh-CN.md`。
+
+如果需要为历史归档补生成中文报告，可以执行：
+
+```bash
+npm run openspec:archive-report -- --change <change-name>
+```
+
+如果你已经知道具体归档目录，也可以改用：
+
+```bash
+npm run openspec:archive-report -- --archive-dir "openspec/changes/archive/YYYY-MM-DD-<change-name>"
+```
+
 ## 项目结构
 
 ```

@@ -72,11 +72,13 @@ Archive a completed change in the experimental workflow.
 
    **Check if target already exists:**
    - If yes: Fail with error, suggest renaming existing archive or using different date
-   - If no: Move the change directory to archive
+   - If no: run the repository-supported archive entry so the archived directory also gets a Chinese summary report
 
    ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+   npm run openspec:archive -- <name> --yes
    ```
+
+   This repository-supported entry MUST generate `change-report.zh-CN.md` inside the archived directory after archive succeeds.
 
 6. **Display summary**
 
@@ -85,7 +87,8 @@ Archive a completed change in the experimental workflow.
    - Schema that was used
    - Archive location
    - Spec sync status (synced / sync skipped / no delta specs)
-   - Note about any warnings (incomplete artifacts/tasks)
+  - Note about any warnings (incomplete artifacts/tasks)
+  - Generated report path
 
 **Output On Success**
 
@@ -96,6 +99,7 @@ Archive a completed change in the experimental workflow.
 **Schema:** <schema-name>
 **Archived to:** openspec/changes/archive/YYYY-MM-DD-<name>/
 **Specs:** ✓ Synced to main specs
+**Report:** ✓ change-report.zh-CN.md generated
 
 All artifacts complete. All tasks complete.
 ```
@@ -109,6 +113,7 @@ All artifacts complete. All tasks complete.
 **Schema:** <schema-name>
 **Archived to:** openspec/changes/archive/YYYY-MM-DD-<name>/
 **Specs:** No delta specs
+**Report:** ✓ change-report.zh-CN.md generated
 
 All artifacts complete. All tasks complete.
 ```
@@ -122,6 +127,7 @@ All artifacts complete. All tasks complete.
 **Schema:** <schema-name>
 **Archived to:** openspec/changes/archive/YYYY-MM-DD-<name>/
 **Specs:** Sync skipped (user chose to skip)
+**Report:** ✓ change-report.zh-CN.md generated
 
 **Warnings:**
 - Archived with 2 incomplete artifacts
@@ -155,3 +161,4 @@ Target archive directory already exists.
 - Show clear summary of what happened
 - If sync is requested, use the Skill tool to invoke `openspec-sync-specs` (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
+- Use the repository-supported archive entry so archived changes receive `change-report.zh-CN.md`

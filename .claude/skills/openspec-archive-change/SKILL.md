@@ -76,11 +76,13 @@ Archive a completed change in the experimental workflow.
 
    **Check if target already exists:**
    - If yes: Fail with error, suggest renaming existing archive or using different date
-   - If no: Move the change directory to archive
+   - If no: run the repository-supported archive entry so the archived directory also gets a Chinese summary report
 
    ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+   npm run openspec:archive -- <name> --yes
    ```
+
+   This repository-supported entry MUST generate `change-report.zh-CN.md` inside the archived directory after archive succeeds.
 
 6. **Display summary**
 
@@ -90,6 +92,7 @@ Archive a completed change in the experimental workflow.
    - Archive location
    - Whether specs were synced (if applicable)
    - Note about any warnings (incomplete artifacts/tasks)
+   - Generated report path
 
 **Output On Success**
 
@@ -100,6 +103,7 @@ Archive a completed change in the experimental workflow.
 **Schema:** <schema-name>
 **Archived to:** openspec/changes/archive/YYYY-MM-DD-<name>/
 **Specs:** ✓ Synced to main specs (or "No delta specs" or "Sync skipped")
+**Report:** ✓ change-report.zh-CN.md generated
 
 All artifacts complete. All tasks complete.
 ```
@@ -112,3 +116,4 @@ All artifacts complete. All tasks complete.
 - Show clear summary of what happened
 - If sync is requested, use openspec-sync-specs approach (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
+- Use the repository-supported archive entry so archived changes receive `change-report.zh-CN.md`
