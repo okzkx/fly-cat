@@ -99,6 +99,7 @@ export interface HomePageProps {
   onScopeChange: (scope: SyncScope) => void;
   onSelectedDocumentSourcesChange: (sources: SyncScope[]) => void;
   onLoadTreeChildren: (spaceId: string, parentNodeToken?: string) => Promise<void>;
+  onSelectDocumentSubtree: (scope: SyncScope) => Promise<number>;
   onOpenTasks: () => void;
   activeTaskSummary: string;
   onCreateTask: () => Promise<HomeSyncResult | null>;

@@ -16,6 +16,7 @@ import {
   resumeSyncTasks
 } from "@/utils/taskManager";
 import { getFriendlyFailureSummary, parsePermissionFailure } from "@/utils/syncFailurePresentation";
+import { buildSelectionSummary } from "@/utils/syncSelection";
 
 const { Link, Paragraph, Text } = Typography;
 
@@ -83,6 +84,19 @@ function statusToTag(status: SyncTask["status"]): { color: string; text: string 
 }
 
 function scopeLabel(task: SyncTask): string {
+  const selectionSummary = task.selectionSummary ?? buildSelectionSummary(task.selectedSources ?? [], task.selectedScope);
+  if (selectionSummary) {
+    switch (selectionSummary.kind) {
+      case "multi-document":
+        return `多篇文档: ${selectionSummary.spaceName}（${selectionSummary.documentCount} 篇）`;
+      case "document":
+        return `文档: ${selectionSummary.displayPath}`;
+      case "folder":
+        return `目录: ${selectionSummary.displayPath}`;
+      default:
+        return `知识库: ${selectionSummary.displayPath}`;
+    }
+  }
   if (!task.selectedScope) {
     return task.selectedSpaces.join(", ") || "未记录范围";
   }
@@ -228,10 +242,19 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
           pagination={false}
           locale={{ emptyText: "暂无同步任务" }}
           expandable={{
-            rowExpandable: (record) => Boolean(record.selectedScope || record.failureSummary || record.errors.length > 0),
+            rowExpandable: (record) =>
+              Boolean(record.selectedScope || record.selectionSummary || record.failureSummary || record.errors.length > 0),
             expandedRowRender: (record) => (
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 <Text>同步范围：{scopeLabel(record)}</Text>
+                {record.selectionSummary?.kind === "multi-document" && (
+                  <Text type="secondary">
+                    已选文档：{record.selectionSummary.previewPaths.join("；")}
+                    {record.selectionSummary.documentCount > record.selectionSummary.previewPaths.length
+                      ? ` 等 ${record.selectionSummary.documentCount} 篇`
+                      : ""}
+                  </Text>
+                )}
                 <Text>输出目录：{record.outputPath}</Text>
                 {record.failureSummary && (
                   <Alert

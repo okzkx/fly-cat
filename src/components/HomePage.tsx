@@ -21,6 +21,8 @@ type ScopeTreeDataNode = DataNode & {
   nodeKind?: KnowledgeBaseNode["kind"] | "space";
   spaceId?: string;
   nodeToken?: string;
+  hasChildren?: boolean;
+  isExpandable?: boolean;
   children?: ScopeTreeDataNode[];
 };
 
@@ -68,6 +70,8 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[]): ScopeTreeDataNode[] {
     nodeKind: node.kind,
     spaceId: node.spaceId,
     nodeToken: node.nodeToken,
+    hasChildren: node.hasChildren,
+    isExpandable: node.isExpandable,
     scopeValue: buildNodeScope(node),
     children: node.children && node.children.length > 0 ? buildTreeNodes(node.children) : undefined
   }));
@@ -139,6 +143,7 @@ export default function HomePage({
   onScopeChange,
   onSelectedDocumentSourcesChange,
   onLoadTreeChildren,
+  onSelectDocumentSubtree,
   onOpenTasks,
   activeTaskSummary,
   onCreateTask
@@ -172,6 +177,16 @@ export default function HomePage({
   };
 
   const checkedDocumentKeys = selectedDocumentSources.map((source) => scopeKey(source));
+
+  const handleSelectDocumentSubtree = async (scope: SyncScope): Promise<void> => {
+    const replacedCrossSpaceSelection =
+      selectedDocumentSources.length > 0 && selectedDocumentSources.some((source) => source.spaceId !== scope.spaceId);
+    const selectedCount = await onSelectDocumentSubtree(scope);
+    if (replacedCrossSpaceSelection) {
+      message.info("已切换为当前知识库的父子文档选择。");
+    }
+    message.success(`已一键选中父文档及其子文档，共 ${selectedCount} 篇。`);
+  };
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -297,6 +312,19 @@ export default function HomePage({
                     {nodeKind === "folder" && <Tag color="gold">目录</Tag>}
                     {nodeKind === "document" && <Tag color="blue">文档</Tag>}
                     {nodeKind === "bitable" && <Tag color="cyan">多维表格</Tag>}
+                    {nodeKind === "document" && treeNode.isExpandable && scope && (
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void handleSelectDocumentSubtree(scope);
+                        }}
+                      >
+                        一键选中父子文档
+                      </Button>
+                    )}
                   </Space>
                 );
               }}

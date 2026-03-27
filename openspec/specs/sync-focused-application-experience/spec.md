@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Sync-Oriented Interaction Flow
-The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync scope together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, and MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances.
+The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync sources together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, and MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances.
 
 #### Scenario: Start sync from dedicated action
 - **WHEN** a user enters the document assistant and selects knowledge base sources
@@ -12,11 +12,15 @@ The application MUST present synchronization as a primary workflow distinct from
 
 #### Scenario: Select directory or document scope inside knowledge base
 - **WHEN** a user configures a synchronization source from an accessible knowledge base
-- **THEN** the UI allows choosing the whole knowledge base, a directory subtree, or an individual document as the sync scope
+- **THEN** the UI allows choosing the whole knowledge base, a directory subtree, an individual document, or multiple document nodes from that same knowledge base
+
+#### Scenario: One-click select parent document subtree
+- **WHEN** a document node has descendant documents and the user wants to include that whole branch in the current multi-select set
+- **THEN** the UI provides a one-click action that selects the parent document together with all descendant document nodes from that branch
 
 #### Scenario: Show scoped source context
 - **WHEN** a user reviews sync configuration before execution
-- **THEN** the UI displays the selected knowledge base scope and the effective local sync target that will receive synchronized Markdown output in the mirrored source structure
+- **THEN** the UI displays whether the selection is a whole knowledge base, a directory subtree, a single document, or a multi-document set, together with the effective local sync target that will receive synchronized Markdown output in the mirrored source structure
 
 #### Scenario: Preserve reference home-page role
 - **WHEN** the user reaches the primary workspace after authentication
@@ -35,7 +39,7 @@ The application MUST present synchronization as a primary workflow distinct from
 - **THEN** the UI renders it as a non-directory leaf node without folder-style expansion affordances
 
 ### Requirement: Sync Lifecycle Status Visibility
-The application MUST expose synchronization lifecycle states and progress at document and run levels, and MUST display trustworthy task timestamps, selected source-scope context, and output-location context in task history.
+The application MUST expose synchronization lifecycle states and progress at document and run levels, and MUST display trustworthy task timestamps, selected source context, and output-location context in task history.
 
 #### Scenario: Show active sync progress
 - **WHEN** a sync run is in progress
@@ -59,7 +63,7 @@ The application MUST expose synchronization lifecycle states and progress at doc
 
 #### Scenario: Task history shows selected source scope
 - **WHEN** a user inspects a sync task in the task list
-- **THEN** the task view shows whether the run targeted a whole knowledge base, a directory subtree, or an individual document, including the selected source path when applicable
+- **THEN** the task view shows whether the run targeted a whole knowledge base, a directory subtree, a single document, or a multi-document set, including the selected knowledge base and a trustworthy summary of the selected document count or paths when multiple documents were chosen
 
 ### Requirement: Error Transparency and Retry Guidance
 The application MUST provide actionable error feedback and retry entry points for failed sync items, including concise stage-aware diagnostics when failures occur repeatedly.

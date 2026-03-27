@@ -8,7 +8,7 @@ import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
 import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
-import { getEffectiveSelectedSources } from "@/utils/syncSelection";
+import { dedupeSelectedSources, getEffectiveSelectedSources } from "@/utils/syncSelection";
 import {
   createSyncTask,
   getAppBootstrap,
@@ -22,6 +22,7 @@ import {
   startSyncTask,
   TASK_EVENTS
 } from "@/utils/taskManager";
+import { attachLoadedChildren, mergeDocumentSubtreeSelection } from "@/utils/treeSelection";
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -62,28 +63,6 @@ function scopeExists(scope: SyncScope | null, spaces: KnowledgeBaseSpace[], load
     stack.push(...(current.children ?? []));
   }
   return false;
-}
-
-function attachLoadedChildren(
-  nodes: KnowledgeBaseNode[],
-  parentNodeToken: string,
-  children: KnowledgeBaseNode[]
-): KnowledgeBaseNode[] {
-  return nodes.map((node) => {
-    if (node.nodeToken === parentNodeToken) {
-      return {
-        ...node,
-        children
-      };
-    }
-    if (!node.children || node.children.length === 0) {
-      return node;
-    }
-    return {
-      ...node,
-      children: attachLoadedChildren(node.children, parentNodeToken, children)
-    };
-  });
 }
 
 export default function App(): React.JSX.Element {
@@ -171,6 +150,23 @@ export default function App(): React.JSX.Element {
     }
     return "查看任务列表";
   }, [tasks]);
+
+  const loadTreeBranch = async (spaceId: string, parentNodeToken?: string): Promise<KnowledgeBaseNode[]> => {
+    const nodes = await listKnowledgeBaseNodes(spaceId, parentNodeToken);
+    const resolvedNodes = await Promise.all(
+      nodes.map(async (node) => {
+        if (!node.isExpandable) {
+          return node;
+        }
+        const children = await loadTreeBranch(spaceId, node.nodeToken);
+        return {
+          ...node,
+          children
+        };
+      })
+    );
+    return resolvedNodes;
+  };
 
   const handleLogout = (): void => {
     void logoutUser().then(() => {
@@ -291,6 +287,22 @@ export default function App(): React.JSX.Element {
                       ? attachLoadedChildren(current[spaceId] ?? [], parentNodeToken, nodes)
                       : nodes
                   }));
+                }}
+                onSelectDocumentSubtree={async (scope) => {
+                  if (scope.kind !== "document" || !scope.nodeToken) {
+                    setSelectedDocumentSources((current) => dedupeSelectedSources([...current, scope]));
+                    return 1;
+                  }
+
+                  const descendantNodes = await loadTreeBranch(scope.spaceId, scope.nodeToken);
+                  setLoadedSpaceTrees((current) => ({
+                    ...current,
+                    [scope.spaceId]: attachLoadedChildren(current[scope.spaceId] ?? [], scope.nodeToken!, descendantNodes)
+                  }));
+
+                  const subtreeSelectionCount = mergeDocumentSubtreeSelection([], scope, descendantNodes).length;
+                  setSelectedDocumentSources((current) => mergeDocumentSubtreeSelection(current, scope, descendantNodes));
+                  return subtreeSelectionCount;
                 }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
