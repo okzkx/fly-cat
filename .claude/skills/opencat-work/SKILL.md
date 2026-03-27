@@ -1,27 +1,28 @@
 ---
 name: opencat-work
-description: Run a staged OpenSpec workflow with checkpoint commits and a reusable linked worktree: run `opencat-check`, finish the purpose/proposal stage in the main worktree, create a branch and record the purpose commit, switch to a reusable worktree for apply, rebase onto the latest trunk before archive, commit after apply and archive, merge back, delete the branch, and keep the worktree for reuse. Use when the user wants end-to-end OpenSpec work with safer git checkpoints and reusable worktree isolation.
+description: Run a staged OpenSpec workflow with checkpoint commits and reusable linked worktree copies: run `opencat-check`, finish the purpose/proposal stage in the main worktree, create a branch and record the purpose commit, select or create a `-worktree` sibling copy for apply, rebase onto the latest trunk before archive, commit after apply and archive, merge back, delete the branch, and keep the worktree copies for reuse. Use when the user wants end-to-end OpenSpec work with safer git checkpoints and reusable worktree isolation, including automatic fallback to another worktree copy when one is already occupied.
 license: MIT
 compatibility: Requires `opencat-check` to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
 metadata:
   author: opencat
-  version: "1.1"
+  version: "1.2"
   derivedFrom: "openspec-all-in-one"
 ---
 
-Run an OpenSpec change from purpose to archive with staged git checkpoints and a reusable linked worktree.
+Run an OpenSpec change from purpose to archive with staged git checkpoints and reusable linked worktree copies.
 
 This skill wraps `openspec-all-in-one` with:
 - a purpose record commit
 - an apply checkpoint commit
 - an archive commit
-- a reusable linked worktree that is kept for the next run
+- reusable linked worktree copies that are kept for the next run
 
 Use it when the user wants:
 - end-to-end OpenSpec execution with git checkpoints
 - proposal work done before branching into a worktree
-- a reusable implementation worktree instead of disposable worktrees
+- reusable implementation worktree copies instead of disposable worktrees
 - automatic merge-back after archive
+- automatic creation of another worktree copy when the shared one is occupied
 
 ---
 
@@ -46,9 +47,13 @@ Before this workflow, run `opencat-check`.
 Follow these repository practices:
 - Keep the main worktree on `<base_branch>` for purpose work, trunk refresh, and final merge.
 - Create one temporary work branch per change, such as `opencat/<change-name>`.
-- Reuse one linked worktree sibling path, such as `../<repo-name>-opencat-worktree`, whenever it is safe and clean to reuse.
+- Name reusable linked worktree copies with a `-worktree` suffix.
+- Prefer the primary sibling path `../<repo-name>-worktree`.
+- If the primary path is occupied, create another sibling copy that still ends with `-worktree`, such as `../<repo-name>-2-worktree`, `../<repo-name>-3-worktree`, and so on.
+- Reuse an existing linked worktree copy only when it is on `<base_branch>` and clean enough for safe reuse.
+- If an existing linked worktree copy is not on `<base_branch>`, treat it as occupied by another AI run and create the next available `-worktree` copy instead of reusing it.
 - Use the linked worktree only from the apply stage onward.
-- Keep the linked worktree directory after the workflow completes so it can be reused next time.
+- Keep linked worktree directories after the workflow completes so they can be reused next time.
 - Before deleting `<work_branch>`, switch the linked worktree off that branch, typically back to `<base_branch>`.
 - Use an explicit merge commit for final integration: `git merge --no-ff "<work_branch>"`.
 - Resolve ordinary merge or rebase conflicts directly when the intent is clear; pause for ambiguous or high-risk conflicts.
@@ -117,13 +122,15 @@ Commit message rules:
 
    Then derive:
    - `work_branch`: a temporary branch name such as `opencat/<change-name>`
-   - `worktree_path`: a reusable sibling path such as `../<repo-name>-opencat-worktree`
+   - `worktree_base_path`: the primary reusable sibling path `../<repo-name>-worktree`
+   - `worktree_path`: the selected reusable sibling path for this run
 
    Guardrails:
    - if `HEAD` is detached, pause unless the user explicitly wants that as the base
    - if unrelated dirty changes in the main worktree would make purpose, commits, rebase, or merge unsafe, pause
-   - if the reusable worktree path already exists but is dirty, blocked, or clearly in use for another task, pause
    - if `work_branch` already exists and does not match the intended change, pause
+   - if an existing candidate worktree is on `<base_branch>` but dirty, blocked, or otherwise unsafe to reuse, skip it and keep scanning for another candidate or create the next `-worktree` copy
+   - pause only if no existing candidate can be reused and a new `-worktree` copy cannot be created safely
 
 5. **Run the purpose stage in the main worktree**
 
@@ -162,8 +169,11 @@ Commit message rules:
 
    The apply stage is the first point where the linked worktree is used.
 
-   - if `worktree_path` does not exist, create a linked worktree there from `<base_branch>`
-   - if `worktree_path` already exists, verify it is clean and reusable
+   - inspect reusable sibling paths in this order: `../<repo-name>-worktree`, then `../<repo-name>-2-worktree`, `../<repo-name>-3-worktree`, and so on
+   - if a candidate path does not exist, create a linked worktree there from `<base_branch>` and use it
+   - if a candidate path already exists and is on `<base_branch>` and clean, reuse it
+   - if a candidate path already exists but is not on `<base_branch>`, treat it as occupied by another AI run and continue to the next candidate instead of blocking
+   - if a candidate path already exists on `<base_branch>` but is dirty or otherwise unsafe, continue to the next candidate or create a new one
    - in the linked worktree, switch to `<work_branch>`
    - verify `git worktree list` reflects the expected branch/path before continuing
 
@@ -268,7 +278,8 @@ Commit message rules:
     - in the linked worktree, switch back to `<base_branch>` and ensure it is clean
     - from the main worktree, delete `<work_branch>`
     - keep `worktree_path` in place for the next `opencat-work` run
-    - do **not** remove the linked worktree directory unless the user explicitly asks
+    - keep any other existing `-worktree` sibling copies in place for future reuse
+    - do **not** remove linked worktree directories unless the user explicitly asks
 
 ## Default Behavior
 
@@ -285,7 +296,7 @@ Pause and ask the user when:
 - validation cannot be repaired confidently
 - the purpose, apply, or archive commit would mix in unrelated changes
 - trunk refresh cannot complete safely
-- the reusable worktree path is dirty, blocked, or in use for another task
+- every discovered `-worktree` candidate is unsafe to reuse and a new one cannot be created safely
 - the base branch is detached or otherwise unclear
 - the target branch name collides with existing state
 - the final rebase or merge conflict cannot be resolved confidently without a product, design, or safety decision
@@ -320,7 +331,8 @@ On completion, summarize:
 - whether `change-report.zh-CN.md` was generated
 - whether merge succeeded
 - whether the branch was deleted
-- whether the linked worktree was kept for reuse
+- which `worktree_path` was used
+- whether the linked worktree copy was kept for reuse
 - any remaining issues
 
 ## Guardrails
@@ -328,7 +340,8 @@ On completion, summarize:
 - Reuse the existing OpenSpec skills' logic instead of inventing a parallel workflow
 - Run `opencat-check` before purpose work rather than duplicating install logic here
 - Always read CLI-provided context files before implementation
-- Prefer one reusable linked worktree outside the repo root rather than disposable per-change worktrees
+- Prefer reusable linked worktree copies outside the repo root rather than disposable per-change worktrees
+- Use `-worktree` suffix naming for reusable worktree copies and create the next numbered copy when an existing one is occupied
 - Keep purpose work in the main worktree until the purpose checkpoint commit exists
 - Do all apply, rebase, and archive work in the linked worktree
 - Refresh trunk before archive so archive happens on top of the latest available base
