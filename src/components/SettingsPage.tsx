@@ -54,9 +54,10 @@ export default function SettingsPage({ initialSettings, onSaved }: SettingsPageP
               children: (
                 <Space direction="vertical" size="small">
                   <Text>1. 填写飞书应用的 App ID / App Secret。</Text>
-                  <Text>2. 应用需要具备知识库与新版文档读取权限，并被加入目标知识库。</Text>
-                  <Text>3. 可选填写 `Wiki Space IDs` 限定同步空间，多个用逗号分隔。</Text>
-                  <Text>4. 输出目录为 Markdown 同步根目录，图片回退到固定子目录。</Text>
+                  <Text>2. 在飞书应用中配置桌面 OAuth 回调地址：`http://localhost:3000/callback` 和 `http://localhost:3001/callback`。</Text>
+                  <Text>3. 应用需要具备知识库与新版文档读取权限，并且登录账号已加入目标知识库。</Text>
+                  <Text>4. 可选填写 `Wiki Space IDs` 限定同步空间，多个用逗号分隔。</Text>
+                  <Text>5. 输出目录为 Markdown 同步根目录，图片回退到固定子目录。</Text>
                 </Space>
               )
             }

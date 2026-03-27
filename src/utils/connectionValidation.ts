@@ -17,6 +17,24 @@ export function getConnectionAlert(validation: ConnectionValidation | null): Con
   }
 
   switch (validation.status) {
+    case "not-signed-in":
+      return {
+        type: "info",
+        title: "需要先登录飞书账号",
+        description: validation.message
+      };
+    case "session-expired":
+      return {
+        type: "warning",
+        title: "登录会话已过期",
+        description: validation.message
+      };
+    case "reauthorization-required":
+      return {
+        type: "warning",
+        title: "需要重新授权",
+        description: validation.message
+      };
     case "connected-with-spaces":
       return {
         type: "success",

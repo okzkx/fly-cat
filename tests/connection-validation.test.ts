@@ -13,6 +13,40 @@ function validation(overrides: Partial<ConnectionValidation>): ConnectionValidat
 }
 
 describe("connection validation presentation", () => {
+  it("renders signed-out guidance", () => {
+    const alert = getConnectionAlert(
+      validation({
+        status: "not-signed-in",
+        usable: false,
+        spacesLoaded: false,
+        message: "请先登录飞书账号"
+      })
+    );
+
+    expect(alert).toEqual({
+      type: "info",
+      title: "需要先登录飞书账号",
+      description: "请先登录飞书账号"
+    });
+  });
+
+  it("renders reauthorization guidance", () => {
+    const alert = getConnectionAlert(
+      validation({
+        status: "reauthorization-required",
+        usable: false,
+        spacesLoaded: false,
+        message: "当前登录会话已过期，请重新授权"
+      })
+    );
+
+    expect(alert).toEqual({
+      type: "warning",
+      title: "需要重新授权",
+      description: "当前登录会话已过期，请重新授权"
+    });
+  });
+
   it("renders actionable permission guidance", () => {
     const alert = getConnectionAlert(
       validation({

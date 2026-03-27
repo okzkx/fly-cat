@@ -19,14 +19,18 @@ The application MUST preserve the overall desktop shell structure of `F:\okzkx\f
 - **THEN** its page shell is hosted inside the Tauri desktop runtime model used by the reference project rather than only a browser-hosted SPA shell
 
 ### Requirement: Reference Navigation Rhythm
-The application MUST keep the reference project's page progression pattern of configuration, authentication, primary workspace, and task history/status views.
+The application MUST keep the reference project's page progression pattern of configuration, authentication, primary workspace, and task history/status views, and MUST gate entry to the primary workspace on both valid configuration and a valid signed-in user session.
 
 #### Scenario: Missing configuration enters settings
 - **WHEN** required Feishu or sync configuration is not yet valid
 - **THEN** the user is directed to a settings page before starting authentication or synchronization
 
+#### Scenario: Configured but signed-out user enters auth
+- **WHEN** required configuration is valid but no signed-in user session is available
+- **THEN** the user is directed to the auth page before entering the primary workspace
+
 #### Scenario: Authenticated user enters main workspace
-- **WHEN** configuration and authentication are both valid
+- **WHEN** configuration is valid and the signed-in user session is valid
 - **THEN** the user enters a main workspace page corresponding to the reference project's home page role
 
 ### Requirement: Reference Task Model Adaptation
@@ -39,4 +43,15 @@ The application MUST adapt the reference project's long-running task model and e
 #### Scenario: Retry and resume remain first-class actions
 - **WHEN** a sync job partially fails or is interrupted
 - **THEN** the user can retry or resume synchronization through the same task-oriented interaction pattern used by the reference app
+
+### Requirement: Reference Signed-In Shell Presence
+The application MUST preserve the reference project's signed-in shell cues for the active user session.
+
+#### Scenario: Header shows signed-in user context
+- **WHEN** a user has completed authorization successfully
+- **THEN** the shell header displays the current signed-in user context in the same structural region used by the reference project
+
+#### Scenario: Shell exposes sign-out or reauthorization entry point
+- **WHEN** the user is signed in or the session requires renewal
+- **THEN** the shell provides a first-class sign-out or reauthorization action consistent with the reference project's user-session pattern
 
