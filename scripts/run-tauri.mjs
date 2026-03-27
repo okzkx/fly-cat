@@ -7,12 +7,119 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "..");
-const tauriBinary = process.platform === "win32"
-  ? join(projectRoot, "node_modules", ".bin", "tauri.cmd")
-  : join(projectRoot, "node_modules", ".bin", "tauri");
+const tauriCliScript = join(projectRoot, "node_modules", "@tauri-apps", "cli", "tauri.js");
 const preferredDevPort = 1430;
 const maxDevPortAttempts = 20;
 const args = process.argv.slice(2);
+const terminationSignals = ["SIGINT", "SIGTERM", "SIGBREAK"];
+
+export function resolveTauriInvocation(
+  root = projectRoot,
+  nodeExecutable = process.execPath,
+) {
+  return {
+    command: nodeExecutable,
+    args: [root === projectRoot ? tauriCliScript : join(root, "node_modules", "@tauri-apps", "cli", "tauri.js")],
+  };
+}
+
+export function buildProcessTreeKillCommand(pid, platform = process.platform) {
+  if (!pid) {
+    return null;
+  }
+
+  if (platform === "win32") {
+    return {
+      command: "taskkill",
+      args: ["/PID", String(pid), "/T", "/F"],
+    };
+  }
+
+  return null;
+}
+
+function onceAsync(fn) {
+  let promise;
+
+  return (...fnArgs) => {
+    if (!promise) {
+      promise = Promise.resolve(fn(...fnArgs));
+    }
+
+    return promise;
+  };
+}
+
+function exitCodeForSignal(signal) {
+  switch (signal) {
+    case "SIGINT":
+      return 130;
+    case "SIGTERM":
+      return 143;
+    case "SIGBREAK":
+      return 131;
+    default:
+      return 1;
+  }
+}
+
+function waitForChildProcess(child) {
+  return new Promise((resolveWait, rejectWait) => {
+    child.once("exit", () => resolveWait());
+    child.once("error", rejectWait);
+  });
+}
+
+export async function terminateChildTree(
+  child,
+  { platform = process.platform, spawnImpl = spawn } = {},
+) {
+  if (!child?.pid) {
+    return;
+  }
+
+  const killCommand = buildProcessTreeKillCommand(child.pid, platform);
+  if (killCommand) {
+    await new Promise((resolveKill) => {
+      const killer = spawnImpl(killCommand.command, killCommand.args, {
+        stdio: "ignore",
+        shell: false,
+      });
+
+      killer.once("error", () => resolveKill());
+      killer.once("exit", () => resolveKill());
+    });
+    return;
+  }
+
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  try {
+    child.kill("SIGTERM");
+    await waitForChildProcess(child).catch(() => {});
+  } catch {
+    // Ignore termination races during shutdown.
+  }
+}
+
+export async function cleanupDevSession(
+  overridePath,
+  child,
+  {
+    terminateChild = false,
+    platform = process.platform,
+    rmImpl = rm,
+    spawnImpl = spawn,
+  } = {},
+) {
+  if (terminateChild) {
+    await terminateChildTree(child, { platform, spawnImpl });
+  }
+
+  await rmImpl(overridePath, { force: true }).catch(() => {});
+}
 
 function probePort(port) {
   return new Promise((resolveProbe) => {
@@ -39,7 +146,8 @@ async function findAvailablePort(startPort, maxAttempts) {
 }
 
 function spawnTauri(extraArgs, extraEnv = {}) {
-  const child = spawn(tauriBinary, extraArgs, {
+  const tauriInvocation = resolveTauriInvocation();
+  const child = spawn(tauriInvocation.command, [...tauriInvocation.args, ...extraArgs], {
     cwd: projectRoot,
     env: { ...process.env, ...extraEnv },
     stdio: "inherit",
@@ -83,30 +191,36 @@ async function runDev() {
 
   console.log(`[flycat] Using localhost dev port ${devPort}`);
 
-  const child = spawn(tauriBinary, ["dev", "--config", overridePath, ...args.slice(1)], {
+  const tauriInvocation = resolveTauriInvocation();
+  const child = spawn(tauriInvocation.command, [...tauriInvocation.args, "dev", "--config", overridePath, ...args.slice(1)], {
     cwd: projectRoot,
     env: { ...process.env, FLYCAT_DEV_PORT: String(devPort) },
     stdio: "inherit",
     shell: false,
   });
 
-  const cleanup = async () => {
-    await rm(overridePath, { force: true }).catch(() => {});
-  };
+  const cleanup = onceAsync((options = {}) => cleanupDevSession(overridePath, child, options));
+
+  for (const signal of terminationSignals) {
+    process.once(signal, () => {
+      void cleanup({ terminateChild: true }).finally(() => {
+        process.exit(exitCodeForSignal(signal));
+      });
+    });
+  }
 
   child.on("exit", async (code, signal) => {
-    await cleanup();
+    await cleanup({ terminateChild: true });
 
     if (signal) {
-      process.kill(process.pid, signal);
-      return;
+      process.exit(exitCodeForSignal(signal));
+    } else {
+      process.exit(code ?? 1);
     }
-
-    process.exit(code ?? 1);
   });
 
   child.on("error", async (error) => {
-    await cleanup();
+    await cleanup({ terminateChild: true });
     console.error("[flycat] Failed to start Tauri CLI:", error);
     process.exit(1);
   });
@@ -129,4 +243,6 @@ async function main() {
   spawnTauri(args);
 }
 
-void main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  void main();
+}
