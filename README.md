@@ -56,6 +56,26 @@ npm install
 npm run tauri dev
 ```
 
+`npm run tauri dev` 会优先尝试 `localhost:1430`，如果该端口已被占用，会自动回退到附近可用端口并让 Tauri 使用同一个开发地址。
+
+### OAuth 回调地址
+
+在飞书应用中预先配置以下桌面 OAuth 回调地址：
+
+- `http://localhost:3000/callback`
+- `http://localhost:3001/callback`
+- `http://localhost:3002/callback`
+- `http://localhost:3003/callback`
+- `http://localhost:3004/callback`
+- `http://localhost:3005/callback`
+- `http://localhost:3006/callback`
+- `http://localhost:3007/callback`
+- `http://localhost:3008/callback`
+- `http://localhost:3009/callback`
+- `http://localhost:3010/callback`
+
+如果授权页提示本地回调初始化失败，请检查上述 localhost 端口范围是否被其他应用占用。
+
 ### 构建
 
 ```bash

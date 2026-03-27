@@ -9,7 +9,14 @@ import { getConnectionAlert } from "@/utils/connectionValidation";
 import { beginUserAuthorization, completeUserAuthorization, isTauriRuntime } from "@/utils/tauriRuntime";
 
 const { Title, Paragraph, Text } = Typography;
-const OAUTH_PORTS = [3000, 3001];
+const OAUTH_PORTS = Array.from({ length: 11 }, (_, index) => 3000 + index);
+const OAUTH_PORT_RANGE_LABEL = `${OAUTH_PORTS[0]}-${OAUTH_PORTS[OAUTH_PORTS.length - 1]}`;
+
+function formatOAuthListenerError(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  const suffix = detail ? ` 原始错误：${detail}` : "";
+  return `初始化本地授权回调失败。请确认 localhost ${OAUTH_PORT_RANGE_LABEL} 端口范围内至少有一个端口可用，并且飞书应用已配置对应回调地址后重试。${suffix}`;
+}
 
 function getResultMessage(result: ConnectionCheckResult): string {
   switch (result.validation.status) {
@@ -88,8 +95,7 @@ export default function AuthPage({ validation, onAuthorized, onGoToSettings }: A
           }
         });
       } catch (error) {
-        const messageText = error instanceof Error ? error.message : String(error);
-        setErrorMessage(messageText || "初始化本地授权回调失败，请稍后重试");
+        setErrorMessage(formatOAuthListenerError(error));
       }
     };
 
@@ -177,7 +183,7 @@ export default function AuthPage({ validation, onAuthorized, onGoToSettings }: A
           </Button>
         </Space>
         <Text type="secondary" style={{ display: "block", marginTop: 16 }}>
-          如果授权失败，请检查 App ID、App Secret、回调地址和当前账号是否具备目标知识库访问权限。
+          如果授权失败，请检查 App ID、App Secret、回调地址，以及 localhost {OAUTH_PORT_RANGE_LABEL} 端口范围内是否仍有可用端口。
         </Text>
       </Card>
     </div>
