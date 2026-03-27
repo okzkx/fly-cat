@@ -1,7 +1,7 @@
 import type { SyncTask } from "@/types/app";
 import type { KnowledgeBaseNode, SyncRunError, SyncScope } from "@/types/sync";
 import { buildSelectionSummary, dedupeSelectedSources, getLegacySelectedScope } from "@/utils/syncSelection";
-import { normalizeDocumentRootSources } from "@/utils/treeSelection";
+import { normalizeSelectedSources } from "@/utils/treeSelection";
 
 const TASK_STORAGE_KEY = "feishu_sync_tasks";
 
@@ -249,10 +249,7 @@ function scopesForSelectionSource(source: SyncScope): SyncScope[] {
 }
 
 function resolveSelectedSources(selectedSources: SyncScope[]): SyncScope[] {
-  const normalized = dedupeSelectedSources(selectedSources);
-  return normalized.every((source) => source.kind === "document")
-    ? normalizeDocumentRootSources(normalized)
-    : normalized;
+  return normalizeSelectedSources(selectedSources);
 }
 
 function discoverDocumentScopes(selectedSources: SyncScope[]): SyncScope[] {

@@ -1,8 +1,5 @@
-# knowledge-base-source-sync Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
-## Requirements
 ### Requirement: Knowledge Base Scoped Discovery
 The system MUST discover, classify, present, and queue only documents that belong to user-selected knowledge base sources. A selectable source MUST support an entire knowledge base, a directory subtree within that knowledge base, or one or more selected subtree roots from the same knowledge base where each root can be either a directory node or a document node. Selecting a directory source MUST implicitly include every descendant document under that directory. Selecting a document source that has descendant documents MUST implicitly include that document and all descendant documents in the effective sync set. Source discovery used for scoped selection MUST return only the immediate children of the expanded knowledge base or parent node for each expansion step, MUST classify non-directory items such as Feishu Bitable as leaf nodes rather than directories, and MUST NOT issue additional remote discovery requests when a user only changes local checkbox selection state.
 
@@ -64,63 +61,3 @@ The system MUST perform incremental synchronization using persisted sync state f
 #### Scenario: Deduplicate overlapping selected roots
 - **WHEN** the current selected source set resolves to the same document more than once because a selected directory, selected parent document subtree, or legacy descendant selection overlaps another selected root
 - **THEN** the planner queues that document only once for the current run
-
-### Requirement: Persistent Sync Manifest
-The system MUST persist per-document sync metadata sufficient for retry, audit, scoped planning, and subsequent incremental runs.
-
-#### Scenario: Record successful sync entry
-- **WHEN** a document sync completes successfully
-- **THEN** the manifest stores document identifier, selected scope context, source-relative path metadata, output path, and last successful sync timestamp
-
-#### Scenario: Record failed sync entry
-- **WHEN** a document sync fails
-- **THEN** the manifest stores failure status and error classification without deleting prior successful metadata for other documents
-
-### Requirement: Knowledge Space Discovery Uses Authoritative Access Check
-The system MUST determine Feishu knowledge space accessibility using the same effective backend access path as space discovery or synchronization planning, and MUST NOT reject a configuration solely because a narrower preflight check failed first.
-
-#### Scenario: Valid configuration is not blocked by false-negative preflight
-- **WHEN** an initial connection validation probe fails but the configured Feishu/MCP integration can successfully enumerate accessible knowledge spaces through the authoritative discovery path
-- **THEN** the system reports the connection as usable and returns the discovered knowledge spaces
-
-#### Scenario: Discovery path determines final failure
-- **WHEN** connection validation starts and the authoritative knowledge space discovery path fails due to transport, authentication, or permission errors
-- **THEN** the system classifies the connection as failed using the authoritative discovery error rather than a generic preflight failure
-
-### Requirement: Knowledge Space Discovery Classifies Empty And Error Outcomes
-The system MUST distinguish an authoritative empty result from an error result when loading knowledge spaces.
-
-#### Scenario: No joined knowledge spaces
-- **WHEN** authoritative discovery completes successfully and returns zero accessible knowledge spaces
-- **THEN** the system classifies the result as `connected-no-spaces` rather than a connection failure
-
-#### Scenario: Permission denied during space discovery
-- **WHEN** authoritative discovery fails because the app lacks required wiki read access or equivalent knowledge base access permission
-- **THEN** the system classifies the result as `permission-denied` and includes a diagnostic that indicates missing knowledge base access rather than returning an empty list
-
-#### Scenario: Unexpected response shape during discovery
-- **WHEN** the discovery response is received but does not contain the fields required to determine knowledge space accessibility
-- **THEN** the system classifies the result as `unexpected-response` and does not present the result as a normal empty space list
-
-### Requirement: User-Authorized Knowledge Base Access
-The system MUST perform knowledge base discovery, document enumeration, and synchronization using the currently signed-in user's effective Feishu permissions rather than application-only credentials.
-
-#### Scenario: Signed-in user discovers accessible spaces
-- **WHEN** Feishu application settings are valid and a user has signed in successfully
-- **THEN** the system loads only knowledge base spaces that are accessible to that signed-in user
-
-#### Scenario: Signed-out state blocks discovery
-- **WHEN** no valid signed-in user session is present
-- **THEN** the system does not treat saved application configuration alone as sufficient to enumerate knowledge bases or start synchronization
-
-### Requirement: Sync Authorization Must Stay Consistent
-The system MUST use the same user authorization context for synchronization execution that was used for pre-sync discovery and source selection.
-
-#### Scenario: Sync start requires a valid user session
-- **WHEN** a user starts a synchronization task after selecting knowledge base spaces
-- **THEN** the backend starts the task only if the current signed-in user session is still valid for knowledge base access
-
-#### Scenario: Session expiry during sync does not fall back to app-only access
-- **WHEN** the signed-in user's session expires or is revoked while a synchronization task is running
-- **THEN** the task stops or becomes partially failed with an authorization-specific error instead of silently falling back to application-only credentials
-

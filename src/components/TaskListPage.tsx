@@ -91,6 +91,8 @@ function scopeLabel(task: SyncTask): string {
         return selectionSummary.includesDescendants
           ? `多个文档分支: ${selectionSummary.spaceName}（${selectionSummary.documentCount} 篇文档）`
           : `多篇文档: ${selectionSummary.spaceName}（${selectionSummary.documentCount} 篇）`;
+      case "multi-source":
+        return `多个同步根: ${selectionSummary.spaceName}（覆盖 ${selectionSummary.documentCount} 篇文档）`;
       case "document":
         return selectionSummary.includesDescendants
           ? `文档分支: ${selectionSummary.displayPath}`
@@ -254,12 +256,19 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
                 {record.selectionSummary?.includesDescendants && record.selectionSummary.kind === "document" && (
                   <Text type="secondary">该文档分支共解析 {record.selectionSummary.documentCount} 篇文档。</Text>
                 )}
-                {record.selectionSummary?.kind === "multi-document" && (
+                {record.selectionSummary?.kind === "folder" && record.selectionSummary.documentCount > 0 && (
+                  <Text type="secondary">该目录子树共解析 {record.selectionSummary.documentCount} 篇文档。</Text>
+                )}
+                {(record.selectionSummary?.kind === "multi-document" || record.selectionSummary?.kind === "multi-source") && (
                   <Text type="secondary">
-                    {record.selectionSummary.includesDescendants ? "已选分支：" : "已选文档："}
+                    {record.selectionSummary.kind === "multi-source"
+                      ? "已选同步根："
+                      : record.selectionSummary.includesDescendants
+                        ? "已选分支："
+                        : "已选文档："}
                     {record.selectionSummary.previewPaths.join("；")}
                     {record.selectionSummary.documentCount > record.selectionSummary.previewPaths.length
-                      ? ` 等 ${record.selectionSummary.documentCount}${record.selectionSummary.includesDescendants ? " 篇文档" : " 篇"}`
+                      ? ` 等 ${record.selectionSummary.documentCount} 篇文档`
                       : ""}
                   </Text>
                 )}

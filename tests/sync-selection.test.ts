@@ -16,6 +16,19 @@ function makeDocumentScope(documentId: string, title: string, overrides: Partial
   };
 }
 
+function makeFolderScope(nodeToken: string, title: string, overrides: Partial<SyncScope> = {}): SyncScope {
+  return {
+    kind: "folder",
+    spaceId: "kb",
+    spaceName: "知识库",
+    title,
+    displayPath: `知识库 / ${title}`,
+    nodeToken,
+    pathSegments: [title],
+    ...overrides
+  };
+}
+
 describe("sync selection summaries", () => {
   it("prefers subtree-capable document sources when deduplicating", () => {
     const sources = dedupeSelectedSources([
@@ -55,5 +68,23 @@ describe("sync selection summaries", () => {
     expect(summary?.documentCount).toBe(4);
     expect(summary?.rootCount).toBe(2);
     expect(summary?.displayPath).toContain("文档分支");
+  });
+
+  it("builds mixed-source summary when selected roots include folders", () => {
+    const summary = buildSelectionSummary(
+      [
+        makeFolderScope("node-folder-guides", "研发规范"),
+        makeDocumentScope("doc-leaf", "独立文档", {
+          displayPath: "知识库 / 研发规范 / 独立文档",
+          pathSegments: ["研发规范", "独立文档"]
+        })
+      ],
+      null,
+      { effectiveDocumentCount: 3 }
+    );
+
+    expect(summary?.kind).toBe("multi-source");
+    expect(summary?.documentCount).toBe(3);
+    expect(summary?.displayPath).toContain("同步根");
   });
 });

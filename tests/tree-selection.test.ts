@@ -4,11 +4,11 @@ import {
   attachLoadedChildren,
   collectCoveredDescendantKeys,
   collectDocumentScopes,
-  documentSourceCoversDescendant,
-  normalizeDocumentRootSources,
-  selectDocumentRootSources,
-  toggleDocumentRootSourceSelection,
-  unselectDocumentRootSources
+  normalizeSelectedSources,
+  selectSourceRoots,
+  sourceCoversDescendant,
+  toggleSourceSelection,
+  unselectSourceRoots
 } from "@/utils/treeSelection";
 
 function makeDocument(
@@ -41,6 +41,19 @@ function makeDocumentScope(documentId: string, title: string, overrides: Partial
     displayPath: `知识库 / ${title}`,
     nodeToken: `node-${documentId}`,
     documentId,
+    pathSegments: [title],
+    ...overrides
+  };
+}
+
+function makeFolderScope(nodeToken: string, title: string, overrides: Partial<SyncScope> = {}): SyncScope {
+  return {
+    kind: "folder",
+    spaceId: "kb",
+    spaceName: "知识库",
+    title,
+    displayPath: `知识库 / ${title}`,
+    nodeToken,
     pathSegments: [title],
     ...overrides
   };
@@ -103,11 +116,11 @@ describe("tree selection helpers", () => {
       pathSegments: ["父文档", "子文档"]
     });
 
-    expect(documentSourceCoversDescendant(parentScope, childScope)).toBe(true);
+    expect(sourceCoversDescendant(parentScope, childScope)).toBe(true);
   });
 
   it("normalizes overlapping roots by keeping the higher subtree root", () => {
-    const sources = normalizeDocumentRootSources([
+    const sources = normalizeSelectedSources([
       makeDocumentScope("child", "子文档", {
         pathSegments: ["父文档", "子文档"]
       }),
@@ -118,6 +131,38 @@ describe("tree selection helpers", () => {
     ]);
 
     expect(sources.map((scope) => scope.documentId)).toEqual(["parent"]);
+  });
+
+  it("lets selected folders cover descendant folders and documents", () => {
+    const folderScope = makeFolderScope("node-folder-parent", "父目录", {
+      pathSegments: ["父目录"]
+    });
+    const nestedFolderScope = makeFolderScope("node-folder-child", "子目录", {
+      displayPath: "知识库 / 父目录 / 子目录",
+      pathSegments: ["父目录", "子目录"]
+    });
+    const childDocumentScope = makeDocumentScope("child", "子文档", {
+      displayPath: "知识库 / 父目录 / 子文档",
+      pathSegments: ["父目录", "子文档"]
+    });
+
+    expect(sourceCoversDescendant(folderScope, nestedFolderScope)).toBe(true);
+    expect(sourceCoversDescendant(folderScope, childDocumentScope)).toBe(true);
+  });
+
+  it("normalizes overlapping folder and document roots by keeping the folder root", () => {
+    const sources = normalizeSelectedSources([
+      makeFolderScope("node-folder-parent", "父目录", {
+        pathSegments: ["父目录"]
+      }),
+      makeDocumentScope("child", "子文档", {
+        displayPath: "知识库 / 父目录 / 子文档",
+        pathSegments: ["父目录", "子文档"]
+      })
+    ]);
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.kind).toBe("folder");
   });
 
   it("computes disabled descendant keys for covered document nodes", () => {
@@ -148,6 +193,51 @@ describe("tree selection helpers", () => {
     expect(disabledKeys).toEqual(["document:kb:child-a", "document:kb:child-b"]);
   });
 
+  it("computes disabled descendant keys for covered folder and document nodes", () => {
+    const nodes: KnowledgeBaseNode[] = [
+      {
+        key: "folder:kb:folder-parent",
+        kind: "folder",
+        spaceId: "kb",
+        spaceName: "知识库",
+        title: "父目录",
+        displayPath: "知识库 / 父目录",
+        nodeToken: "node-folder-parent",
+        pathSegments: ["父目录"],
+        hasChildren: true,
+        isExpandable: true,
+        children: [
+          {
+            key: "folder:kb:folder-child",
+            kind: "folder",
+            spaceId: "kb",
+            spaceName: "知识库",
+            title: "子目录",
+            displayPath: "知识库 / 父目录 / 子目录",
+            nodeToken: "node-folder-child",
+            pathSegments: ["父目录", "子目录"],
+            hasChildren: true,
+            isExpandable: true,
+            children: [
+              makeDocument("child-a", "子文档 A", {
+                pathSegments: ["父目录", "子目录", "子文档 A"],
+                displayPath: "知识库 / 父目录 / 子目录 / 子文档 A"
+              })
+            ]
+          }
+        ]
+      }
+    ];
+
+    const disabledKeys = collectCoveredDescendantKeys(nodes, [
+      makeFolderScope("node-folder-parent", "父目录", {
+        pathSegments: ["父目录"]
+      })
+    ]);
+
+    expect(disabledKeys).toEqual(["document:kb:child-a", "folder:kb:node-folder-child"]);
+  });
+
   it("replaces cross-space selection when picking a root from another knowledge base", () => {
     const existingSources: SyncScope[] = [
       {
@@ -158,7 +248,7 @@ describe("tree selection helpers", () => {
       }
     ];
 
-    const selection = selectDocumentRootSources(
+    const selection = selectSourceRoots(
       existingSources,
       makeDocumentScope("parent", "父文档", { includesDescendants: true })
     );
@@ -168,7 +258,7 @@ describe("tree selection helpers", () => {
   });
 
   it("removes subtree roots when unselecting them", () => {
-    const sources = unselectDocumentRootSources(
+    const sources = unselectSourceRoots(
       [makeDocumentScope("parent", "父文档", { includesDescendants: true })],
       makeDocumentScope("parent", "父文档", { includesDescendants: true })
     );
@@ -182,11 +272,11 @@ describe("tree selection helpers", () => {
       pathSegments: ["父文档"]
     });
 
-    const checkedSelection = toggleDocumentRootSourceSelection([], parentScope, true);
+    const checkedSelection = toggleSourceSelection([], parentScope, true);
     expect(checkedSelection.replacedCrossSpaceSelection).toBe(false);
     expect(checkedSelection.sources).toEqual([parentScope]);
 
-    const uncheckedSelection = toggleDocumentRootSourceSelection(checkedSelection.sources, parentScope, false);
+    const uncheckedSelection = toggleSourceSelection(checkedSelection.sources, parentScope, false);
     expect(uncheckedSelection.replacedCrossSpaceSelection).toBe(false);
     expect(uncheckedSelection.sources).toEqual([]);
   });

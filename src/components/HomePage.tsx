@@ -45,25 +45,24 @@ function selectedKey(scope: SyncScope | null): string[] {
   return [scopeKey(scope)];
 }
 
-function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledDocumentKeys: Set<string>): ScopeTreeDataNode[] {
+function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>): ScopeTreeDataNode[] {
   return nodes.map((node) => {
     const scopeValue = buildScopeFromNode(node) ?? undefined;
-    const isDisabledDocument =
-      node.kind === "document" && scopeValue ? disabledDocumentKeys.has(scopeKey(scopeValue)) : false;
+    const isDisabledNode = scopeValue ? disabledKeys.has(scopeKey(scopeValue)) : false;
 
     return {
       title: node.title,
       key: node.key,
       isLeaf: !node.isExpandable,
       selectable: node.kind !== "bitable",
-      disableCheckbox: node.kind !== "document" || isDisabledDocument,
+      disableCheckbox: node.kind === "bitable" || isDisabledNode,
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
       scopeValue,
-      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledDocumentKeys) : undefined
+      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys) : undefined
     };
   });
 }
@@ -71,7 +70,7 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledDocumentKeys: Set<st
 function buildTreeData(
   spaces: HomePageProps["spaces"],
   loadedSpaceTrees: HomePageProps["loadedSpaceTrees"],
-  selectedDocumentSources: SyncScope[]
+  selectedSources: SyncScope[]
 ): ScopeTreeDataNode[] {
   return [
     {
@@ -90,7 +89,7 @@ function buildTreeData(
         children: loadedSpaceTrees[space.id]
           ? buildTreeNodes(
               loadedSpaceTrees[space.id],
-              new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedDocumentSources))
+              new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedSources))
             )
           : undefined
       }))
@@ -119,6 +118,8 @@ function getSelectionLabel(selectionSummary: ReturnType<typeof buildSelectionSum
   switch (selectionSummary.kind) {
     case "multi-document":
       return selectionSummary.includesDescendants ? "多个文档分支" : "多篇文档";
+    case "multi-source":
+      return "多个同步根";
     case "document":
       return selectionSummary.includesDescendants ? "文档分支" : "单个文档";
     case "folder":
@@ -133,12 +134,12 @@ function getSelectionLabel(selectionSummary: ReturnType<typeof buildSelectionSum
 export default function HomePage({
   spaces,
   selectedScope,
-  selectedDocumentSources,
+  selectedSources,
   loadedSpaceTrees,
   syncRoot,
   connectionValidation,
   onScopeChange,
-  onToggleDocumentSource,
+  onToggleSource,
   onLoadTreeChildren,
   onOpenTasks,
   activeTaskSummary,
@@ -146,7 +147,7 @@ export default function HomePage({
 }: HomePageProps): React.JSX.Element {
   const { message } = App.useApp();
   const emptyState = getHomePageEmptyState(connectionValidation, spaces.length);
-  const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedDocumentSources);
+  const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
   const selectionSummary = buildSelectionSummary(effectiveSelectedSources, selectedScope);
 
   const handleStartSync = async (): Promise<void> => {
@@ -155,7 +156,7 @@ export default function HomePage({
       if (result) {
         message.success(`已创建同步任务：${result.task.name}`);
       } else {
-        message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围或勾选文档");
+        message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围或勾选目录、文档");
       }
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
@@ -163,7 +164,7 @@ export default function HomePage({
     }
   };
 
-  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedDocumentSources);
+  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources);
 
   const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
     const node = info.node as ScopeTreeDataNode;
@@ -172,7 +173,7 @@ export default function HomePage({
     }
   };
 
-  const checkedDocumentKeys = selectedDocumentSources.map((source) => scopeKey(source));
+  const checkedSourceKeys = selectedSources.map((source) => scopeKey(source));
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -213,11 +214,13 @@ export default function HomePage({
                   {selectionSummary?.displayPath ?? "请选择一个知识库、目录或文档"}
                 </Text>
               </Space>
-              {selectionSummary?.kind === "multi-document" && (
+              {(selectionSummary?.kind === "multi-document" || selectionSummary?.kind === "multi-source") && (
                 <Space wrap>
                   <FileTextOutlined />
                   <Text>
-                    {selectionSummary.includesDescendants
+                    {selectionSummary.kind === "multi-source"
+                      ? `${selectionSummary.rootCount ?? selectionSummary.previewPaths.length} 个同步根，覆盖 ${selectionSummary.documentCount} 篇文档`
+                      : selectionSummary.includesDescendants
                       ? `${selectionSummary.rootCount ?? selectionSummary.previewPaths.length} 个文档分支`
                       : `${selectionSummary.documentCount} 篇文档`}
                   </Text>
@@ -243,7 +246,7 @@ export default function HomePage({
               checkStrictly
               defaultExpandedKeys={["wiki-root"]}
               selectedKeys={selectedKey(selectedScope)}
-              checkedKeys={{ checked: checkedDocumentKeys, halfChecked: [] }}
+              checkedKeys={{ checked: checkedSourceKeys, halfChecked: [] }}
               treeData={treeData}
               loadData={async (treeNode) => {
                 const node = treeNode as ScopeTreeDataNode;
@@ -259,12 +262,12 @@ export default function HomePage({
               onCheck={(_checkedKeys, info) => {
                 const changedNode = info.node as ScopeTreeDataNode;
                 const changedScope = changedNode.scopeValue;
-                if (!changedScope || changedScope.kind !== "document") {
+                if (!changedScope || changedScope.kind === "space") {
                   return;
                 }
-                void onToggleDocumentSource(changedScope, info.checked).then(({ replacedCrossSpaceSelection }) => {
+                void onToggleSource(changedScope, info.checked).then(({ replacedCrossSpaceSelection }) => {
                   if (replacedCrossSpaceSelection) {
-                    message.warning("一次只能多选同一知识库内的文档分支，已切换到当前知识库。");
+                    message.warning("一次只能在同一知识库内组合选择目录或文档，已切换到当前知识库。");
                   }
                 });
               }}

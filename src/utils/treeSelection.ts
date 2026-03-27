@@ -37,15 +37,21 @@ export function collectDocumentScopes(nodes: KnowledgeBaseNode[]): SyncScope[] {
   return scopes;
 }
 
-export function isDocumentSubtreeSelection(scope: SyncScope): boolean {
-  return scope.kind === "document" && Boolean(scope.includesDescendants);
+export function sourceHasCoveredDescendants(scope: SyncScope): boolean {
+  return scope.kind === "space" || scope.kind === "folder" || (scope.kind === "document" && Boolean(scope.includesDescendants));
 }
 
-export function documentSourceCoversDescendant(ancestor: SyncScope, descendant: SyncScope): boolean {
-  if (!isDocumentSubtreeSelection(ancestor) || descendant.kind !== "document") {
+export function sourceCoversDescendant(ancestor: SyncScope, descendant: SyncScope): boolean {
+  if (!sourceHasCoveredDescendants(ancestor)) {
     return false;
   }
-  if (ancestor.spaceId !== descendant.spaceId || ancestor.documentId === descendant.documentId) {
+  if (ancestor.spaceId !== descendant.spaceId || scopeKey(ancestor) === scopeKey(descendant)) {
+    return false;
+  }
+  if (ancestor.kind === "space") {
+    return descendant.kind !== "space";
+  }
+  if (ancestor.kind === "document" && descendant.kind !== "document") {
     return false;
   }
   if (ancestor.pathSegments.length >= descendant.pathSegments.length) {
@@ -54,17 +60,17 @@ export function documentSourceCoversDescendant(ancestor: SyncScope, descendant: 
   return ancestor.pathSegments.every((segment, index) => descendant.pathSegments[index] === segment);
 }
 
-export function normalizeDocumentRootSources(sources: SyncScope[]): SyncScope[] {
-  const deduped = dedupeSelectedSources(sources.filter((source) => source.kind === "document"));
+export function normalizeSelectedSources(sources: SyncScope[]): SyncScope[] {
+  const deduped = dedupeSelectedSources(sources);
   let normalized: SyncScope[] = [];
 
   for (const source of deduped) {
-    if (normalized.some((existing) => documentSourceCoversDescendant(existing, source))) {
+    if (normalized.some((existing) => sourceCoversDescendant(existing, source))) {
       continue;
     }
 
-    if (source.includesDescendants) {
-      normalized = normalized.filter((existing) => !documentSourceCoversDescendant(source, existing));
+    if (sourceHasCoveredDescendants(source)) {
+      normalized = normalized.filter((existing) => !sourceCoversDescendant(source, existing));
     }
 
     normalized.push(source);
@@ -86,7 +92,7 @@ export function collectCoveredDescendantKeys(nodes: KnowledgeBaseNode[], selecte
     const currentScope = buildScopeFromNode(current);
     if (
       currentScope &&
-      selectedSources.some((source) => documentSourceCoversDescendant(source, currentScope))
+      selectedSources.some((source) => sourceCoversDescendant(source, currentScope))
     ) {
       disabledKeys.add(scopeKey(currentScope));
     }
@@ -97,7 +103,7 @@ export function collectCoveredDescendantKeys(nodes: KnowledgeBaseNode[], selecte
   return Array.from(disabledKeys).sort();
 }
 
-export function selectDocumentRootSources(
+export function selectSourceRoots(
   existingSources: SyncScope[],
   nextSource: SyncScope
 ): { replacedCrossSpaceSelection: boolean; sources: SyncScope[] } {
@@ -108,28 +114,28 @@ export function selectDocumentRootSources(
 
   return {
     replacedCrossSpaceSelection,
-    sources: normalizeDocumentRootSources([...baseSources, nextSource])
+    sources: normalizeSelectedSources([...baseSources, nextSource])
   };
 }
 
-export function unselectDocumentRootSources(existingSources: SyncScope[], targetSource: SyncScope): SyncScope[] {
-  return normalizeDocumentRootSources(
+export function unselectSourceRoots(existingSources: SyncScope[], targetSource: SyncScope): SyncScope[] {
+  return normalizeSelectedSources(
     existingSources.filter((source) => scopeKey(source) !== scopeKey(targetSource))
   );
 }
 
-export function toggleDocumentRootSourceSelection(
+export function toggleSourceSelection(
   existingSources: SyncScope[],
   targetSource: SyncScope,
   checked: boolean
 ): { replacedCrossSpaceSelection: boolean; sources: SyncScope[] } {
   if (checked) {
-    return selectDocumentRootSources(existingSources, targetSource);
+    return selectSourceRoots(existingSources, targetSource);
   }
 
   return {
     replacedCrossSpaceSelection: false,
-    sources: unselectDocumentRootSources(existingSources, targetSource)
+    sources: unselectSourceRoots(existingSources, targetSource)
   };
 }
 

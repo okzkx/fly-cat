@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createSyncTask, listKnowledgeBaseNodes } from "../src/utils/browserTaskManager";
-import { buildScopeFromNode, toggleDocumentRootSourceSelection } from "../src/utils/treeSelection";
+import { buildScopeFromNode, toggleSourceSelection } from "../src/utils/treeSelection";
 
 if (!("localStorage" in globalThis)) {
   const storage = new Map<string, string>();
@@ -62,7 +62,7 @@ describe("knowledge base tree loading", () => {
     const scope = buildScopeFromNode(subtreeRoot!);
     expect(scope?.includesDescendants).toBe(true);
 
-    const selection = toggleDocumentRootSourceSelection([], scope!, true);
+    const selection = toggleSourceSelection([], scope!, true);
     expect(selection.replacedCrossSpaceSelection).toBe(false);
     expect(selection.sources).toEqual([scope]);
   });
@@ -116,5 +116,46 @@ describe("knowledge base tree loading", () => {
     expect(task.selectionSummary?.kind).toBe("multi-document");
     expect(task.selectionSummary?.documentCount).toBe(2);
     expect(task.counters.total).toBe(2);
+  });
+
+  it("creates mixed-source task metadata when a folder and a document are selected together", () => {
+    const folderNodes = listKnowledgeBaseNodes("kb-product");
+    const library = folderNodes[0];
+    const docNodes = listKnowledgeBaseNodes("kb-product", "product-library");
+    const roadmap = docNodes.find((node) => node.documentId === "doc-product-roadmap");
+
+    expect(library?.kind).toBe("folder");
+    expect(roadmap?.kind).toBe("document");
+
+    const task = createSyncTask(
+      [
+        {
+          kind: "folder",
+          spaceId: library!.spaceId,
+          spaceName: library!.spaceName,
+          title: library!.title,
+          displayPath: library!.displayPath,
+          nodeToken: library!.nodeToken,
+          pathSegments: library!.pathSegments
+        },
+        {
+          kind: "document",
+          spaceId: roadmap!.spaceId,
+          spaceName: roadmap!.spaceName,
+          title: roadmap!.title,
+          displayPath: roadmap!.displayPath,
+          nodeToken: roadmap!.nodeToken,
+          documentId: roadmap!.documentId,
+          pathSegments: roadmap!.pathSegments,
+          includesDescendants: true
+        }
+      ],
+      "C:/tmp/sync-target"
+    );
+
+    expect(task.selectedSources).toHaveLength(1);
+    expect(task.selectedSources?.[0]?.kind).toBe("folder");
+    expect(task.selectionSummary?.kind).toBe("folder");
+    expect(task.selectionSummary?.documentCount).toBe(3);
   });
 });

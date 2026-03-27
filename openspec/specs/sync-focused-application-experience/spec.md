@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Sync-Oriented Interaction Flow
-The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync sources together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances, MUST treat a selected parent document as covering its full descendant document subtree by default, and MUST update document checkbox state immediately from local selection state rather than waiting for remote subtree discovery.
+The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync sources together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances, MUST treat a selected parent document as covering its full descendant document subtree by default, MUST allow directory nodes and document nodes from the same knowledge base to be added to the explicit source set, and MUST update checkbox state immediately from local selection state rather than waiting for remote subtree discovery.
 
 #### Scenario: Start sync from dedicated action
 - **WHEN** a user enters the document assistant and selects knowledge base sources
@@ -12,23 +12,23 @@ The application MUST present synchronization as a primary workflow distinct from
 
 #### Scenario: Select directory or document scope inside knowledge base
 - **WHEN** a user configures a synchronization source from an accessible knowledge base
-- **THEN** the UI allows choosing the whole knowledge base, a directory subtree, a single leaf document, or one or more document subtree roots from that same knowledge base
+- **THEN** the UI allows choosing the whole knowledge base, a directory subtree, a single leaf document, a single document subtree, or a mixed set of directory and document roots from that same knowledge base
 
 #### Scenario: Selecting parent document implies subtree coverage
 - **WHEN** a user checks a document node that has descendant documents
 - **THEN** the UI treats that node as selecting the full document subtree rooted at that document without requiring a separate subtree-selection button
 
-#### Scenario: Descendant document is unavailable under selected ancestor
-- **WHEN** a document subtree root is currently selected
-- **THEN** descendant document nodes covered by that root render with unavailable checkboxes so the user cannot separately toggle redundant child selections inside that covered branch
+#### Scenario: Descendant node is unavailable under selected ancestor
+- **WHEN** a directory subtree or document subtree root is currently selected
+- **THEN** descendant directory and document nodes covered by that root render with unavailable checkboxes so the user cannot separately toggle redundant child selections inside that covered branch
 
 #### Scenario: Checkbox feedback does not wait for subtree loading
-- **WHEN** a user checks or unchecks a document node in the source-selection tree
+- **WHEN** a user checks or unchecks a directory or document node in the source-selection tree
 - **THEN** the checkbox state and effective selection summary update from local state immediately without waiting for the application to fetch descendant nodes from the backend
 
 #### Scenario: Show scoped source context
 - **WHEN** a user reviews sync configuration before execution
-- **THEN** the UI displays whether the selection is a whole knowledge base, a directory subtree, a single leaf document, a single document subtree, or a multi-subtree set from one knowledge base, together with the effective local sync target that will receive synchronized Markdown output in the mirrored source structure
+- **THEN** the UI displays whether the selection is a whole knowledge base, a directory subtree, a single leaf document, a single document subtree, or a mixed directory-and-document source set, together with the effective local sync target that will receive synchronized Markdown output in the mirrored source structure
 
 #### Scenario: Preserve reference home-page role
 - **WHEN** the user reaches the primary workspace after authentication
@@ -71,7 +71,7 @@ The application MUST expose synchronization lifecycle states and progress at doc
 
 #### Scenario: Task history shows selected source scope
 - **WHEN** a user inspects a sync task in the task list
-- **THEN** the task view shows whether the run targeted a whole knowledge base, a directory subtree, a single leaf document, a single document subtree, or multiple document subtrees from one knowledge base, including the selected knowledge base and a trustworthy summary of the selected root paths and effective document count
+- **THEN** the task view shows whether the run targeted a whole knowledge base, a directory subtree, a single leaf document, a single document subtree, or a mixed directory-and-document source set, including the selected knowledge base and a trustworthy summary of the selected root paths and effective document count
 
 ### Requirement: User-Facing Branding Consistency
 The application MUST use consistent FlyCat / 飞猫助手 branding across user-visible page titles and task-oriented views, while preserving sync-specific wording where it describes workflow behavior rather than product identity.

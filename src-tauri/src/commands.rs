@@ -516,13 +516,26 @@ fn dedupe_selected_sources(selected_sources: &[SelectedSyncScope]) -> Vec<Select
     deduped
 }
 
+fn source_has_covered_descendants(source: &SelectedSyncScope) -> bool {
+    source.kind == "space"
+        || source.kind == "folder"
+        || (source.kind == "document" && source.includes_descendants)
+}
+
 fn source_covers_descendant(ancestor: &SelectedSyncScope, descendant: &SelectedSyncScope) -> bool {
-    ancestor.kind == "document"
-        && ancestor.includes_descendants
-        && descendant.kind == "document"
-        && ancestor.space_id == descendant.space_id
-        && ancestor.document_id != descendant.document_id
-        && ancestor.path_segments.len() < descendant.path_segments.len()
+    if !source_has_covered_descendants(ancestor) || ancestor.space_id != descendant.space_id {
+        return false;
+    }
+    if selected_source_key(ancestor) == selected_source_key(descendant) {
+        return false;
+    }
+    if ancestor.kind == "space" {
+        return descendant.kind != "space";
+    }
+    if ancestor.kind == "document" && descendant.kind != "document" {
+        return false;
+    }
+    ancestor.path_segments.len() < descendant.path_segments.len()
         && ancestor
             .path_segments
             .iter()
@@ -530,19 +543,16 @@ fn source_covers_descendant(ancestor: &SelectedSyncScope, descendant: &SelectedS
             .all(|(ancestor_segment, descendant_segment)| ancestor_segment == descendant_segment)
 }
 
-fn normalize_document_root_sources(selected_sources: &[SelectedSyncScope]) -> Vec<SelectedSyncScope> {
+fn normalize_selected_sources(selected_sources: &[SelectedSyncScope]) -> Vec<SelectedSyncScope> {
     let mut normalized = Vec::new();
-    for source in dedupe_selected_sources(selected_sources)
-        .into_iter()
-        .filter(|source| source.kind == "document")
-    {
+    for source in dedupe_selected_sources(selected_sources) {
         if normalized
             .iter()
             .any(|existing| source_covers_descendant(existing, &source))
         {
             continue;
         }
-        if source.includes_descendants {
+        if source_has_covered_descendants(&source) {
             normalized.retain(|existing| !source_covers_descendant(&source, existing));
         }
         normalized.push(source);
@@ -590,21 +600,38 @@ fn build_selection_summary(
     }
 
     let first = &sources[0];
+    let all_documents = sources.iter().all(|source| source.kind == "document");
     let includes_descendants = sources.iter().any(|source| source.includes_descendants);
     let root_count = sources.len() as u32;
     Some(SyncSelectionSummary {
-        kind: "multi-document".into(),
+        kind: if all_documents {
+            "multi-document".into()
+        } else {
+            "multi-source".into()
+        },
         space_id: first.space_id.clone(),
         space_name: first.space_name.clone(),
-        title: if includes_descendants {
-            format!("{} 文档分支同步", first.space_name)
+        title: if all_documents {
+            if includes_descendants {
+                format!("{} 文档分支同步", first.space_name)
+            } else {
+                format!("{} 多文档同步", first.space_name)
+            }
         } else {
-            format!("{} 多文档同步", first.space_name)
+            format!("{} 多来源同步", first.space_name)
         },
         display_path: if includes_descendants {
-            format!("{}（已选 {} 个文档分支）", first.space_name, root_count)
+            if all_documents {
+                format!("{}（已选 {} 个文档分支）", first.space_name, root_count)
+            } else {
+                format!("{}（已选 {} 个同步根）", first.space_name, root_count)
+            }
         } else {
-            format!("{}（已选 {} 篇文档）", first.space_name, root_count)
+            if all_documents {
+                format!("{}（已选 {} 篇文档）", first.space_name, root_count)
+            } else {
+                format!("{}（已选 {} 个同步根）", first.space_name, root_count)
+            }
         },
         document_count: effective_document_count.unwrap_or(root_count),
         preview_paths: sources.iter().take(3).map(|source| source.display_path.clone()).collect(),
@@ -624,7 +651,7 @@ fn normalize_task(task: &mut SyncTask, app: &AppHandle) -> Result<(), String> {
     } else {
         task.selected_sources.clone()
     };
-    task.selected_sources = dedupe_selected_sources(&selected_sources);
+    task.selected_sources = normalize_selected_sources(&selected_sources);
     if task.selected_scope.is_none() {
         task.selected_scope = legacy_selected_scope(&task.selected_sources);
     }
@@ -666,23 +693,13 @@ fn normalize_task(task: &mut SyncTask, app: &AppHandle) -> Result<(), String> {
 
 fn effective_selected_sources(task: &SyncTask) -> Vec<SelectedSyncScope> {
     if !task.selected_sources.is_empty() {
-        let deduped = dedupe_selected_sources(&task.selected_sources);
-        return if deduped.iter().all(|source| source.kind == "document") {
-            normalize_document_root_sources(&deduped)
-        } else {
-            deduped
-        };
+        return normalize_selected_sources(&task.selected_sources);
     }
     task.selected_scope.clone().into_iter().collect()
 }
 
 fn validate_selected_sources(selected_sources: &[SelectedSyncScope]) -> Result<Vec<SelectedSyncScope>, String> {
-    let deduped = dedupe_selected_sources(selected_sources);
-    let normalized = if deduped.iter().all(|source| source.kind == "document") {
-        normalize_document_root_sources(&deduped)
-    } else {
-        deduped
-    };
+    let normalized = normalize_selected_sources(selected_sources);
     if normalized.is_empty() {
         return Err("请先选择一个同步范围。".into());
     }
@@ -691,9 +708,9 @@ fn validate_selected_sources(selected_sources: &[SelectedSyncScope]) -> Result<V
         let space_id = normalized[0].space_id.clone();
         if normalized
             .iter()
-            .any(|source| source.kind != "document" || source.space_id != space_id)
+            .any(|source| source.kind == "space" || source.space_id != space_id)
         {
-            return Err("一次只能多选同一知识库内的文档。".into());
+            return Err("一次只能在同一知识库内组合选择目录或文档。".into());
         }
     }
 
@@ -2440,6 +2457,20 @@ mod tests {
         }
     }
 
+    fn sample_folder_scope(space_id: &str, space_name: &str, node_token: &str, title: &str) -> SelectedSyncScope {
+        SelectedSyncScope {
+            kind: "folder".into(),
+            space_id: space_id.into(),
+            space_name: space_name.into(),
+            title: title.into(),
+            display_path: format!("{space_name} / {title}"),
+            node_token: Some(node_token.into()),
+            document_id: None,
+            path_segments: vec![title.into()],
+            includes_descendants: false,
+        }
+    }
+
     #[test]
     fn false_negative_preflight_can_recover_when_spaces_are_accessible() {
         let recovered = build_connected_result(
@@ -2514,14 +2545,30 @@ mod tests {
     }
 
     #[test]
-    fn rejects_cross_space_multi_document_selection() {
+    fn rejects_cross_space_multi_source_selection() {
         let result = validate_selected_sources(&[
             sample_document_scope("kb-eng", "研发知识库", "doc-a", "A"),
             sample_document_scope("kb-product", "产品知识库", "doc-b", "B"),
         ]);
 
         assert!(result.is_err());
-        assert_eq!(result.err().as_deref(), Some("一次只能多选同一知识库内的文档。"));
+        assert_eq!(result.err().as_deref(), Some("一次只能在同一知识库内组合选择目录或文档。"));
+    }
+
+    #[test]
+    fn normalizes_overlapping_folder_and_document_selection() {
+        let selected_sources = validate_selected_sources(&[
+            sample_folder_scope("kb-product", "产品知识库", "product-library", "方案库"),
+            SelectedSyncScope {
+                display_path: "产品知识库 / 方案库 / Product Overview".into(),
+                path_segments: vec!["方案库".into(), "Product Overview".into()],
+                ..sample_document_scope("kb-product", "产品知识库", "doc-product-overview", "Product Overview")
+            },
+        ])
+        .expect("selection should be valid");
+
+        assert_eq!(selected_sources.len(), 1);
+        assert_eq!(selected_sources[0].kind, "folder");
     }
 
     #[test]
@@ -2537,6 +2584,25 @@ mod tests {
         assert_eq!(summary.space_id, "kb-eng");
         assert_eq!(summary.document_count, 2);
         assert_eq!(summary.preview_paths.len(), 2);
+    }
+
+    #[test]
+    fn builds_multi_source_selection_summary() {
+        let selected_sources = vec![
+            sample_folder_scope("kb-eng", "研发知识库", "eng-guides", "研发规范"),
+            SelectedSyncScope {
+                display_path: "研发知识库 / 研发规范 / 研发API概览".into(),
+                path_segments: vec!["研发规范".into(), "研发API概览".into()],
+                ..sample_document_scope("kb-eng", "研发知识库", "doc-eng-api", "研发API概览")
+            },
+        ];
+
+        let summary = build_selection_summary(&selected_sources, None, Some(3)).expect("summary should exist");
+
+        assert_eq!(summary.kind, "multi-source");
+        assert_eq!(summary.space_id, "kb-eng");
+        assert_eq!(summary.document_count, 3);
+        assert!(summary.display_path.contains("同步根"));
     }
 
     #[test]

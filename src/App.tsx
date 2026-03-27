@@ -23,7 +23,7 @@ import {
   startSyncTask,
   TASK_EVENTS
 } from "@/utils/taskManager";
-import { attachLoadedChildren, normalizeDocumentRootSources, toggleDocumentRootSourceSelection } from "@/utils/treeSelection";
+import { attachLoadedChildren, normalizeSelectedSources, toggleSourceSelection } from "@/utils/treeSelection";
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -74,7 +74,7 @@ export default function App(): React.JSX.Element {
   const [resolvedSyncRoot, setResolvedSyncRoot] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<KnowledgeBaseSpace[]>([]);
   const [selectedScope, setSelectedScope] = useState<SyncScope | null>(null);
-  const [selectedDocumentSources, setSelectedDocumentSources] = useState<SyncScope[]>([]);
+  const [selectedSources, setSelectedSources] = useState<SyncScope[]>([]);
   const [loadedSpaceTrees, setLoadedSpaceTrees] = useState<Record<string, KnowledgeBaseNode[]>>({});
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [connectionValidation, setConnectionValidation] = useState<ConnectionValidation | null>(null);
@@ -93,7 +93,7 @@ export default function App(): React.JSX.Element {
       setResolvedSyncRoot(bootstrap.resolvedSyncRoot);
       setSpaces(bootstrap.spaces);
       setSelectedScope(bootstrap.spaces[0] ? buildSpaceScope(bootstrap.spaces[0]) : null);
-      setSelectedDocumentSources([]);
+      setSelectedSources([]);
       setUserInfo(bootstrap.user);
       setConnectionValidation(bootstrap.connectionValidation);
       setAuthed(Boolean(bootstrap.user));
@@ -145,7 +145,7 @@ export default function App(): React.JSX.Element {
   }, [loadedSpaceTrees, selectedScope, spaces]);
 
   useEffect(() => {
-    setSelectedDocumentSources((current) => current.filter((source) => scopeExists(source, spaces, loadedSpaceTrees)));
+    setSelectedSources((current) => current.filter((source) => scopeExists(source, spaces, loadedSpaceTrees)));
   }, [loadedSpaceTrees, spaces]);
 
   useEffect(() => {
@@ -174,7 +174,7 @@ export default function App(): React.JSX.Element {
       setUserInfo(null);
       setConnectionValidation(null);
       setSelectedScope(null);
-      setSelectedDocumentSources([]);
+      setSelectedSources([]);
       setLoadedSpaceTrees({});
       setCurrentPage("auth");
     });
@@ -240,7 +240,7 @@ export default function App(): React.JSX.Element {
                     setUserInfo(null);
                     setSpaces([]);
                     setSelectedScope(null);
-                    setSelectedDocumentSources([]);
+                    setSelectedSources([]);
                     setLoadedSpaceTrees({});
                     setConnectionValidation(null);
                     setCurrentPage("auth");
@@ -257,7 +257,7 @@ export default function App(): React.JSX.Element {
                   setConnectionValidation(result.validation);
                   setSpaces(result.spaces);
                   setSelectedScope(result.spaces[0] ? buildSpaceScope(result.spaces[0]) : null);
-                  setSelectedDocumentSources([]);
+                  setSelectedSources([]);
                   setLoadedSpaceTrees({});
                   void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
                   if (result.validation.usable && result.user) {
@@ -278,15 +278,15 @@ export default function App(): React.JSX.Element {
               <HomePage
                 spaces={spaces}
                 selectedScope={selectedScope}
-                selectedDocumentSources={selectedDocumentSources}
+                selectedSources={selectedSources}
                 loadedSpaceTrees={loadedSpaceTrees}
                 syncRoot={syncTarget}
                 connectionValidation={connectionValidation}
                 onScopeChange={setSelectedScope}
-                onToggleDocumentSource={async (scope, checked) => {
+                onToggleSource={async (scope, checked) => {
                   let replacedCrossSpaceSelection = false;
-                  setSelectedDocumentSources((current) => {
-                    const nextSelection = toggleDocumentRootSourceSelection(current, scope, checked);
+                  setSelectedSources((current) => {
+                    const nextSelection = toggleSourceSelection(current, scope, checked);
                     replacedCrossSpaceSelection = nextSelection.replacedCrossSpaceSelection;
                     return nextSelection.sources;
                   });
@@ -308,12 +308,12 @@ export default function App(): React.JSX.Element {
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
                 onCreateTask={async () => {
-                  const selectedSources = getEffectiveSelectedSources(selectedScope, selectedDocumentSources);
-                  if (selectedSources.length === 0) {
+                  const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
+                  if (effectiveSelectedSources.length === 0) {
                     return null;
                   }
                   const task = await createSyncTask(
-                    selectedDocumentSources.length > 0 ? normalizeDocumentRootSources(selectedDocumentSources) : selectedSources,
+                    selectedSources.length > 0 ? normalizeSelectedSources(selectedSources) : effectiveSelectedSources,
                     syncTarget
                   );
                   await startSyncTask(task.id);

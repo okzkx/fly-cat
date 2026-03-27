@@ -26,9 +26,9 @@ export function dedupeSelectedSources(sources: SyncScope[]): SyncScope[] {
   return Array.from(deduped.values());
 }
 
-export function getEffectiveSelectedSources(selectedScope: SyncScope | null, selectedDocumentSources: SyncScope[]): SyncScope[] {
-  if (selectedDocumentSources.length > 0) {
-    return dedupeSelectedSources(selectedDocumentSources);
+export function getEffectiveSelectedSources(selectedScope: SyncScope | null, selectedSources: SyncScope[]): SyncScope[] {
+  if (selectedSources.length > 0) {
+    return dedupeSelectedSources(selectedSources);
   }
   return selectedScope ? [selectedScope] : [];
 }
@@ -77,16 +77,25 @@ export function buildSelectionSummary(
   }
 
   const [first] = sources;
+  const allDocuments = sources.every((source) => source.kind === "document");
   const includesDescendants = sources.some((source) => source.includesDescendants);
   const rootCount = sources.length;
   return {
-    kind: "multi-document",
+    kind: allDocuments ? "multi-document" : "multi-source",
     spaceId: first.spaceId,
     spaceName: first.spaceName,
-    title: includesDescendants ? `${first.spaceName} 文档分支同步` : `${first.spaceName} 多文档同步`,
+    title: allDocuments
+      ? includesDescendants
+        ? `${first.spaceName} 文档分支同步`
+        : `${first.spaceName} 多文档同步`
+      : `${first.spaceName} 多来源同步`,
     displayPath: includesDescendants
-      ? `${first.spaceName}（已选 ${rootCount} 个文档分支）`
-      : `${first.spaceName}（已选 ${rootCount} 篇文档）`,
+      ? allDocuments
+        ? `${first.spaceName}（已选 ${rootCount} 个文档分支）`
+        : `${first.spaceName}（已选 ${rootCount} 个同步根）`
+      : allDocuments
+        ? `${first.spaceName}（已选 ${rootCount} 篇文档）`
+        : `${first.spaceName}（已选 ${rootCount} 个同步根）`,
     documentCount: options?.effectiveDocumentCount ?? rootCount,
     previewPaths: sources.slice(0, 3).map((source) => source.displayPath),
     includesDescendants,

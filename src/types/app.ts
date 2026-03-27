@@ -92,12 +92,12 @@ export interface SyncProgressEventDetail {
 export interface HomePageProps {
   spaces: KnowledgeBaseSpace[];
   selectedScope: SyncScope | null;
-  selectedDocumentSources: SyncScope[];
+  selectedSources: SyncScope[];
   loadedSpaceTrees: Record<string, KnowledgeBaseNode[]>;
   syncRoot: string;
   connectionValidation: ConnectionValidation | null;
   onScopeChange: (scope: SyncScope) => void;
-  onToggleDocumentSource: (
+  onToggleSource: (
     source: SyncScope,
     checked: boolean
   ) => Promise<{ replacedCrossSpaceSelection: boolean }>;
