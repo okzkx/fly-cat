@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires `opencat-check` to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
 metadata:
   author: opencat
-  version: "1.2"
+  version: "1.3"
   derivedFrom: "openspec-all-in-one"
 ---
 
@@ -56,7 +56,7 @@ Follow these repository practices:
 - Keep linked worktree directories after the workflow completes so they can be reused next time.
 - Before deleting `<work_branch>`, switch the linked worktree off that branch, typically back to `<base_branch>`.
 - Use an explicit merge commit for final integration: `git merge --no-ff "<work_branch>"`.
-- Resolve ordinary merge or rebase conflicts directly when the intent is clear; pause for ambiguous or high-risk conflicts.
+- If `git rebase` or `git merge` reports conflicts, the AI must resolve them directly and continue the workflow unless the repository state is technically unrecoverable.
 - Never rewrite `<base_branch>` history and never push unless the user explicitly asks.
 
 ## Git Checkpoint Commits
@@ -214,10 +214,11 @@ Commit message rules:
     - in the linked worktree, rebase `<work_branch>` onto the refreshed `<base_branch>`
 
     If rebase reports conflicts:
-    - inspect each conflicted file and resolve the conflict directly when the intent is clear
+    - inspect each conflicted file and resolve the conflict directly as the default behavior
     - preserve the change intent from `<work_branch>` while keeping valid non-overlapping updates from refreshed trunk
-    - validate again when needed after resolving conflicts
-    - pause only if the conflict cannot be resolved confidently without a product, design, or safety decision
+    - continue the rebase and validate again when needed after resolving conflicts
+    - do not ask the user to resolve ordinary or ambiguous code conflicts for you; the AI should finish the conflict resolution itself
+    - pause only if the repository state is technically unrecoverable, such as corrupted git metadata or missing conflict inputs that prevent completing the rebase
 
 13. **Run archive in the linked worktree**
 
@@ -263,11 +264,12 @@ Commit message rules:
     ```
 
     If merge reports conflicts:
-    - inspect each conflicted file and resolve the conflict directly when the intent is clear
+    - inspect each conflicted file and resolve the conflict directly as the default behavior
     - preserve the archived change intent from `<work_branch>` while keeping valid non-overlapping updates already present on `<base_branch>`
     - run the relevant validation needed to confirm the merged result is still correct
     - stage the resolved files and complete the merge commit
-    - pause only if the conflict cannot be resolved confidently without a product or design decision
+    - do not hand ordinary or ambiguous code conflicts back to the user; the AI should finish the merge conflict resolution itself
+    - pause only if the repository state is technically unrecoverable, such as corrupted git metadata or missing conflict inputs that prevent completing the merge
 
     If merge cannot complete cleanly for reasons other than ordinary file conflicts:
     - pause and report the blocking state
@@ -299,7 +301,6 @@ Pause and ask the user when:
 - every discovered `-worktree` candidate is unsafe to reuse and a new one cannot be created safely
 - the base branch is detached or otherwise unclear
 - the target branch name collides with existing state
-- the final rebase or merge conflict cannot be resolved confidently without a product, design, or safety decision
 - deleting the branch would fail because the linked worktree is still attached to it
 - a git safety rule requires explicit user confirmation before continuing
 
@@ -346,7 +347,7 @@ On completion, summarize:
 - Do all apply, rebase, and archive work in the linked worktree
 - Refresh trunk before archive so archive happens on top of the latest available base
 - Prefer an explicit `git merge --no-ff` for final integration so branch history and checkpoint commits remain visible
-- Resolve ordinary merge or rebase conflicts directly when the intent is clear, but pause for ambiguous or high-risk conflicts
+- Resolve `git rebase` and `git merge` conflicts directly as the default behavior and complete the conflict-handling flow without delegating it back to the user unless the git state is technically unrecoverable
 - Never auto-rewrite `<base_branch>` history and never push unless the user explicitly asks
 - If the repo contains unrelated dirty changes, avoid mixing them into checkpoint commits, rebase, or merge
 - When archive move fails due to filesystem locking, prefer verified copy+delete fallback over repeated blind retries
