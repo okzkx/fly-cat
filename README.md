@@ -94,6 +94,49 @@ npm run test
 npm run typecheck
 ```
 
+## OpenCat 工作流
+
+项目内置了两套 OpenCat skill，用于在 OpenSpec 变更流里执行环境检查、分阶段实现、归档和 Git 集成。
+
+### 环境检查: `opencat-check`
+
+在开始 `opencat-work` 前，先运行 `opencat-check`。它负责：
+
+- 检查 `git`、`node`、`npm`、`openspec`
+- 必要时补装 OpenSpec CLI
+- 检查仓库依赖是否已安装
+- 确认当前环境是否已经可以继续执行 OpenCat 工作流
+
+### 主工作流: `opencat-work`
+
+`opencat-work` 是一个带 Git 检查点和可复用 worktree 的 OpenSpec 一体化流程，核心步骤如下：
+
+1. 在主工程中完成 `purpose` 阶段，也就是 proposal/change artifacts 的生成与校验。
+2. `purpose` 通过后创建 `opencat/<change-name>` 分支，并提交一次 `purpose commit` 作为阶段记录。
+3. 进入可复用的 linked worktree 执行 `apply`，完成实现后提交一次 `apply commit`。
+4. `archive` 前先把工作分支 rebase 到最新主干，再执行归档与中文归档报告生成。
+5. `archive` 完成后提交一次 `archive commit`，提交标题和正文基于 `change-report.zh-CN.md` 摘要生成。
+6. 回到主工程把工作分支 `merge --no-ff` 回主干，删除分支，但保留 linked worktree 供下次复用。
+
+### Git 策略
+
+OpenCat 工作流默认采用以下 Git 约定：
+
+- `purpose`、`apply`、`archive` 分别形成独立检查点提交
+- `apply` 之前不进入 worktree，避免 proposal 阶段过早切换隔离环境
+- `archive` 之前先同步并 rebase 到最新主干，减少最终合并偏差
+- 最终使用 `git merge --no-ff` 保留完整分支历史
+- 普通 rebase/merge 冲突由 AI 优先自动解决，无法可靠判断时才暂停询问
+- linked worktree 默认保留，不在每次结束时删除
+
+### PowerShell 注意事项
+
+Windows PowerShell 下执行 Git 提交时，避免使用 bash 风格语法：
+
+- 不要使用 `$(cat <<'EOF' ...)` 这类 heredoc 写法
+- 不要使用 `&&` 串联多条 Git 命令
+- 更推荐使用 PowerShell here-string 或分步执行
+
 ## 项目结构
 
 ```
