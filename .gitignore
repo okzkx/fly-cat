@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+scripts/.generated/
 synced-docs/
 src-tauri/target/
 src-tauri/target-e2e/

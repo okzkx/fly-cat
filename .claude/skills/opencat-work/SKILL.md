@@ -1,6 +1,6 @@
 ---
 name: opencat-work
-description: Run the OpenSpec all-in-one workflow inside a temporary git worktree branch: create an isolated linked worktree, execute propose/validate/apply/validate/archive/commit there, then return to the main worktree, fast-forward merge the completed branch, and remove the worktree and branch. Use when the user wants OpenSpec work done with worktree isolation, mentions git worktree/worktree branch, or asks for a safer one-shot workflow.
+description: Run the OpenSpec all-in-one workflow inside a temporary git worktree branch: create an isolated linked worktree, execute propose/validate/apply/validate/archive/commit there, then return to the main worktree, merge the completed branch back, and remove the worktree and branch. Use when the user wants OpenSpec work done with worktree isolation, mentions git worktree/worktree branch, or asks for a safer one-shot workflow.
 license: MIT
 compatibility: Requires git, Node.js/npm, and OpenSpec CLI; auto-setup is allowed when missing.
 metadata:
@@ -58,7 +58,7 @@ Follow these worktree practices:
 - Inspect `git worktree list` before creating, merging, or cleaning up worktrees.
 - Do all implementation, validation, archive, and commit work inside the linked worktree.
 - Perform the merge from the main worktree on the base branch, not from inside the linked worktree.
-- Prefer `git merge --ff-only` for the final merge. If fast-forward is not possible, pause and ask.
+- Use an explicit merge commit for the final integration so the worktree branch is merged back with normal `git merge` semantics rather than fast-forwarding away the branch history.
 - Remove linked worktrees with `git worktree remove`, then run `git worktree prune` to clean stale metadata.
 - Avoid `--force` for `git worktree add/remove` unless the user explicitly approves.
 
@@ -210,7 +210,10 @@ Follow these worktree practices:
    - do not include likely secret files
 
    Commit rules:
-   - use a concise message focused on intent
+   - derive the git commit title and body from the generated `change-report.zh-CN.md`
+   - use the report's Chinese summary as the source of truth for both title and message body instead of inventing a separate wording
+   - keep the title concise and summary-like, reflecting the main outcome of the archived change
+   - keep the body aligned with the report's key points, such as motivation, scope, spec impact, and task completion, when those sections exist
    - pass the message via heredoc
    - run `git status` after commit to confirm success
    - do **not** push
@@ -224,15 +227,22 @@ Follow these worktree practices:
    - inspect `git status --short`
    - if unrelated local changes on the base branch would be mixed into the merge, pause and ask
 
-   Merge the completed branch back with:
+   Merge the completed branch back with an explicit merge commit:
 
    ```bash
-   git merge --ff-only "<work_branch>"
+   git merge --no-ff "<work_branch>"
    ```
 
-   If fast-forward merge fails:
-   - pause and report that the branch diverged
-   - do not auto-rebase, do not create an automatic merge commit, and do not force history changes without explicit approval
+   If merge reports conflicts:
+   - inspect each conflicted file and resolve the conflict directly instead of pausing by default
+   - preserve the archived change intent from `<work_branch>` while also keeping any valid non-overlapping updates already present on `<base_branch>`
+   - after resolving conflicts, run the relevant validation needed to confirm the merged result is still correct
+   - stage the resolved files and complete the merge commit
+   - pause only if the conflict cannot be resolved confidently without a product or design decision
+
+   If merge cannot complete cleanly for reasons other than ordinary file conflicts:
+   - pause and report the blocking state
+   - do not auto-rebase and do not force history changes without explicit approval
 
 14. **Clean up the linked worktree and branch**
 
@@ -263,7 +273,7 @@ Pause and ask the user when:
 - committing would mix in unrelated changes
 - the base branch is detached or otherwise unclear
 - the target worktree path or branch name collides with existing state
-- the final merge is not fast-forward clean
+- the final merge conflict cannot be resolved confidently without a product, design, or safety decision
 - cleanup would require forcing `git worktree remove` or branch deletion
 - a git safety rule requires explicit user confirmation before continuing
 
@@ -301,8 +311,9 @@ On completion, summarize:
 - Always read CLI-provided context files before implementation
 - Prefer sibling linked worktrees outside the repo root rather than nested disposable directories
 - Do all risky edits in the linked worktree, then merge from the main worktree
-- Prefer `git merge --ff-only` for the final integration
-- Never auto-resolve merge conflicts, auto-rebase, or rewrite history without explicit approval
+- Prefer an explicit `git merge --no-ff` for the final integration so the worktree branch merge is preserved in history
+- Resolve ordinary merge conflicts directly when the intent is clear, but pause for ambiguous or high-risk conflicts
+- Never auto-rebase or rewrite history without explicit approval
 - Never push unless the user explicitly asks
 - If the repo contains unrelated dirty changes, avoid mixing them into the final commit or merge
 - When archive move fails due to filesystem locking, prefer verified copy+delete fallback over repeated blind retries
