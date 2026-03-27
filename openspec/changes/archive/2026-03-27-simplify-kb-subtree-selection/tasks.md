@@ -11,4 +11,4 @@
 ## 3. Validation
 
 - [x] 3.1 Add automated coverage for subtree-root selection state, descendant disable behavior, overlapping-root deduplication, and subtree-aware summary/task fallback behavior.
-- [ ] 3.2 Manually validate leaf-document sync, parent-document subtree sync, same-knowledge-base multi-root sync, cross-knowledge-base switching, and task-list source-summary rendering.
+- [x] 3.2 Add tauri-driver desktop automation for leaf-document selection, parent-document subtree coverage, same-knowledge-base multi-root selection, cross-knowledge-base switching, and task-list source-summary rendering using deterministic fixture data.

@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Knowledge Base Scoped Discovery
-The system MUST discover, classify, present, and queue only documents that belong to user-selected knowledge base sources. A selectable source MUST support an entire knowledge base, a directory subtree within that knowledge base, an individual document, or multiple explicitly selected document nodes from the same knowledge base. Source discovery used for scoped selection MUST return only the immediate children of the expanded knowledge base or parent node for each expansion step, and MUST classify non-directory items such as Feishu Bitable as leaf nodes rather than directories.
+The system MUST discover, classify, present, and queue only documents that belong to user-selected knowledge base sources. A selectable source MUST support an entire knowledge base, a directory subtree within that knowledge base, or one or more selected document subtree roots from the same knowledge base. Selecting a document source that has descendant documents MUST implicitly include that document and all descendant documents in the effective sync set. Source discovery used for scoped selection MUST return only the immediate children of the expanded knowledge base or parent node for each expansion step, and MUST classify non-directory items such as Feishu Bitable as leaf nodes rather than directories.
 
 #### Scenario: Ignore non-knowledge-base sources
 - **WHEN** the source enumeration includes Feishu document containers outside selected knowledge base sources
@@ -18,17 +18,17 @@ The system MUST discover, classify, present, and queue only documents that belon
 - **WHEN** the user selects a directory inside a knowledge base and starts synchronization
 - **THEN** the system builds a sync queue containing documents in that directory and its descendant directories only
 
-#### Scenario: Build queue from selected individual document
-- **WHEN** the user selects a single document inside a knowledge base and starts synchronization
+#### Scenario: Build queue from selected leaf document
+- **WHEN** the user selects a document inside a knowledge base that has no descendant documents and starts synchronization
 - **THEN** the system builds a sync queue containing only that document
 
-#### Scenario: Build queue from multiple selected documents in one knowledge base
-- **WHEN** the user explicitly selects multiple document nodes from the same knowledge base and starts synchronization
-- **THEN** the system builds a sync queue containing exactly the deduplicated set of those selected documents
+#### Scenario: Build queue from selected document subtree
+- **WHEN** the user selects a document inside a knowledge base that has descendant documents and starts synchronization
+- **THEN** the system builds a sync queue containing that document and every descendant document in its subtree
 
-#### Scenario: Build queue from one-click parent document subtree selection
-- **WHEN** the user triggers the one-click selection action for a parent document that has descendant documents inside the same knowledge base
-- **THEN** the system adds that parent document and all descendant document nodes to the effective selected source set and builds a deduplicated sync queue from that expanded set
+#### Scenario: Build queue from multiple selected document subtrees in one knowledge base
+- **WHEN** the user selects multiple document roots from the same knowledge base and starts synchronization
+- **THEN** the system builds a sync queue containing the deduplicated union of every selected root document and all descendant documents covered by those roots
 
 #### Scenario: Expanding a knowledge base returns only direct children
 - **WHEN** the user expands a knowledge base in the scoped source browser
@@ -57,8 +57,8 @@ The system MUST perform incremental synchronization using persisted sync state f
 - **WHEN** a previously synced document exists in manifest state but is outside the source set selected for the current synchronization run
 - **THEN** the planner does not queue that document for the current run
 
-#### Scenario: Deduplicate duplicated document selections
-- **WHEN** the current selected source set resolves to the same document more than once
+#### Scenario: Deduplicate overlapping document subtree selections
+- **WHEN** the current selected source set resolves to the same document more than once because multiple selected roots overlap or legacy descendant selections are present
 - **THEN** the planner queues that document only once for the current run
 
 ### Requirement: Persistent Sync Manifest

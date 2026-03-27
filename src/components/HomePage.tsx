@@ -180,7 +180,7 @@ export default function HomePage({
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span>飞猫助手知识库同步</span>
-            <Button type="text" onClick={onOpenTasks}>
+            <Button type="text" onClick={onOpenTasks} data-testid="open-task-list">
               {activeTaskSummary}
             </Button>
           </div>
@@ -206,8 +206,12 @@ export default function HomePage({
               <Space wrap>
                 <FolderOpenOutlined />
                 <Text>已选同步范围：</Text>
-                <Tag color="blue">{getSelectionLabel(selectionSummary, selectedScope)}</Tag>
-                <Text>{selectionSummary?.displayPath ?? "请选择一个知识库、目录或文档"}</Text>
+                <Tag color="blue" data-testid="selection-kind">
+                  {getSelectionLabel(selectionSummary, selectedScope)}
+                </Tag>
+                <Text data-testid="selection-display-path">
+                  {selectionSummary?.displayPath ?? "请选择一个知识库、目录或文档"}
+                </Text>
               </Space>
               {selectionSummary?.kind === "multi-document" && (
                 <Space wrap>
@@ -233,7 +237,8 @@ export default function HomePage({
           )}
 
           {spaces.length > 0 ? (
-            <Tree
+            <div data-testid="knowledge-base-tree">
+              <Tree
               checkable
               checkStrictly
               defaultExpandedKeys={["wiki-root"]}
@@ -270,7 +275,7 @@ export default function HomePage({
                   return (
                     <Space>
                       <CloudSyncOutlined style={{ color: "#722ed1" }} />
-                      <span>{String(treeNode.title)}</span>
+                      <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
                     </Space>
                   );
                 }
@@ -291,7 +296,7 @@ export default function HomePage({
                 return (
                   <Space>
                     {icon}
-                    <span>{String(treeNode.title)}</span>
+                    <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
                     {nodeKind === "space" && <Tag color="purple">整库</Tag>}
                     {nodeKind === "folder" && <Tag color="gold">目录</Tag>}
                     {nodeKind === "document" && <Tag color="blue">文档</Tag>}
@@ -301,6 +306,7 @@ export default function HomePage({
                 );
               }}
             />
+            </div>
           ) : (
             <Empty description="暂无知识空间可供选择" />
           )}

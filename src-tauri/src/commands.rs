@@ -1094,6 +1094,39 @@ fn build_connected_result(
     }
 }
 
+fn e2e_fixtures_enabled() -> bool {
+    matches!(
+        std::env::var("FLYCAT_E2E_FIXTURES").ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
+}
+
+fn e2e_fixture_user() -> UserInfo {
+    UserInfo {
+        name: "E2E Fixture User".into(),
+        avatar: None,
+        email: Some("fixture@example.com".into()),
+        user_id: Some("ou_fixture".into()),
+    }
+}
+
+fn e2e_fixture_spaces() -> Vec<KnowledgeBaseSpace> {
+    to_knowledge_base_spaces(vec![
+        ("kb-eng".into(), "研发知识库".into()),
+        ("kb-product".into(), "产品知识库".into()),
+        ("kb-ops".into(), "运维知识库".into()),
+    ])
+}
+
+fn e2e_fixture_connection_check() -> ConnectionCheckResult {
+    build_connected_result(
+        e2e_fixture_user(),
+        e2e_fixture_spaces(),
+        "E2E fixture mode enabled.",
+        Some("tauri-driver fixture runtime".into()),
+    )
+}
+
 fn build_empty_connected_result(
     user: UserInfo,
     message: impl Into<String>,
@@ -1287,6 +1320,10 @@ fn authorized_config_for_session(
 }
 
 fn resolve_connection_check(app: &AppHandle, settings: &AppSettings) -> ConnectionCheckResult {
+    if e2e_fixtures_enabled() {
+        return e2e_fixture_connection_check();
+    }
+
     let (session, config) = match authorized_config_for_session(app, settings) {
         Ok(values) => values,
         Err(result) => return result,
@@ -2174,6 +2211,10 @@ pub fn list_space_source_tree(
     space_id: String,
     parent_node_token: Option<String>,
 ) -> Result<Vec<KnowledgeBaseNode>, String> {
+    if e2e_fixtures_enabled() {
+        return Ok(fixture_space_nodes(&space_id, parent_node_token.as_deref()));
+    }
+
     let settings: AppSettings = load_json_file(settings_file_path(&app)?)?
         .ok_or_else(|| "请先在设置页保存飞书应用配置".to_string())?;
     let (session, _) = authorized_config_for_session(&app, &settings)
