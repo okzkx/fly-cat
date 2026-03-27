@@ -193,7 +193,7 @@ export default function HomePage({
       <Card
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span>知识库同步列表</span>
+            <span>飞猫助手知识库同步</span>
             <Button type="text" onClick={onOpenTasks}>
               {activeTaskSummary}
             </Button>

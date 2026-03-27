@@ -1,6 +1,7 @@
-import { InfoCircleOutlined, SaveOutlined, SettingOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, SaveOutlined } from "@ant-design/icons";
 import { App, Button, Card, Collapse, Form, Input, Space, Typography } from "antd";
 import { useEffect } from "react";
+import BrandMark from "@/components/BrandMark";
 import type { AppSettings, SettingsPageProps } from "@/types/app";
 
 const { Title, Paragraph, Text } = Typography;
@@ -32,10 +33,12 @@ export default function SettingsPage({ initialSettings, onSaved }: SettingsPageP
     <div className="center-page">
       <Card style={{ width: 560, maxWidth: "100%" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <SettingOutlined style={{ fontSize: 32, color: "#1677ff", marginBottom: 12 }} />
-          <Title level={3}>飞书同步配置</Title>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+            <BrandMark size={40} />
+          </div>
+          <Title level={3}>飞猫助手设置</Title>
           <Paragraph type="secondary">
-            保持与参考工程一致的配置入口，但将配置内容调整为知识库同步与飞书 OpenAPI 获取 Markdown。
+            配置飞猫助手的知识库同步能力，并保持与参考工程一致的设置入口与飞书 OpenAPI 接入方式。
           </Paragraph>
         </div>
 

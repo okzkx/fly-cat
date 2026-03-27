@@ -3,6 +3,7 @@ import { Alert, App, Button, Card, Space, Typography } from "antd";
 import { cancel, onUrl, start } from "@fabianlars/tauri-plugin-oauth";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
+import BrandMark from "@/components/BrandMark";
 import type { AuthPageProps, ConnectionCheckResult } from "@/types/app";
 import { getConnectionAlert } from "@/utils/connectionValidation";
 import { beginUserAuthorization, completeUserAuthorization, isTauriRuntime } from "@/utils/tauriRuntime";
@@ -132,8 +133,10 @@ export default function AuthPage({ validation, onAuthorized, onGoToSettings }: A
   return (
     <div className="center-page">
       <Card style={{ width: 480, maxWidth: "100%", textAlign: "center" }}>
-        <LockOutlined style={{ fontSize: 32, color: "#1677ff", marginBottom: 12 }} />
-        <Title level={4}>登录飞书知识库</Title>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+          <BrandMark size={40} />
+        </div>
+        <Title level={4}>飞猫助手登录飞书知识库</Title>
         <Paragraph>
           这里改为和参考项目一致的用户授权登录。点击下方按钮后，应用会拉起浏览器完成飞书 OAuth，
           成功后再按当前登录用户的权限加载知识空间并进入应用。
@@ -160,6 +163,7 @@ export default function AuthPage({ validation, onAuthorized, onGoToSettings }: A
           <Button
             type="primary"
             block
+            icon={<LockOutlined />}
             loading={connecting}
             disabled={!listenerReady}
             onClick={() => void handleAuthorize()}

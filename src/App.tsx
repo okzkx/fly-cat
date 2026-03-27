@@ -1,7 +1,8 @@
-import { LogoutOutlined, SyncOutlined, UserOutlined } from "@ant-design/icons";
+import { LogoutOutlined, UserOutlined } from "@ant-design/icons";
 import { App as AntdApp, Avatar, ConfigProvider, Dropdown, Layout, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import AuthPage from "@/components/AuthPage";
+import BrandMark from "@/components/BrandMark";
 import HomePage from "@/components/HomePage";
 import SettingsPage from "@/components/SettingsPage";
 import TaskListPage from "@/components/TaskListPage";
@@ -120,6 +121,18 @@ export default function App(): React.JSX.Element {
   }, []);
 
   const syncTarget = useMemo(() => resolvedSyncRoot ?? settings?.syncRoot ?? "./synced-docs", [resolvedSyncRoot, settings]);
+  const pageTitle = useMemo(() => {
+    switch (currentPage) {
+      case "settings":
+        return "飞猫助手 - 设置";
+      case "auth":
+        return "飞猫助手 - 登录";
+      case "tasks":
+        return "飞猫助手 - 任务列表";
+      default:
+        return "飞猫助手";
+    }
+  }, [currentPage]);
 
   useEffect(() => {
     if (!selectedScope && spaces[0]) {
@@ -134,6 +147,10 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     setSelectedDocumentSources((current) => current.filter((source) => scopeExists(source, spaces, loadedSpaceTrees)));
   }, [loadedSpaceTrees, spaces]);
+
+  useEffect(() => {
+    document.title = pageTitle;
+  }, [pageTitle]);
 
   const activeTaskSummary = useMemo(() => {
     const runningTask = tasks.find((task) => task.status === "syncing");
@@ -198,19 +215,27 @@ export default function App(): React.JSX.Element {
             style={{
               background: "#fff",
               borderBottom: "1px solid #f0f0f0",
-              padding: "0 24px",
+              height: 76,
+              padding: "14px 24px 0",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              alignItems: "flex-start",
+              justifyContent: "flex-start",
               position: "relative"
             }}
           >
-            <Space>
-              <SyncOutlined style={{ color: "#1677ff" }} />
-              <Text strong>飞书文档同步助手</Text>
+            <Space size={10} align="center">
+              <BrandMark size={30} />
+              <Space size={8} align="baseline">
+                <Text strong style={{ fontSize: 20, lineHeight: 1 }}>
+                  飞猫助手
+                </Text>
+                <Text type="secondary" style={{ fontSize: 13, lineHeight: 1 }}>
+                  FlyCat
+                </Text>
+              </Space>
             </Space>
             {userInfo && (
-              <div style={{ position: "absolute", right: 24 }}>
+              <div style={{ position: "absolute", right: 24, top: 18 }}>
                 <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
                   <Space style={{ cursor: "pointer" }}>
                     <Avatar icon={<UserOutlined />} src={userInfo.avatar} />

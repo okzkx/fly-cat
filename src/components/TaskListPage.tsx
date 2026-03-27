@@ -228,7 +228,7 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card
-        title="同步任务列表"
+        title="飞猫助手任务列表"
         extra={
           <Button icon={<ArrowLeftOutlined />} onClick={onGoBack}>
             返回首页

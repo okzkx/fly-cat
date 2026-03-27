@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "feishu_docs_sync",
+  "productName": "FlyCat",
   "version": "0.1.0",
   "identifier": "com.feishu-docs-sync",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "飞书文档同步助手",
+        "title": "飞猫助手",
         "width": 1200,
         "height": 800,
         "minWidth": 960,
