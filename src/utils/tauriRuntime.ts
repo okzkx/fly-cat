@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AppBootstrap, AppSettings, ConnectionCheckResult, SyncTask, UserInfo } from "@/types/app";
+import type { KnowledgeBaseNode, SyncScope } from "@/types/sync";
 import {
   TASK_EVENTS,
   createSyncTask as createBrowserSyncTask,
   deleteSyncTask as deleteBrowserSyncTask,
   getSyncTasks as getBrowserSyncTasks,
+  listKnowledgeBaseNodes as listBrowserKnowledgeBaseNodes,
   resumeSyncTasks as resumeBrowserSyncTasks,
   retryFailedTask as retryBrowserFailedTask,
   startSyncTask as startBrowserSyncTask
@@ -190,13 +192,20 @@ export async function getSyncTasks(): Promise<SyncTask[]> {
   return invoke<SyncTask[]>("list_sync_tasks");
 }
 
-export async function createSyncTask(selectedSpaces: string[], outputPath: string): Promise<SyncTask> {
+export async function listKnowledgeBaseNodes(spaceId: string, parentNodeToken?: string): Promise<KnowledgeBaseNode[]> {
   if (!isTauriRuntime()) {
-    return createBrowserSyncTask(selectedSpaces, outputPath);
+    return listBrowserKnowledgeBaseNodes(spaceId, parentNodeToken);
+  }
+  return invoke<KnowledgeBaseNode[]>("list_space_source_tree", { spaceId, parentNodeToken });
+}
+
+export async function createSyncTask(selectedScope: SyncScope, outputPath: string): Promise<SyncTask> {
+  if (!isTauriRuntime()) {
+    return createBrowserSyncTask(selectedScope, outputPath);
   }
   return invoke<SyncTask>("create_sync_task", {
     request: {
-      selectedSpaces,
+      selectedScope,
       outputPath
     }
   });

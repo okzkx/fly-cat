@@ -11,18 +11,57 @@ export interface KnowledgeBaseSpace {
   selected: boolean;
 }
 
+export type KnowledgeBaseNodeKind = "space" | "folder" | "document" | "bitable";
+
+export interface SyncScope {
+  kind: KnowledgeBaseNodeKind;
+  spaceId: string;
+  spaceName: string;
+  title: string;
+  displayPath: string;
+  nodeToken?: string;
+  documentId?: string;
+  pathSegments: string[];
+}
+
+export interface KnowledgeBaseNode {
+  key: string;
+  kind: Exclude<KnowledgeBaseNodeKind, "space">;
+  spaceId: string;
+  spaceName: string;
+  title: string;
+  displayPath: string;
+  nodeToken: string;
+  documentId?: string;
+  pathSegments: string[];
+  hasChildren: boolean;
+  isExpandable: boolean;
+  children?: KnowledgeBaseNode[];
+}
+
 export interface SourceDocument {
   id: string;
   spaceId: string;
+  spaceName: string;
+  nodeToken: string;
   title: string;
   updateTime: string;
   version: string;
+  pathSegments: string[];
+  sourcePath: string;
 }
 
 export interface ManifestRecord {
   documentId: string;
+  spaceId?: string;
+  spaceName?: string;
+  title?: string;
+  nodeToken?: string;
   version: string;
   updateTime: string;
+  sourcePath?: string;
+  pathSegments?: string[];
+  selectedScope?: SyncScope;
   outputPath: string;
   contentHash: string;
   status: "success" | "failed";

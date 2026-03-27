@@ -4,6 +4,7 @@ export {
   createSyncTask,
   deleteSyncTask,
   getRuntimeInfo,
+  listKnowledgeBaseNodes,
   getSyncTasks,
   initializeTaskEventBridge,
   isTauriRuntime,

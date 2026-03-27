@@ -8,7 +8,14 @@ function isUnchanged(document: SourceDocument, record?: ManifestRecord): boolean
   if (!record) {
     return false;
   }
-  return record.version === document.version && record.updateTime === document.updateTime;
+
+  const recordPath = record.sourcePath ?? "";
+  return (
+    record.status === "success" &&
+    record.version === document.version &&
+    record.updateTime === document.updateTime &&
+    recordPath === document.sourcePath
+  );
 }
 
 export function buildSyncPlan(documents: SourceDocument[], manifest: SyncManifest): SyncPlan {

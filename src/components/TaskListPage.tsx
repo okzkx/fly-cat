@@ -82,6 +82,20 @@ function statusToTag(status: SyncTask["status"]): { color: string; text: string 
   }
 }
 
+function scopeLabel(task: SyncTask): string {
+  if (!task.selectedScope) {
+    return task.selectedSpaces.join(", ") || "未记录范围";
+  }
+  switch (task.selectedScope.kind) {
+    case "document":
+      return `文档: ${task.selectedScope.displayPath}`;
+    case "folder":
+      return `目录: ${task.selectedScope.displayPath}`;
+    default:
+      return `知识库: ${task.selectedScope.displayPath}`;
+  }
+}
+
 export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX.Element {
   const { message } = App.useApp();
   const [tasks, setTasks] = useState<SyncTask[]>([]);
@@ -142,6 +156,7 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
           <Space direction="vertical" size={0}>
             <Text>{name}</Text>
             <Text type="secondary">{formatTaskTimestamp(record.createdAt)}</Text>
+            <Text type="secondary">{scopeLabel(record)}</Text>
           </Space>
         )
       },
@@ -213,9 +228,10 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
           pagination={false}
           locale={{ emptyText: "暂无同步任务" }}
           expandable={{
-            rowExpandable: (record) => Boolean(record.failureSummary || record.errors.length > 0),
+            rowExpandable: (record) => Boolean(record.selectedScope || record.failureSummary || record.errors.length > 0),
             expandedRowRender: (record) => (
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                <Text>同步范围：{scopeLabel(record)}</Text>
                 <Text>输出目录：{record.outputPath}</Text>
                 {record.failureSummary && (
                   <Alert

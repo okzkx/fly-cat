@@ -55,7 +55,13 @@ mod tests {
             ManifestRecord {
                 document_id: "doc-1".into(),
                 space_id: "kb-eng".into(),
+                space_name: "研发知识库".into(),
+                node_token: "node-doc-1".into(),
                 title: "Doc".into(),
+                version: "v1".into(),
+                update_time: "t1".into(),
+                source_path: "研发知识库/Doc".into(),
+                path_segments: vec!["Doc".into()],
                 output_path: "a.md".into(),
                 content_hash: "hash".into(),
                 source_signature: "sig".into(),

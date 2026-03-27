@@ -1,5 +1,5 @@
 use crate::mcp::{ImageProvider, ImageResource, McpError};
-use crate::model::{CanonicalBlock, CanonicalDocument};
+use crate::model::{CanonicalBlock, CanonicalDocument, SyncSourceDocument};
 use std::path::{Path, PathBuf};
 
 pub struct RenderedDocument {
@@ -12,44 +12,36 @@ pub struct ImageAsset {
     pub bytes: Vec<u8>,
 }
 
-fn slugify(input: &str) -> String {
-    let mut result = String::new();
-    let mut previous_was_dash = false;
+fn sanitize_path_segment(input: &str) -> String {
+    let mut sanitized = String::new();
 
     for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            result.push(ch.to_ascii_lowercase());
-            previous_was_dash = false;
-        } else if !previous_was_dash {
-            result.push('-');
-            previous_was_dash = true;
-        }
+        let invalid = matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || ch.is_control();
+        sanitized.push(if invalid { '_' } else { ch });
     }
 
-    result.trim_matches('-').to_string()
+    let trimmed = sanitized.trim().trim_end_matches(['.', ' ']).trim();
+    if trimmed.is_empty() {
+        "untitled".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
-fn short_document_suffix(document_id: &str) -> String {
-    document_id
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
-        .take(8)
-        .collect::<String>()
-}
+pub fn markdown_output_path(sync_root: &Path, document: &SyncSourceDocument) -> PathBuf {
+    let mut output = sync_root.join(sanitize_path_segment(if document.space_name.is_empty() {
+        &document.space_id
+    } else {
+        &document.space_name
+    }));
 
-pub fn markdown_output_path(sync_root: &Path, document: &CanonicalDocument) -> PathBuf {
-    let slug = {
-        let base = slugify(&document.title);
-        if base.is_empty() {
-            "untitled".to_string()
-        } else {
-            base
-        }
-    };
-    sync_root.join(&document.space_id).join(format!(
-        "{}-{}.md",
-        slug,
-        short_document_suffix(&document.document_id)
+    for segment in document.path_segments.iter().take(document.path_segments.len().saturating_sub(1)) {
+        output = output.join(sanitize_path_segment(segment));
+    }
+
+    output.join(format!(
+        "{}.md",
+        sanitize_path_segment(document.path_segments.last().map(|segment| segment.as_str()).unwrap_or(&document.title))
     ))
 }
 
@@ -68,12 +60,10 @@ pub fn stable_hash(input: &[u8]) -> String {
 
 pub fn render_markdown(
     document: &CanonicalDocument,
-    sync_root: &Path,
+    markdown_dir: &Path,
     image_dir_name: &str,
     image_provider: &impl ImageProvider,
 ) -> Result<RenderedDocument, McpError> {
-    let markdown_path = markdown_output_path(sync_root, document);
-    let markdown_dir = markdown_path.parent().unwrap_or(sync_root);
     let mut lines = vec![format!("# {}", document.title), String::new()];
     let mut image_assets = Vec::new();
 
@@ -128,21 +118,26 @@ fn pathdiff(base: &Path, target: &Path) -> String {
 mod tests {
     use super::*;
     use crate::mcp::FixtureMcpClient;
-    use crate::model::{CanonicalBlock, CanonicalDocument};
+    use crate::model::{CanonicalBlock, CanonicalDocument, SyncSourceDocument};
     use std::path::PathBuf;
 
     #[test]
     fn creates_stable_markdown_path() {
-        let document = CanonicalDocument {
+        let document = SyncSourceDocument {
             document_id: "doc-eng-architecture".into(),
             space_id: "kb-eng".into(),
+            space_name: "研发知识库".into(),
+            node_token: "node-doc-eng-architecture".into(),
             title: "研发架构设计".into(),
-            blocks: vec![],
+            version: "v1".into(),
+            update_time: "t1".into(),
+            path_segments: vec!["研发规范".into(), "研发架构设计".into()],
+            source_path: "研发知识库/研发规范/研发架构设计".into(),
         };
 
         let output = markdown_output_path(&PathBuf::from("synced-docs"), &document);
-        assert!(output.to_string_lossy().contains("kb-eng"));
-        assert!(output.to_string_lossy().ends_with(".md"));
+        let rendered = output.to_string_lossy().replace('\\', "/");
+        assert!(rendered.contains("研发知识库/研发规范/研发架构设计.md"));
     }
 
     #[test]
@@ -165,7 +160,7 @@ mod tests {
 
         let rendered = render_markdown(
             &document,
-            Path::new("synced-docs"),
+            Path::new("synced-docs/研发知识库/研发规范"),
             "_assets",
             &FixtureMcpClient::new("user-feishu-mcp".into()),
         )

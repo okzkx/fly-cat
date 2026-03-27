@@ -26,15 +26,23 @@ The system MUST transform retrieved document content into deterministic Markdown
 - **THEN** the generated Markdown preserves that hierarchy in heading levels and paragraph order
 
 ### Requirement: Stable Local File Mapping
-The system MUST map each synced document to a stable local Markdown path according to deterministic rules.
+The system MUST map each synced document to a stable local Markdown path according to deterministic rules that preserve the document's knowledge-base-relative directory structure and authoritative document naming.
 
 #### Scenario: Stable path across repeated runs
 - **WHEN** the same source document is synced repeatedly without path-affecting metadata changes
 - **THEN** the output file path remains unchanged between runs
 
-#### Scenario: Path update on deterministic rename rule
-- **WHEN** a source title or folder mapping changes according to configured naming rules
-- **THEN** the system updates output path deterministically and updates manifest mapping
+#### Scenario: Preserve source directory hierarchy
+- **WHEN** a synced document belongs to nested directories inside the source knowledge base
+- **THEN** the local Markdown output path preserves that directory hierarchy relative to the knowledge base root
+
+#### Scenario: Preserve source document naming
+- **WHEN** a document is written to local Markdown output
+- **THEN** the output file name is derived deterministically from the source document's authoritative name rather than an app-defined flat naming rule
+
+#### Scenario: Path update on source move or rename
+- **WHEN** a source document is renamed or moved to a different directory in the knowledge base
+- **THEN** the system updates the local output path deterministically and updates manifest mapping
 
 ### Requirement: Pipeline Failure Stage Classification
 The system MUST classify document sync failures by pipeline stage when content retrieval, transformation, or persistence fails.

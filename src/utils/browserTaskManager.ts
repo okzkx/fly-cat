@@ -1,5 +1,5 @@
 import type { SyncTask } from "@/types/app";
-import type { SyncRunError } from "@/types/sync";
+import type { KnowledgeBaseNode, SyncRunError, SyncScope } from "@/types/sync";
 
 const TASK_STORAGE_KEY = "feishu_sync_tasks";
 
@@ -11,6 +11,190 @@ export const TASK_EVENTS = {
 } as const;
 
 const runningTimers = new Map<string, number>();
+
+const SAMPLE_TREES: Record<string, KnowledgeBaseNode[]> = {
+  "kb-eng": [
+    {
+      key: "folder:kb-eng:eng-guides",
+      kind: "folder",
+      spaceId: "kb-eng",
+      spaceName: "研发知识库",
+      title: "研发规范",
+      displayPath: "研发知识库 / 研发规范",
+      nodeToken: "eng-guides",
+      pathSegments: ["研发规范"],
+      hasChildren: true,
+      isExpandable: true,
+      children: [
+        {
+          key: "document:kb-eng:doc-eng-architecture",
+          kind: "document",
+          spaceId: "kb-eng",
+          spaceName: "研发知识库",
+          title: "研发架构设计",
+          displayPath: "研发知识库 / 研发规范 / 研发架构设计",
+          nodeToken: "node-doc-eng-architecture",
+          documentId: "doc-eng-architecture",
+          pathSegments: ["研发规范", "研发架构设计"],
+          hasChildren: false,
+          isExpandable: false
+        },
+        {
+          key: "document:kb-eng:doc-eng-api",
+          kind: "document",
+          spaceId: "kb-eng",
+          spaceName: "研发知识库",
+          title: "研发API概览",
+          displayPath: "研发知识库 / 研发规范 / 研发API概览",
+          nodeToken: "node-doc-eng-api",
+          documentId: "doc-eng-api",
+          pathSegments: ["研发规范", "研发API概览"],
+          hasChildren: false,
+          isExpandable: false
+        }
+      ]
+    }
+  ],
+  "kb-product": [
+    {
+      key: "folder:kb-product:product-library",
+      kind: "folder",
+      spaceId: "kb-product",
+      spaceName: "产品知识库",
+      title: "方案库",
+      displayPath: "产品知识库 / 方案库",
+      nodeToken: "product-library",
+      pathSegments: ["方案库"],
+      hasChildren: true,
+      isExpandable: true,
+      children: [
+        {
+          key: "document:kb-product:doc-product-overview",
+          kind: "document",
+          spaceId: "kb-product",
+          spaceName: "产品知识库",
+          title: "Product Overview",
+          displayPath: "产品知识库 / 方案库 / Product Overview",
+          nodeToken: "node-doc-product-overview",
+          documentId: "doc-product-overview",
+          pathSegments: ["方案库", "Product Overview"],
+          hasChildren: false,
+          isExpandable: false
+        },
+        {
+          key: "document:kb-product:doc-product-roadmap",
+          kind: "document",
+          spaceId: "kb-product",
+          spaceName: "产品知识库",
+          title: "产品方案总览",
+          displayPath: "产品知识库 / 方案库 / 产品方案总览",
+          nodeToken: "node-doc-product-roadmap",
+          documentId: "doc-product-roadmap",
+          pathSegments: ["方案库", "产品方案总览"],
+          hasChildren: true,
+          isExpandable: true,
+          children: [
+            {
+              key: "document:kb-product:doc-product-roadmap-h1",
+              kind: "document",
+              spaceId: "kb-product",
+              spaceName: "产品知识库",
+              title: "2026 H1 路线图",
+              displayPath: "产品知识库 / 方案库 / 产品方案总览 / 2026 H1 路线图",
+              nodeToken: "node-doc-product-roadmap-h1",
+              documentId: "doc-product-roadmap-h1",
+              pathSegments: ["方案库", "产品方案总览", "2026 H1 路线图"],
+              hasChildren: false,
+              isExpandable: false
+            },
+            {
+              key: "bitable:kb-product:bitable-product-demand-pool",
+              kind: "bitable",
+              spaceId: "kb-product",
+              spaceName: "产品知识库",
+              title: "需求池",
+              displayPath: "产品知识库 / 方案库 / 产品方案总览 / 需求池",
+              nodeToken: "node-bitable-product-demand-pool",
+              documentId: "bitable-product-demand-pool",
+              pathSegments: ["方案库", "产品方案总览", "需求池"],
+              hasChildren: false,
+              isExpandable: false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "kb-ops": [
+    {
+      key: "document:kb-ops:doc-ops-playbook",
+      kind: "document",
+      spaceId: "kb-ops",
+      spaceName: "运维知识库",
+      title: "运维值班手册",
+      displayPath: "运维知识库 / 运维值班手册",
+      nodeToken: "node-doc-ops-playbook",
+      documentId: "doc-ops-playbook",
+      pathSegments: ["运维值班手册"],
+      hasChildren: false,
+      isExpandable: false
+    }
+  ]
+};
+
+function cloneCollapsedNodes(nodes: KnowledgeBaseNode[]): KnowledgeBaseNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    children: undefined
+  }));
+}
+
+function findNodeByToken(nodes: KnowledgeBaseNode[], nodeToken: string): KnowledgeBaseNode | null {
+  const stack = [...nodes];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (current.nodeToken === nodeToken) {
+      return current;
+    }
+    stack.push(...(current.children ?? []));
+  }
+  return null;
+}
+
+function countDocuments(nodes: KnowledgeBaseNode[]): number {
+  return nodes.reduce((total, node) => {
+    const childTotal = node.children ? countDocuments(node.children) : 0;
+    return total + (node.kind === "document" ? 1 : 0) + childTotal;
+  }, 0);
+}
+
+function countScopeDocuments(scope: SyncScope): number {
+  if (scope.kind === "document") {
+    return 1;
+  }
+
+  const tree = SAMPLE_TREES[scope.spaceId] ?? [];
+  if (scope.kind === "space") {
+    return Math.max(1, countDocuments(tree));
+  }
+
+  const stack = [...tree];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (current.nodeToken === scope.nodeToken) {
+      return Math.max(1, countDocuments([current]));
+    }
+    stack.push(...(current.children ?? []));
+  }
+
+  return 1;
+}
 
 function loadStoredTasks(): SyncTask[] {
   try {
@@ -49,16 +233,27 @@ export function getSyncTasks(): SyncTask[] {
   return loadStoredTasks().sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 }
 
-export function createSyncTask(selectedSpaces: string[], outputPath: string): SyncTask {
+export function listKnowledgeBaseNodes(spaceId: string, parentNodeToken?: string): KnowledgeBaseNode[] {
+  const tree = SAMPLE_TREES[spaceId] ?? [];
+  if (!parentNodeToken) {
+    return cloneCollapsedNodes(tree);
+  }
+
+  const parent = findNodeByToken(tree, parentNodeToken);
+  return cloneCollapsedNodes(parent?.children ?? []);
+}
+
+export function createSyncTask(selectedScope: SyncScope, outputPath: string): SyncTask {
   const task: SyncTask = {
     id: crypto.randomUUID(),
     name: `同步任务 - ${new Date().toLocaleString("zh-CN")}`,
-    selectedSpaces,
+    selectedSpaces: [selectedScope.spaceId],
+    selectedScope,
     outputPath,
     status: "pending",
     progress: 0,
     counters: {
-      total: Math.max(1, selectedSpaces.length * 3),
+      total: countScopeDocuments(selectedScope),
       processed: 0,
       succeeded: 0,
       skipped: 0,
@@ -79,7 +274,7 @@ export function createSyncTask(selectedSpaces: string[], outputPath: string): Sy
 }
 
 function buildSimulatedError(task: SyncTask): SyncRunError[] {
-  if (task.selectedSpaces.includes("kb-product")) {
+  if (task.selectedScope?.spaceId === "kb-product") {
     return [
       {
         documentId: "doc-product-overview",
@@ -117,7 +312,7 @@ export function startSyncTask(taskId: string): void {
       const progress = Math.round((processed / task.counters.total) * 100);
       const nextErrors = processed === task.counters.total ? buildSimulatedError(task) : task.errors;
       const failed = nextErrors.length;
-      const skipped = task.selectedSpaces.length > 1 ? 1 : 0;
+      const skipped = task.selectedScope?.kind === "space" ? 1 : 0;
       const succeeded = Math.max(0, processed - failed - skipped);
       const failureSummary =
         nextErrors.length > 0

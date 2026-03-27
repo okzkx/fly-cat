@@ -2,7 +2,7 @@ use crate::mcp::{
     fetch_openapi_with_retry, fetch_with_retry, FeishuOpenApiClient, FeishuOpenApiConfig,
     FixtureMcpClient, McpError, RawBlock, RetryPolicy,
 };
-use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord};
+use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord, SyncSourceDocument};
 use crate::render::{markdown_output_path, render_markdown, source_signature, stable_hash};
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
 use chrono::Utc;
@@ -133,26 +133,41 @@ fn storage_error(err: String) -> SyncPipelineError {
 }
 
 pub fn sync_document_to_disk(
-    document_id: &str,
+    source_document: &SyncSourceDocument,
     sync_root: &Path,
     image_dir_name: &str,
     mcp_server_name: &str,
     openapi_config: Option<&FeishuOpenApiConfig>,
 ) -> Result<SyncWriteResult, SyncPipelineError> {
     let canonical =
-        fetch_canonical_document(document_id, mcp_server_name, openapi_config).map_err(classify_fetch_error)?;
+        fetch_canonical_document(&source_document.document_id, mcp_server_name, openapi_config)
+            .map_err(classify_fetch_error)?;
+    let output_path = markdown_output_path(sync_root, source_document);
+    let markdown_dir = output_path.parent().unwrap_or(sync_root);
     let rendered = if let Some(config) = openapi_config {
         let client = FeishuOpenApiClient::new(config.clone());
-        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(classify_render_error)?
+        render_markdown(&canonical, markdown_dir, image_dir_name, &client).map_err(classify_render_error)?
     } else {
         let client = FixtureMcpClient::new(mcp_server_name.to_string());
-        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(classify_render_error)?
+        render_markdown(&canonical, markdown_dir, image_dir_name, &client).map_err(classify_render_error)?
     };
-    let output_path = markdown_output_path(sync_root, &canonical);
+    let output_path_string = output_path.to_string_lossy().to_string();
 
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent).map_err(filesystem_error)?;
     }
+    let mut manifest = load_manifest(sync_root).map_err(storage_error)?;
+    if let Some(previous_output_path) = manifest
+        .records
+        .iter()
+        .find(|record| record.document_id == source_document.document_id)
+        .map(|record| record.output_path.clone())
+    {
+        if previous_output_path != output_path_string && Path::new(&previous_output_path).exists() {
+            let _ = fs::remove_file(previous_output_path);
+        }
+    }
+
     fs::write(&output_path, &rendered.markdown).map_err(filesystem_error)?;
 
     let mut written_assets = Vec::new();
@@ -172,14 +187,19 @@ pub fn sync_document_to_disk(
 
     let content_hash = stable_hash(rendered.markdown.as_bytes());
     let source_signature = source_signature(&canonical);
-    let mut manifest = load_manifest(sync_root).map_err(storage_error)?;
     upsert_manifest_record(
         &mut manifest,
         ManifestRecord {
-            document_id: canonical.document_id.clone(),
-            space_id: canonical.space_id.clone(),
-            title: canonical.title.clone(),
-            output_path: output_path.to_string_lossy().to_string(),
+            document_id: source_document.document_id.clone(),
+            space_id: source_document.space_id.clone(),
+            space_name: source_document.space_name.clone(),
+            node_token: source_document.node_token.clone(),
+            title: source_document.title.clone(),
+            version: source_document.version.clone(),
+            update_time: source_document.update_time.clone(),
+            source_path: source_document.source_path.clone(),
+            path_segments: source_document.path_segments.clone(),
+            output_path: output_path_string.clone(),
             content_hash: content_hash.clone(),
             source_signature: source_signature.clone(),
             status: "success".into(),
@@ -190,7 +210,7 @@ pub fn sync_document_to_disk(
     save_manifest(sync_root, &manifest).map_err(storage_error)?;
 
     Ok(SyncWriteResult {
-        output_path: output_path.to_string_lossy().to_string(),
+        output_path: output_path_string,
         image_assets: written_assets,
         content_hash,
         source_signature,
@@ -224,7 +244,19 @@ mod tests {
             .as_millis();
         let sync_root = env::temp_dir().join(format!("feishu-sync-output-{unique}"));
 
-        let result = sync_document_to_disk("doc-eng-api", &sync_root, "_assets", "user-feishu-mcp", None)
+        let source = SyncSourceDocument {
+            document_id: "doc-eng-api".into(),
+            space_id: "kb-eng".into(),
+            space_name: "研发知识库".into(),
+            node_token: "node-doc-eng-api".into(),
+            title: "研发API概览".into(),
+            version: "v1".into(),
+            update_time: "t1".into(),
+            path_segments: vec!["研发规范".into(), "研发API概览".into()],
+            source_path: "研发知识库/研发规范/研发API概览".into(),
+        };
+
+        let result = sync_document_to_disk(&source, &sync_root, "_assets", "user-feishu-mcp", None)
             .expect("sync to disk should succeed");
 
         assert!(result.output_path.ends_with(".md"));

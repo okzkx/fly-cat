@@ -146,6 +146,13 @@ pub struct FeishuWikiNode {
     pub has_child: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct FeishuDocumentSummary {
+    pub title: String,
+    pub version: String,
+    pub update_time: String,
+}
+
 pub trait ImageProvider {
     fn fetch_image_resource(&self, media_id: &str) -> Result<ImageResource, McpError>;
 }
@@ -374,6 +381,16 @@ impl ImageProvider for FixtureMcpClient {
     }
 }
 
+fn value_to_string(value: Option<&Value>) -> Option<String> {
+    value.and_then(|value| {
+        value
+            .as_str()
+            .map(|value| value.to_string())
+            .or_else(|| value.as_i64().map(|value| value.to_string()))
+            .or_else(|| value.as_u64().map(|value| value.to_string()))
+    })
+}
+
 pub struct FeishuOpenApiClient {
     config: FeishuOpenApiConfig,
 }
@@ -452,6 +469,44 @@ impl FeishuOpenApiClient {
         Ok(spaces)
     }
 
+    pub fn fetch_document_summary(&self, document_id: &str) -> Result<FeishuDocumentSummary, McpError> {
+        let token = self.access_token()?;
+        let info_value = call_openapi_json(
+            ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
+                .set("Authorization", &format!("Bearer {token}")),
+            "获取文档信息",
+        )?;
+
+        if let Some(error) = extract_openapi_error(&info_value, "获取文档信息") {
+            return Err(error);
+        }
+
+        let document = info_value
+            .get("data")
+            .and_then(|data| data.get("document"))
+            .ok_or_else(|| McpError::InvalidResponse("Document info missing document".into()))?;
+
+        let title = value_to_string(document.get("title"))
+            .unwrap_or_else(|| document_id.to_string());
+        let version = value_to_string(document.get("revision_id"))
+            .or_else(|| value_to_string(document.get("revision")))
+            .or_else(|| value_to_string(document.get("version")))
+            .or_else(|| value_to_string(document.get("obj_edit_time")))
+            .or_else(|| value_to_string(document.get("update_time")))
+            .unwrap_or_else(|| title.clone());
+        let update_time = value_to_string(document.get("obj_edit_time"))
+            .or_else(|| value_to_string(document.get("update_time")))
+            .or_else(|| value_to_string(document.get("updated_at")))
+            .or_else(|| value_to_string(document.get("edit_time")))
+            .unwrap_or_else(|| version.clone());
+
+        Ok(FeishuDocumentSummary {
+            title,
+            version,
+            update_time,
+        })
+    }
+
     pub fn list_child_nodes(&self, space_id: &str, parent_node_token: Option<&str>) -> Result<Vec<FeishuWikiNode>, McpError> {
         let token = self.access_token()?;
         let mut page_token: Option<String> = None;
@@ -518,23 +573,7 @@ impl FeishuOpenApiClient {
 
     pub fn fetch_document(&self, document_id: &str) -> Result<RawDocument, McpError> {
         let token = self.access_token()?;
-        let info_value = call_openapi_json(
-            ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
-                .set("Authorization", &format!("Bearer {token}")),
-            "获取文档信息",
-        )?;
-
-        if let Some(error) = extract_openapi_error(&info_value, "获取文档信息") {
-            return Err(error);
-        }
-
-        let title = info_value
-            .get("data")
-            .and_then(|data| data.get("document"))
-            .and_then(|document| document.get("title"))
-            .and_then(|value| value.as_str())
-            .unwrap_or(document_id)
-            .to_string();
+        let summary = self.fetch_document_summary(document_id)?;
 
         let raw_value = call_openapi_json(
             ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/raw_content")))
@@ -563,7 +602,7 @@ impl FeishuOpenApiClient {
         Ok(RawDocument {
             document_id: document_id.to_string(),
             space_id: "wiki-openapi".into(),
-            title,
+            title: summary.title,
             blocks: if blocks.is_empty() {
                 vec![RawBlock::Paragraph {
                     text: raw_text.to_string(),

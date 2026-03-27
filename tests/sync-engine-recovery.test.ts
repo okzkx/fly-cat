@@ -10,6 +10,20 @@ const silentLogger: AppLogger = {
   log: () => undefined
 };
 
+function buildDocument(id: string, title: string) {
+  return {
+    id,
+    spaceId: "kb",
+    spaceName: "知识库",
+    nodeToken: `node-${id}`,
+    title,
+    version: "v1",
+    updateTime: "t1",
+    pathSegments: [title],
+    sourcePath: `知识库/${title}`
+  };
+}
+
 describe("sync engine failure recovery", () => {
   it("records partial failure and preserves retryable failures", async () => {
     const syncRoot = await mkdtemp(join(tmpdir(), "sync-root-"));
@@ -42,10 +56,7 @@ describe("sync engine failure recovery", () => {
       logger: silentLogger
     });
 
-    const docs = [
-      { id: "doc-ok", spaceId: "kb", title: "Doc OK", version: "v1", updateTime: "t1" },
-      { id: "doc-fail", spaceId: "kb", title: "Doc Fail", version: "v1", updateTime: "t1" }
-    ];
+    const docs = [buildDocument("doc-ok", "Doc OK"), buildDocument("doc-fail", "Doc Fail")];
 
     const result = await engine.run(docs);
     expect(result.counters.succeeded).toBe(1);
@@ -83,7 +94,7 @@ describe("sync engine failure recovery", () => {
       logger: silentLogger
     });
 
-    const result = await engine.run([{ id: "doc-fs", spaceId: "kb", title: "Doc FS", version: "v1", updateTime: "t1" }]);
+    const result = await engine.run([buildDocument("doc-fs", "Doc FS")]);
     expect(result.counters.failed).toBe(1);
     expect(result.errors[0]?.category).toBe("filesystem");
   });

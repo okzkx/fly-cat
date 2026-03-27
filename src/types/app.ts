@@ -1,4 +1,12 @@
-import type { KnowledgeBaseSpace, SyncCounters, SyncFailureSummary, SyncLifecycleState, SyncRunError } from "@/types/sync";
+import type {
+  KnowledgeBaseNode,
+  KnowledgeBaseSpace,
+  SyncCounters,
+  SyncFailureSummary,
+  SyncLifecycleState,
+  SyncRunError,
+  SyncScope
+} from "@/types/sync";
 
 export interface UserInfo {
   name: string;
@@ -44,6 +52,7 @@ export interface SyncTask {
   id: string;
   name: string;
   selectedSpaces: string[];
+  selectedScope?: SyncScope | null;
   outputPath: string;
   status: SyncTaskStatus;
   progress: number;
@@ -79,9 +88,12 @@ export interface SyncProgressEventDetail {
 
 export interface HomePageProps {
   spaces: KnowledgeBaseSpace[];
+  selectedScope: SyncScope | null;
+  loadedSpaceTrees: Record<string, KnowledgeBaseNode[]>;
   syncRoot: string;
   connectionValidation: ConnectionValidation | null;
-  onSpacesChange: (spaces: KnowledgeBaseSpace[]) => void;
+  onScopeChange: (scope: SyncScope) => void;
+  onLoadTreeChildren: (spaceId: string, parentNodeToken?: string) => Promise<void>;
   onOpenTasks: () => void;
   activeTaskSummary: string;
   onCreateTask: () => Promise<HomeSyncResult | null>;

@@ -7,13 +7,14 @@ import SettingsPage from "@/components/SettingsPage";
 import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
-import type { KnowledgeBaseSpace } from "@/types/sync";
+import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import {
   createSyncTask,
   getAppBootstrap,
   getRuntimeInfo,
   getSyncTasks,
   initializeTaskEventBridge,
+  listKnowledgeBaseNodes,
   logoutUser,
   resumeSyncTasks,
   saveAppSettings,
@@ -24,6 +25,44 @@ import {
 const { Header, Content } = Layout;
 const { Text } = Typography;
 
+function buildSpaceScope(space: KnowledgeBaseSpace): SyncScope {
+  return {
+    kind: "space",
+    spaceId: space.id,
+    spaceName: space.name,
+    title: space.name,
+    displayPath: space.name,
+    pathSegments: []
+  };
+}
+
+function scopeExists(scope: SyncScope | null, spaces: KnowledgeBaseSpace[], loadedTrees: Record<string, KnowledgeBaseNode[]>): boolean {
+  if (!scope) {
+    return false;
+  }
+  if (scope.kind === "space") {
+    return spaces.some((space) => space.id === scope.spaceId);
+  }
+
+  const stack = [...(loadedTrees[scope.spaceId] ?? [])];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (
+      current.kind === scope.kind &&
+      current.nodeToken === scope.nodeToken &&
+      current.documentId === scope.documentId &&
+      current.spaceId === scope.spaceId
+    ) {
+      return true;
+    }
+    stack.push(...(current.children ?? []));
+  }
+  return false;
+}
+
 export default function App(): React.JSX.Element {
   const [currentPage, setCurrentPage] = useState<AppPage>("settings");
   const [authed, setAuthed] = useState(false);
@@ -31,6 +70,8 @@ export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [resolvedSyncRoot, setResolvedSyncRoot] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<KnowledgeBaseSpace[]>([]);
+  const [selectedScope, setSelectedScope] = useState<SyncScope | null>(null);
+  const [loadedSpaceTrees, setLoadedSpaceTrees] = useState<Record<string, KnowledgeBaseNode[]>>({});
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [connectionValidation, setConnectionValidation] = useState<ConnectionValidation | null>(null);
 
@@ -47,8 +88,9 @@ export default function App(): React.JSX.Element {
       setSettings(bootstrap.settings);
       setResolvedSyncRoot(bootstrap.resolvedSyncRoot);
       setSpaces(bootstrap.spaces);
+      setSelectedScope(bootstrap.spaces[0] ? buildSpaceScope(bootstrap.spaces[0]) : null);
       setUserInfo(bootstrap.user);
-       setConnectionValidation(bootstrap.connectionValidation);
+      setConnectionValidation(bootstrap.connectionValidation);
       setAuthed(Boolean(bootstrap.user));
       setCurrentPage(bootstrap.settings ? (bootstrap.user ? "home" : "auth") : "settings");
       if (bootstrap.user) {
@@ -75,6 +117,16 @@ export default function App(): React.JSX.Element {
 
   const syncTarget = useMemo(() => resolvedSyncRoot ?? settings?.syncRoot ?? "./synced-docs", [resolvedSyncRoot, settings]);
 
+  useEffect(() => {
+    if (!selectedScope && spaces[0]) {
+      setSelectedScope(buildSpaceScope(spaces[0]));
+      return;
+    }
+    if (selectedScope && !scopeExists(selectedScope, spaces, loadedSpaceTrees)) {
+      setSelectedScope(spaces[0] ? buildSpaceScope(spaces[0]) : null);
+    }
+  }, [loadedSpaceTrees, selectedScope, spaces]);
+
   const activeTaskSummary = useMemo(() => {
     const runningTask = tasks.find((task) => task.status === "syncing");
     if (runningTask) {
@@ -96,6 +148,8 @@ export default function App(): React.JSX.Element {
       setAuthed(false);
       setUserInfo(null);
       setConnectionValidation(null);
+      setSelectedScope(null);
+      setLoadedSpaceTrees({});
       setCurrentPage("auth");
     });
   };
@@ -151,6 +205,8 @@ export default function App(): React.JSX.Element {
                     setAuthed(false);
                     setUserInfo(null);
                     setSpaces([]);
+                    setSelectedScope(null);
+                    setLoadedSpaceTrees({});
                     setConnectionValidation(null);
                     setCurrentPage("auth");
                     void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
@@ -165,6 +221,8 @@ export default function App(): React.JSX.Element {
                 onAuthorized={(result) => {
                   setConnectionValidation(result.validation);
                   setSpaces(result.spaces);
+                  setSelectedScope(result.spaces[0] ? buildSpaceScope(result.spaces[0]) : null);
+                  setLoadedSpaceTrees({});
                   void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
                   if (result.validation.usable && result.user) {
                     setAuthed(true);
@@ -183,17 +241,25 @@ export default function App(): React.JSX.Element {
             {currentPage === "home" && authed && (
               <HomePage
                 spaces={spaces}
+                selectedScope={selectedScope}
+                loadedSpaceTrees={loadedSpaceTrees}
                 syncRoot={syncTarget}
                 connectionValidation={connectionValidation}
-                onSpacesChange={setSpaces}
+                onScopeChange={setSelectedScope}
+                onLoadSpaceTree={async (space) => {
+                  if (loadedSpaceTrees[space.id]) {
+                    return;
+                  }
+                  const nodes = await listKnowledgeBaseNodes(space.id);
+                  setLoadedSpaceTrees((current) => ({ ...current, [space.id]: nodes }));
+                }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
                 onCreateTask={async () => {
-                  const selectedSpaces = spaces.filter((space) => space.selected).map((space) => space.id);
-                  if (selectedSpaces.length === 0) {
+                  if (!selectedScope) {
                     return null;
                   }
-                  const task = await createSyncTask(selectedSpaces, syncTarget);
+                  const task = await createSyncTask(selectedScope, syncTarget);
                   await startSyncTask(task.id);
                   setTasks(await getSyncTasks());
                   return { task };

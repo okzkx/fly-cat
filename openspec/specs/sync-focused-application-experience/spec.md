@@ -4,22 +4,26 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Sync-Oriented Interaction Flow
-The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST show the effective local sync destination clearly before and after sync creation.
+The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync scope together with the mirrored local output destination before and after sync creation.
 
 #### Scenario: Start sync from dedicated action
 - **WHEN** a user enters the document assistant and selects knowledge base sources
 - **THEN** the primary action presented is to start synchronization rather than export/download
 
+#### Scenario: Select directory or document scope inside knowledge base
+- **WHEN** a user configures a synchronization source from an accessible knowledge base
+- **THEN** the UI allows choosing the whole knowledge base, a directory subtree, or an individual document as the sync scope
+
 #### Scenario: Show scoped source context
 - **WHEN** a user reviews sync configuration before execution
-- **THEN** the UI displays selected knowledge base scopes and the effective local sync target that will receive synchronized Markdown output
+- **THEN** the UI displays the selected knowledge base scope and the effective local sync target that will receive synchronized Markdown output in the mirrored source structure
 
 #### Scenario: Preserve reference home-page role
 - **WHEN** the user reaches the primary workspace after authentication
 - **THEN** the main page serves the same role as the reference project's home page, but its primary action is sync creation rather than export creation
 
 ### Requirement: Sync Lifecycle Status Visibility
-The application MUST expose synchronization lifecycle states and progress at document and run levels, and MUST display trustworthy task timestamps and output-location context in task history.
+The application MUST expose synchronization lifecycle states and progress at document and run levels, and MUST display trustworthy task timestamps, selected source-scope context, and output-location context in task history.
 
 #### Scenario: Show active sync progress
 - **WHEN** a sync run is in progress
@@ -40,6 +44,10 @@ The application MUST expose synchronization lifecycle states and progress at doc
 #### Scenario: Task history shows output destination context
 - **WHEN** a user inspects a sync task in the task list
 - **THEN** the task view shows the resolved output directory for that task rather than only an ambiguous relative path string
+
+#### Scenario: Task history shows selected source scope
+- **WHEN** a user inspects a sync task in the task list
+- **THEN** the task view shows whether the run targeted a whole knowledge base, a directory subtree, or an individual document, including the selected source path when applicable
 
 ### Requirement: Error Transparency and Retry Guidance
 The application MUST provide actionable error feedback and retry entry points for failed sync items, including concise stage-aware diagnostics when failures occur repeatedly.
