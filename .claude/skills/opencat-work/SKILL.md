@@ -214,7 +214,8 @@ Follow these worktree practices:
    - use the report's Chinese summary as the source of truth for both title and message body instead of inventing a separate wording
    - keep the title concise and summary-like, reflecting the main outcome of the archived change
    - keep the body aligned with the report's key points, such as motivation, scope, spec impact, and task completion, when those sections exist
-   - pass the message via heredoc
+   - when running in Windows PowerShell, do **not** use bash heredoc syntax such as `$(cat <<'EOF' ...)`; instead use a PowerShell here-string variable and pass it to `git commit -m $message`, or run separate `-m` arguments
+   - avoid chaining git commands with `&&` in Windows PowerShell; run them as separate commands or guard with `$LASTEXITCODE`
    - run `git status` after commit to confirm success
    - do **not** push
    - if hooks fail, fix the issue and create a new commit rather than amending unless amend is explicitly justified by repository rules
@@ -318,3 +319,4 @@ On completion, summarize:
 - If the repo contains unrelated dirty changes, avoid mixing them into the final commit or merge
 - When archive move fails due to filesystem locking, prefer verified copy+delete fallback over repeated blind retries
 - Do not modify OpenSpec CLI/source code just to support report generation; generate the archive report as part of the skill-driven workflow
+- In Windows PowerShell environments, prefer PowerShell-native command composition over bash-specific syntax so git inspection and commit steps do not fail on shell parsing
