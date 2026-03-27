@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Sync-Oriented Interaction Flow
-The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync sources together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances, and MUST treat a selected parent document as covering its full descendant document subtree by default.
+The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync sources together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances, MUST treat a selected parent document as covering its full descendant document subtree by default, and MUST update document checkbox state immediately from local selection state rather than waiting for remote subtree discovery.
 
 #### Scenario: Start sync from dedicated action
 - **WHEN** a user enters the document assistant and selects knowledge base sources
@@ -21,6 +21,10 @@ The application MUST present synchronization as a primary workflow distinct from
 #### Scenario: Descendant document is unavailable under selected ancestor
 - **WHEN** a document subtree root is currently selected
 - **THEN** descendant document nodes covered by that root render with unavailable checkboxes so the user cannot separately toggle redundant child selections inside that covered branch
+
+#### Scenario: Checkbox feedback does not wait for subtree loading
+- **WHEN** a user checks or unchecks a document node in the source-selection tree
+- **THEN** the checkbox state and effective selection summary update from local state immediately without waiting for the application to fetch descendant nodes from the backend
 
 #### Scenario: Show scoped source context
 - **WHEN** a user reviews sync configuration before execution

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createSyncTask, listKnowledgeBaseNodes } from "../src/utils/browserTaskManager";
+import { buildScopeFromNode, toggleDocumentRootSourceSelection } from "../src/utils/treeSelection";
 
 if (!("localStorage" in globalThis)) {
   const storage = new Map<string, string>();
@@ -49,6 +50,21 @@ describe("knowledge base tree loading", () => {
     expect(bitableNode?.title).toBe("需求池");
     expect(bitableNode?.hasChildren).toBe(false);
     expect(bitableNode?.isExpandable).toBe(false);
+  });
+
+  it("selects a subtree-capable document without preloading its descendants", () => {
+    const nodes = listKnowledgeBaseNodes("kb-product", "product-library");
+    const subtreeRoot = nodes.find((node) => node.documentId === "doc-product-roadmap");
+
+    expect(subtreeRoot?.children).toBeUndefined();
+    expect(subtreeRoot?.hasChildren).toBe(true);
+
+    const scope = buildScopeFromNode(subtreeRoot!);
+    expect(scope?.includesDescendants).toBe(true);
+
+    const selection = toggleDocumentRootSourceSelection([], scope!, true);
+    expect(selection.replacedCrossSpaceSelection).toBe(false);
+    expect(selection.sources).toEqual([scope]);
   });
 
   it("creates multi-document task metadata with deduplicated selected sources", () => {

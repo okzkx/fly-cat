@@ -118,6 +118,21 @@ export function unselectDocumentRootSources(existingSources: SyncScope[], target
   );
 }
 
+export function toggleDocumentRootSourceSelection(
+  existingSources: SyncScope[],
+  targetSource: SyncScope,
+  checked: boolean
+): { replacedCrossSpaceSelection: boolean; sources: SyncScope[] } {
+  if (checked) {
+    return selectDocumentRootSources(existingSources, targetSource);
+  }
+
+  return {
+    replacedCrossSpaceSelection: false,
+    sources: unselectDocumentRootSources(existingSources, targetSource)
+  };
+}
+
 export function attachLoadedChildren(
   nodes: KnowledgeBaseNode[],
   parentNodeToken: string,

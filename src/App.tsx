@@ -23,7 +23,7 @@ import {
   startSyncTask,
   TASK_EVENTS
 } from "@/utils/taskManager";
-import { attachLoadedChildren, normalizeDocumentRootSources, selectDocumentRootSources, unselectDocumentRootSources } from "@/utils/treeSelection";
+import { attachLoadedChildren, normalizeDocumentRootSources, toggleDocumentRootSourceSelection } from "@/utils/treeSelection";
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -168,23 +168,6 @@ export default function App(): React.JSX.Element {
     return "查看任务列表";
   }, [tasks]);
 
-  const loadTreeBranch = async (spaceId: string, parentNodeToken?: string): Promise<KnowledgeBaseNode[]> => {
-    const nodes = await listKnowledgeBaseNodes(spaceId, parentNodeToken);
-    const resolvedNodes = await Promise.all(
-      nodes.map(async (node) => {
-        if (!node.isExpandable) {
-          return node;
-        }
-        const children = await loadTreeBranch(spaceId, node.nodeToken);
-        return {
-          ...node,
-          children
-        };
-      })
-    );
-    return resolvedNodes;
-  };
-
   const handleLogout = (): void => {
     void logoutUser().then(() => {
       setAuthed(false);
@@ -302,30 +285,10 @@ export default function App(): React.JSX.Element {
                 onScopeChange={setSelectedScope}
                 onToggleDocumentSource={async (scope, checked) => {
                   let replacedCrossSpaceSelection = false;
-                  const normalizedScope =
-                    scope.kind === "document" && scope.includesDescendants && scope.nodeToken
-                      ? { ...scope, includesDescendants: true }
-                      : scope;
-
-                  if (normalizedScope.kind === "document" && normalizedScope.includesDescendants && normalizedScope.nodeToken) {
-                    const descendantNodes = await loadTreeBranch(normalizedScope.spaceId, normalizedScope.nodeToken);
-                    setLoadedSpaceTrees((current) => ({
-                      ...current,
-                      [normalizedScope.spaceId]: attachLoadedChildren(
-                        current[normalizedScope.spaceId] ?? [],
-                        normalizedScope.nodeToken!,
-                        descendantNodes
-                      )
-                    }));
-                  }
-
                   setSelectedDocumentSources((current) => {
-                    if (checked) {
-                      const nextSelection = selectDocumentRootSources(current, normalizedScope);
-                      replacedCrossSpaceSelection = nextSelection.replacedCrossSpaceSelection;
-                      return nextSelection.sources;
-                    }
-                    return unselectDocumentRootSources(current, normalizedScope);
+                    const nextSelection = toggleDocumentRootSourceSelection(current, scope, checked);
+                    replacedCrossSpaceSelection = nextSelection.replacedCrossSpaceSelection;
+                    return nextSelection.sources;
                   });
 
                   return { replacedCrossSpaceSelection };

@@ -7,6 +7,7 @@ import {
   documentSourceCoversDescendant,
   normalizeDocumentRootSources,
   selectDocumentRootSources,
+  toggleDocumentRootSourceSelection,
   unselectDocumentRootSources
 } from "@/utils/treeSelection";
 
@@ -173,6 +174,21 @@ describe("tree selection helpers", () => {
     );
 
     expect(sources).toEqual([]);
+  });
+
+  it("toggles subtree roots using only local selection state", () => {
+    const parentScope = makeDocumentScope("parent", "父文档", {
+      includesDescendants: true,
+      pathSegments: ["父文档"]
+    });
+
+    const checkedSelection = toggleDocumentRootSourceSelection([], parentScope, true);
+    expect(checkedSelection.replacedCrossSpaceSelection).toBe(false);
+    expect(checkedSelection.sources).toEqual([parentScope]);
+
+    const uncheckedSelection = toggleDocumentRootSourceSelection(checkedSelection.sources, parentScope, false);
+    expect(uncheckedSelection.replacedCrossSpaceSelection).toBe(false);
+    expect(uncheckedSelection.sources).toEqual([]);
   });
 
   it("attaches fully loaded descendants back into existing tree nodes", () => {
