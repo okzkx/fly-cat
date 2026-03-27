@@ -1,132 +1,142 @@
 ---
 name: opencat-work
-description: Run the OpenSpec all-in-one workflow inside a temporary git worktree branch: create an isolated linked worktree, execute propose/validate/apply/validate/archive/commit there, then return to the main worktree, merge the completed branch back, and remove the worktree and branch. Use when the user wants OpenSpec work done with worktree isolation, mentions git worktree/worktree branch, or asks for a safer one-shot workflow.
+description: Run a staged OpenSpec workflow with checkpoint commits and a reusable linked worktree: run `opencat-check`, finish the purpose/proposal stage in the main worktree, create a branch and record the purpose commit, switch to a reusable worktree for apply, rebase onto the latest trunk before archive, commit after apply and archive, merge back, delete the branch, and keep the worktree for reuse. Use when the user wants end-to-end OpenSpec work with safer git checkpoints and reusable worktree isolation.
 license: MIT
-compatibility: Requires git, Node.js/npm, and OpenSpec CLI; auto-setup is allowed when missing.
+compatibility: Requires `opencat-check` to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
 metadata:
   author: opencat
-  version: "1.0"
+  version: "1.1"
   derivedFrom: "openspec-all-in-one"
 ---
 
-Run an OpenSpec change from request to archive and commit in an isolated git worktree, then merge it back and clean up.
+Run an OpenSpec change from purpose to archive with staged git checkpoints and a reusable linked worktree.
 
-This skill wraps the `openspec-all-in-one` workflow with a temporary linked worktree branch.
+This skill wraps `openspec-all-in-one` with:
+- a purpose record commit
+- an apply checkpoint commit
+- an archive commit
+- a reusable linked worktree that is kept for the next run
 
 Use it when the user wants:
-- end-to-end OpenSpec execution with branch isolation
-- a disposable implementation workspace
-- automatic merge-back and cleanup after the workflow completes
+- end-to-end OpenSpec execution with git checkpoints
+- proposal work done before branching into a worktree
+- a reusable implementation worktree instead of disposable worktrees
+- automatic merge-back after archive
 
 ---
 
 **Input**: A change name, or a natural-language request describing what to build or fix.
 
-## Prerequisites
+## Terminology
 
-Before starting the workflow, verify the required tools exist and are usable in the current environment.
+- `purpose stage`: the proposal stage that creates or updates change artifacts before implementation.
+- `trunk`: the base branch the user started from, usually `main` or `master`.
 
-Required tools:
-- `git`
-- `node` and `npm`
-- OpenSpec CLI via `openspec` or `npx openspec`
+## Dependency
 
-Check in this order:
-1. Verify `git --version`.
-2. Verify `node --version` and `npm --version`.
-3. Verify OpenSpec with `openspec --version`.
-4. If `openspec` is not on `PATH`, verify the local/npm entry with `npx openspec@latest --version`.
+Before this workflow, run `opencat-check`.
 
-If something is missing, bootstrap it before continuing:
-- If `git` is missing, install it with the host OS package manager when available, then re-check `git --version`.
-- If `node` or `npm` is missing, install Node.js LTS first, then re-check both commands.
-- If the repository dependencies are not installed and `package-lock.json` exists, run `npm install` at the repo root.
-- If OpenSpec is missing, prefer a no-global path first: `npx openspec@latest --version`.
-- If a persistent install is needed, install the official CLI package with `npm install -g @fission-ai/openspec@latest`, then verify `openspec --version`.
+`opencat-work` does **not** own environment installation anymore:
+- do not duplicate prerequisite checks here
+- do not invent bootstrap logic here
+- if `opencat-check` reports missing prerequisites, fix them there before continuing
 
-Bootstrap rules:
-- Prefer the repository's existing package manager. In this repository, default to `npm` because `package-lock.json` is present.
-- Verify each install immediately after it completes.
-- Do not continue into worktree or OpenSpec steps while prerequisites are still missing.
-- If installation requires elevated privileges, network access, or an OS-specific choice the agent cannot complete safely, pause and ask the user.
+## Git Defaults
 
-## Git Worktree Defaults
+Follow these repository practices:
+- Keep the main worktree on `<base_branch>` for purpose work, trunk refresh, and final merge.
+- Create one temporary work branch per change, such as `opencat/<change-name>`.
+- Reuse one linked worktree sibling path, such as `../<repo-name>-opencat-worktree`, whenever it is safe and clean to reuse.
+- Use the linked worktree only from the apply stage onward.
+- Keep the linked worktree directory after the workflow completes so it can be reused next time.
+- Before deleting `<work_branch>`, switch the linked worktree off that branch, typically back to `<base_branch>`.
+- Use an explicit merge commit for final integration: `git merge --no-ff "<work_branch>"`.
+- Resolve ordinary merge or rebase conflicts directly when the intent is clear; pause for ambiguous or high-risk conflicts.
+- Never rewrite `<base_branch>` history and never push unless the user explicitly asks.
 
-Follow these worktree practices:
-- Create the linked worktree as a sibling directory outside the main working tree, not nested inside the repository.
-- Create one temporary branch per request. Do not reuse a branch already checked out by another worktree.
-- Inspect `git worktree list` before creating, merging, or cleaning up worktrees.
-- Do all implementation, validation, archive, and commit work inside the linked worktree.
-- Perform the merge from the main worktree on the base branch, not from inside the linked worktree.
-- Use an explicit merge commit for the final integration so the worktree branch is merged back with normal `git merge` semantics rather than fast-forwarding away the branch history.
-- Remove linked worktrees with `git worktree remove`, then run `git worktree prune` to clean stale metadata.
-- Avoid `--force` for `git worktree add/remove` unless the user explicitly approves.
+## Git Checkpoint Commits
+
+Create up to three commits in this workflow:
+1. `purpose commit`: records the purpose/proposal artifacts after purpose validation passes.
+2. `apply commit`: records implementation work after apply validation passes.
+3. `archive commit`: records archive results after the Chinese archive report is generated.
+
+Before each commit:
+- inspect `git status`, relevant `git diff`, and recent `git log`
+- stage only files relevant to the current checkpoint
+- do not stage build outputs, caches, secrets, or unrelated local work
+
+Commit message rules:
+- `purpose commit`: use a concise checkpoint message that records purpose/proposal artifacts for the change
+- `apply commit`: use a concise checkpoint message that records completed implementation work for the change
+- `archive commit`: derive the git commit title and body from `change-report.zh-CN.md`
+- for the archive commit, use the report's Chinese summary as the source of truth for both title and message body
+- keep the archive title concise and summary-like, reflecting the main outcome of the archived change
+- keep the archive body aligned with the report's key points, such as motivation, scope, spec impact, and task completion, when those sections exist
+- when running in Windows PowerShell, do **not** use bash heredoc syntax such as `$(cat <<'EOF' ...)`; instead use a PowerShell here-string variable and pass it to `git commit -m $message`, or run separate `-m` arguments
+- avoid chaining git commands with `&&` in Windows PowerShell; run them as separate commands or guard with `$LASTEXITCODE`
+- run `git status` after each commit to confirm success
 
 ## Workflow
 
 1. **Classify the request**
 
-   Decide whether the request is **simple** or **complex**.
+   Decide whether the request is `simple` or `complex`.
 
-   Treat as **simple** when most of these are true:
-   - Small fix, small feature, or scoped documentation/config change
-   - Single clear objective
-   - Limited module impact
-   - No meaningful architecture tradeoff
+   Treat as `simple` when most of these are true:
+   - small fix, small feature, or scoped documentation/config change
+   - single clear objective
+   - limited module impact
+   - no meaningful architecture tradeoff
 
-   Treat as **complex** when any of these are true:
-   - Cross-cutting or multi-module work
-   - Design tradeoffs are likely
-   - Scope is ambiguous
-   - The work may reasonably split into multiple changes
+   Treat as `complex` when any of these are true:
+   - cross-cutting or multi-module work
+   - design tradeoffs are likely
+   - scope is ambiguous
+   - the work may reasonably split into multiple changes
 
-   If unsure, classify it as **complex**.
+   If unsure, classify it as `complex`.
 
 2. **Select or derive the change**
 
-   - If the user provided a concrete change name, use it
-   - Otherwise derive a kebab-case change name from the request
-   - If the request may refer to an existing active change, verify before creating a new one
+   - if the user provided a concrete change name, use it
+   - otherwise derive a kebab-case change name from the request
+   - if the request may refer to an existing active change, verify before creating a new one
 
-3. **Prepare the worktree plan**
+3. **Run environment check**
 
-   Before creating anything, inspect the current git state from the main worktree:
-   - capture the current branch as the base branch
+   - invoke `opencat-check`
+   - continue only after prerequisites are confirmed usable
+
+4. **Prepare the git plan from the main worktree**
+
+   From the main worktree:
+   - capture the current branch as `<base_branch>`
    - inspect `git status --short`
    - inspect `git worktree list --porcelain`
 
    Then derive:
    - `work_branch`: a temporary branch name such as `opencat/<change-name>`
-   - `worktree_path`: a sibling path such as `../<repo-name>-opencat-<change-name>`
+   - `worktree_path`: a reusable sibling path such as `../<repo-name>-opencat-worktree`
 
    Guardrails:
-   - If `HEAD` is detached, pause unless the user explicitly wants that as the base
-   - If the target branch name already exists or is checked out elsewhere, pause or choose a new name
-   - If the target path already exists and is not clearly the intended disposable worktree, pause
-   - If unrelated dirty changes in the main worktree would make the final merge unsafe, pause
+   - if `HEAD` is detached, pause unless the user explicitly wants that as the base
+   - if unrelated dirty changes in the main worktree would make purpose, commits, rebase, or merge unsafe, pause
+   - if the reusable worktree path already exists but is dirty, blocked, or clearly in use for another task, pause
+   - if `work_branch` already exists and does not match the intended change, pause
 
-4. **Create the linked worktree**
+5. **Run the purpose stage in the main worktree**
 
-   Create the branch and linked worktree from the base branch:
-
-   ```bash
-   git worktree add -b "<work_branch>" "<worktree_path>" "<base_branch>"
-   ```
-
-   After creation:
-   - verify it appears in `git worktree list`
-   - perform all subsequent propose/apply/archive/commit work inside `worktree_path`
-
-5. **Run proposal workflow inside the linked worktree**
+   Do **not** create a worktree yet and do **not** move to the linked worktree yet.
 
    Follow the `openspec-propose` behavior:
    - create the change if needed
    - generate artifacts required for implementation
    - read dependency artifacts and CLI instructions before writing files
 
-6. **Validate after propose**
+6. **Validate after purpose**
 
-   Inside the linked worktree, run:
+   In the main worktree, run:
 
    ```bash
    openspec validate --change "<name>"
@@ -136,16 +146,28 @@ Follow these worktree practices:
    - fix straightforward issues and re-run validation
    - if the fix is unclear or risky, pause and report the blocker
 
-7. **Continue automatically after propose**
+7. **Create the branch and record the purpose commit**
 
-   If proposal validation passes, continue directly to implementation without asking for confirmation, even for **complex** work.
+   After purpose validation passes:
+   - create and switch to `<work_branch>` from the current main-worktree state
+   - stage only purpose artifacts relevant to the change
+   - create the `purpose commit`
+   - switch the main worktree back to `<base_branch>` after the commit so trunk remains available there
 
-   Only pause here if a defined pause condition applies, such as:
-   - the request is too ambiguous to propose safely
-   - validation cannot be repaired confidently
-   - the proposal/design reveals a blocker that needs a user decision
+   Pause if:
+   - the purpose commit would mix in unrelated changes
+   - the branch cannot be created safely
 
-8. **Run implementation workflow inside the linked worktree**
+8. **Prepare or reuse the linked worktree for apply**
+
+   The apply stage is the first point where the linked worktree is used.
+
+   - if `worktree_path` does not exist, create a linked worktree there from `<base_branch>`
+   - if `worktree_path` already exists, verify it is clean and reusable
+   - in the linked worktree, switch to `<work_branch>`
+   - verify `git worktree list` reflects the expected branch/path before continuing
+
+9. **Run implementation in the linked worktree**
 
    Follow the `openspec-apply-change` behavior:
    - read context files from `openspec instructions apply --change "<name>" --json`
@@ -154,112 +176,103 @@ Follow these worktree practices:
    - mark completed tasks in `tasks.md` immediately
    - stop if the work reveals a design issue that should be reflected in artifacts first
 
-9. **Validate after apply**
+10. **Validate after apply**
 
-   Inside the linked worktree, run again:
+    In the linked worktree, run again:
 
-   ```bash
-   openspec validate --change "<name>"
-   ```
+    ```bash
+    openspec validate --change "<name>"
+    ```
 
-   If validation fails:
-   - repair obvious issues and re-run
-   - do not continue to archive while validation is still meaningfully broken unless the user explicitly approves
+    If validation fails:
+    - repair obvious issues and re-run
+    - do not continue to the apply commit or archive while validation is meaningfully broken unless the user explicitly approves
 
-10. **Continue automatically after apply**
+11. **Create the apply commit**
 
-   If implementation validation passes, continue directly to `archive + git commit` without asking for confirmation, even for **complex** work.
+    After apply validation passes:
+    - stage only implementation files relevant to the change
+    - create the `apply commit`
 
-   Only pause here if a defined pause condition applies, such as:
-   - implementation uncovers a design issue that should update artifacts first
-   - validation cannot be repaired confidently
-   - archiving would ignore meaningful unfinished work
-   - committing would mix in unrelated changes
+12. **Refresh trunk and rebase before archive**
 
-11. **Run archive workflow inside the linked worktree**
+    Before archive, move the work branch onto the latest trunk state.
 
-   Follow the `openspec-archive-change` behavior:
-   - check incomplete artifacts/tasks
-   - assess delta spec sync state
-   - prompt when archive safeguards require confirmation
-   - archive the change only after the required checks
-   - after archive succeeds, generate a Chinese Markdown report at `openspec/changes/archive/YYYY-MM-DD-<name>/change-report.zh-CN.md`
-   - build the report from archived artifacts already present in that directory, especially `proposal.md`, `design.md`, `specs/**/*.md`, and `tasks.md`
-   - keep the report concise and user-facing; include at least:
-     - basic info (change name, schema, archive path)
-     - change motivation summary
-     - change scope summary
-     - spec impact summary
-     - task completion summary
-   - if `design.md` is missing, omit the design section instead of failing the workflow
-   - if the normal archive move fails because the change directory is access-denied or otherwise locked, use a safe fallback:
-     1. copy the full change directory into the intended archive target
-     2. verify key files such as `.openspec.yaml` and `tasks.md` exist in the archive copy
-     3. remove the original source directory only after verification succeeds
-     4. report clearly that archive completed via copy+delete fallback
-   - when archive succeeds via either normal move or fallback, ensure the Chinese report is written into the final archived directory before moving to git commit
+    - in the main worktree, refresh `<base_branch>` to the latest available trunk state
+    - if `<base_branch>` tracks a remote branch, prefer `git fetch` plus a safe fast-forward update such as `git pull --ff-only`
+    - if the trunk refresh cannot complete safely, pause
+    - in the linked worktree, rebase `<work_branch>` onto the refreshed `<base_branch>`
 
-12. **Commit related changes inside the linked worktree**
+    If rebase reports conflicts:
+    - inspect each conflicted file and resolve the conflict directly when the intent is clear
+    - preserve the change intent from `<work_branch>` while keeping valid non-overlapping updates from refreshed trunk
+    - validate again when needed after resolving conflicts
+    - pause only if the conflict cannot be resolved confidently without a product, design, or safety decision
 
-   Only create a commit when the user's request clearly implies end-to-end completion or explicitly asks for commit as part of the one-shot flow.
+13. **Run archive in the linked worktree**
 
-   Before committing:
-   - inspect `git status`, `git diff`, and recent `git log`
-   - stage only files relevant to this change
-   - do not stage build outputs, caches, or unrelated local work
-   - do not include likely secret files
+    Follow the `openspec-archive-change` behavior:
+    - check incomplete artifacts/tasks
+    - assess delta spec sync state
+    - prompt when archive safeguards require confirmation
+    - archive the change only after the required checks
+    - after archive succeeds, generate a Chinese Markdown report at `openspec/changes/archive/YYYY-MM-DD-<name>/change-report.zh-CN.md`
+    - build the report from archived artifacts already present in that directory, especially `proposal.md`, `design.md`, `specs/**/*.md`, and `tasks.md`
+    - keep the report concise and user-facing; include at least:
+      - basic info (change name, schema, archive path)
+      - change motivation summary
+      - change scope summary
+      - spec impact summary
+      - task completion summary
+    - if `design.md` is missing, omit the design section instead of failing the workflow
+    - if the normal archive move fails because the change directory is access-denied or otherwise locked, use a safe fallback:
+      1. copy the full change directory into the intended archive target
+      2. verify key files such as `.openspec.yaml` and `tasks.md` exist in the archive copy
+      3. remove the original source directory only after verification succeeds
+      4. report clearly that archive completed via copy+delete fallback
+    - when archive succeeds via either normal move or fallback, ensure the Chinese report is written into the final archived directory before moving to the archive commit
 
-  Commit rules:
-   - derive the git commit title and body from the generated `change-report.zh-CN.md`
-   - use the report's Chinese summary as the source of truth for both title and message body instead of inventing a separate wording
-   - keep the title concise and summary-like, reflecting the main outcome of the archived change
-   - keep the body aligned with the report's key points, such as motivation, scope, spec impact, and task completion, when those sections exist
-   - when running in Windows PowerShell, do **not** use bash heredoc syntax such as `$(cat <<'EOF' ...)`; instead use a PowerShell here-string variable and pass it to `git commit -m $message`, or run separate `-m` arguments
-   - avoid chaining git commands with `&&` in Windows PowerShell; run them as separate commands or guard with `$LASTEXITCODE`
-   - run `git status` after commit to confirm success
-   - do **not** push
-   - if hooks fail, fix the issue and create a new commit rather than amending unless amend is explicitly justified by repository rules
+14. **Create the archive commit**
 
-13. **Return to the main worktree and merge**
+    After archive and report generation succeed:
+    - stage only archive-related files relevant to the change
+    - create the `archive commit`
 
-   After the linked worktree workflow succeeds:
-   - return to the original main worktree
-   - ensure you are on `<base_branch>`
-   - inspect `git status --short`
-   - if unrelated local changes on the base branch would be mixed into the merge, pause and ask
+15. **Merge back from the main worktree**
 
-  Merge the completed branch back with an explicit merge commit:
+    After the linked worktree workflow succeeds:
+    - return to the original main worktree
+    - ensure you are on `<base_branch>`
+    - inspect `git status --short`
+    - if unrelated local changes on the base branch would be mixed into the merge, pause
 
-   ```bash
-  git merge --no-ff "<work_branch>"
-   ```
+    Merge the completed branch back with:
 
-  If merge reports conflicts:
-   - inspect each conflicted file and resolve the conflict directly instead of pausing by default
-   - preserve the archived change intent from `<work_branch>` while also keeping any valid non-overlapping updates already present on `<base_branch>`
-   - after resolving conflicts, run the relevant validation needed to confirm the merged result is still correct
-   - stage the resolved files and complete the merge commit
-   - pause only if the conflict cannot be resolved confidently without a product or design decision
+    ```bash
+    git merge --no-ff "<work_branch>"
+    ```
 
-  If merge cannot complete cleanly for reasons other than ordinary file conflicts:
-   - pause and report the blocking state
-   - do not auto-rebase and do not force history changes without explicit approval
+    If merge reports conflicts:
+    - inspect each conflicted file and resolve the conflict directly when the intent is clear
+    - preserve the archived change intent from `<work_branch>` while keeping valid non-overlapping updates already present on `<base_branch>`
+    - run the relevant validation needed to confirm the merged result is still correct
+    - stage the resolved files and complete the merge commit
+    - pause only if the conflict cannot be resolved confidently without a product or design decision
 
-14. **Clean up the linked worktree and branch**
+    If merge cannot complete cleanly for reasons other than ordinary file conflicts:
+    - pause and report the blocking state
 
-   After a successful merge:
-   - remove the linked worktree with `git worktree remove "<worktree_path>"`
-   - delete the temporary branch with `git branch -d "<work_branch>"`
-   - run `git worktree prune`
+16. **Keep the worktree and delete the branch**
 
-   Cleanup rules:
-   - if `git worktree remove` reports uncommitted or untracked content, pause instead of forcing removal
-   - if the worktree was manually deleted earlier, use `git worktree prune` to clean stale metadata
-   - do not delete the main worktree
+    After a successful merge:
+    - in the linked worktree, switch back to `<base_branch>` and ensure it is clean
+    - from the main worktree, delete `<work_branch>`
+    - keep `worktree_path` in place for the next `opencat-work` run
+    - do **not** remove the linked worktree directory unless the user explicitly asks
 
 ## Default Behavior
 
-- When the user explicitly invokes `opencat-work`, run the whole workflow continuously through `prepare -> worktree create -> propose -> validate -> apply -> validate -> archive -> commit -> merge -> cleanup`.
+- When the user explicitly invokes `opencat-work`, run the whole workflow continuously through `check -> purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup`.
 - Keep the `simple|complex` classification for risk awareness, progress reporting, and decision quality, but do **not** use complexity alone as a reason to pause.
 - Pause only when a listed pause condition or a repository safety rule requires user confirmation.
 
@@ -267,15 +280,16 @@ Follow these worktree practices:
 
 Pause and ask the user when:
 - the request is too ambiguous to propose safely
-- proposal, design, or implementation reveals a decision that materially changes scope or behavior
+- purpose, design, or implementation reveals a decision that materially changes scope or behavior
 - implementation uncovers a design change that should update artifacts first
 - validation cannot be repaired confidently
-- archiving would ignore meaningful unfinished work
-- committing would mix in unrelated changes
+- the purpose, apply, or archive commit would mix in unrelated changes
+- trunk refresh cannot complete safely
+- the reusable worktree path is dirty, blocked, or in use for another task
 - the base branch is detached or otherwise unclear
-- the target worktree path or branch name collides with existing state
-- the final merge conflict cannot be resolved confidently without a product, design, or safety decision
-- cleanup would require forcing `git worktree remove` or branch deletion
+- the target branch name collides with existing state
+- the final rebase or merge conflict cannot be resolved confidently without a product, design, or safety decision
+- deleting the branch would fail because the linked worktree is still attached to it
 - a git safety rule requires explicit user confirmation before continuing
 
 ## Output Format
@@ -289,7 +303,7 @@ During execution, keep progress updates compact and structured like:
 **Complexity:** simple|complex
 **Base:** <base-branch>
 **Worktree Branch:** <work-branch>
-**Stage:** prepare|worktree|propose|validate|apply|archive|commit|merge|cleanup
+**Stage:** check|purpose|validate|purpose-commit|worktree|apply|apply-commit|rebase|archive|archive-commit|merge|cleanup
 
 <short progress note>
 ```
@@ -298,25 +312,30 @@ On completion, summarize:
 - change name
 - base branch
 - worktree branch
+- whether purpose commit succeeded
+- whether apply commit succeeded
+- whether archive commit succeeded
 - whether validation passed
 - whether archive completed
 - whether `change-report.zh-CN.md` was generated
-- whether git commit succeeded
 - whether merge succeeded
-- whether worktree cleanup succeeded
+- whether the branch was deleted
+- whether the linked worktree was kept for reuse
 - any remaining issues
 
 ## Guardrails
 
 - Reuse the existing OpenSpec skills' logic instead of inventing a parallel workflow
+- Run `opencat-check` before purpose work rather than duplicating install logic here
 - Always read CLI-provided context files before implementation
-- Prefer sibling linked worktrees outside the repo root rather than nested disposable directories
-- Do all risky edits in the linked worktree, then merge from the main worktree
-- Prefer an explicit `git merge --no-ff` for the final integration so the worktree branch merge is preserved in history
-- Resolve ordinary merge conflicts directly when the intent is clear, but pause for ambiguous or high-risk conflicts
-- Never auto-rebase or rewrite history without explicit approval
-- Never push unless the user explicitly asks
-- If the repo contains unrelated dirty changes, avoid mixing them into the final commit or merge
+- Prefer one reusable linked worktree outside the repo root rather than disposable per-change worktrees
+- Keep purpose work in the main worktree until the purpose checkpoint commit exists
+- Do all apply, rebase, and archive work in the linked worktree
+- Refresh trunk before archive so archive happens on top of the latest available base
+- Prefer an explicit `git merge --no-ff` for final integration so branch history and checkpoint commits remain visible
+- Resolve ordinary merge or rebase conflicts directly when the intent is clear, but pause for ambiguous or high-risk conflicts
+- Never auto-rewrite `<base_branch>` history and never push unless the user explicitly asks
+- If the repo contains unrelated dirty changes, avoid mixing them into checkpoint commits, rebase, or merge
 - When archive move fails due to filesystem locking, prefer verified copy+delete fallback over repeated blind retries
 - Do not modify OpenSpec CLI/source code just to support report generation; generate the archive report as part of the skill-driven workflow
 - In Windows PowerShell environments, prefer PowerShell-native command composition over bash-specific syntax so git inspection and commit steps do not fail on shell parsing
