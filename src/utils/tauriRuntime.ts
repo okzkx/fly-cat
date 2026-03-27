@@ -199,13 +199,13 @@ export async function listKnowledgeBaseNodes(spaceId: string, parentNodeToken?: 
   return invoke<KnowledgeBaseNode[]>("list_space_source_tree", { spaceId, parentNodeToken });
 }
 
-export async function createSyncTask(selectedScope: SyncScope, outputPath: string): Promise<SyncTask> {
+export async function createSyncTask(selectedSources: SyncScope[], outputPath: string): Promise<SyncTask> {
   if (!isTauriRuntime()) {
-    return createBrowserSyncTask(selectedScope, outputPath);
+    return createBrowserSyncTask(selectedSources, outputPath);
   }
   return invoke<SyncTask>("create_sync_task", {
     request: {
-      selectedScope,
+      selectedSources,
       outputPath
     }
   });

@@ -12,9 +12,11 @@ export interface KnowledgeBaseSpace {
 }
 
 export type KnowledgeBaseNodeKind = "space" | "folder" | "document" | "bitable";
+export type SyncScopeKind = Exclude<KnowledgeBaseNodeKind, "bitable">;
+export type SyncSelectionSummaryKind = SyncScopeKind | "multi-document";
 
 export interface SyncScope {
-  kind: KnowledgeBaseNodeKind;
+  kind: SyncScopeKind;
   spaceId: string;
   spaceName: string;
   title: string;
@@ -22,6 +24,16 @@ export interface SyncScope {
   nodeToken?: string;
   documentId?: string;
   pathSegments: string[];
+}
+
+export interface SyncSelectionSummary {
+  kind: SyncSelectionSummaryKind;
+  spaceId: string;
+  spaceName: string;
+  title: string;
+  displayPath: string;
+  documentCount: number;
+  previewPaths: string[];
 }
 
 export interface KnowledgeBaseNode {

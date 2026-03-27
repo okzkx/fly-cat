@@ -8,6 +8,7 @@ import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
 import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
+import { getEffectiveSelectedSources } from "@/utils/syncSelection";
 import {
   createSyncTask,
   getAppBootstrap,
@@ -63,6 +64,28 @@ function scopeExists(scope: SyncScope | null, spaces: KnowledgeBaseSpace[], load
   return false;
 }
 
+function attachLoadedChildren(
+  nodes: KnowledgeBaseNode[],
+  parentNodeToken: string,
+  children: KnowledgeBaseNode[]
+): KnowledgeBaseNode[] {
+  return nodes.map((node) => {
+    if (node.nodeToken === parentNodeToken) {
+      return {
+        ...node,
+        children
+      };
+    }
+    if (!node.children || node.children.length === 0) {
+      return node;
+    }
+    return {
+      ...node,
+      children: attachLoadedChildren(node.children, parentNodeToken, children)
+    };
+  });
+}
+
 export default function App(): React.JSX.Element {
   const [currentPage, setCurrentPage] = useState<AppPage>("settings");
   const [authed, setAuthed] = useState(false);
@@ -71,6 +94,7 @@ export default function App(): React.JSX.Element {
   const [resolvedSyncRoot, setResolvedSyncRoot] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<KnowledgeBaseSpace[]>([]);
   const [selectedScope, setSelectedScope] = useState<SyncScope | null>(null);
+  const [selectedDocumentSources, setSelectedDocumentSources] = useState<SyncScope[]>([]);
   const [loadedSpaceTrees, setLoadedSpaceTrees] = useState<Record<string, KnowledgeBaseNode[]>>({});
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [connectionValidation, setConnectionValidation] = useState<ConnectionValidation | null>(null);
@@ -89,6 +113,7 @@ export default function App(): React.JSX.Element {
       setResolvedSyncRoot(bootstrap.resolvedSyncRoot);
       setSpaces(bootstrap.spaces);
       setSelectedScope(bootstrap.spaces[0] ? buildSpaceScope(bootstrap.spaces[0]) : null);
+      setSelectedDocumentSources([]);
       setUserInfo(bootstrap.user);
       setConnectionValidation(bootstrap.connectionValidation);
       setAuthed(Boolean(bootstrap.user));
@@ -127,6 +152,10 @@ export default function App(): React.JSX.Element {
     }
   }, [loadedSpaceTrees, selectedScope, spaces]);
 
+  useEffect(() => {
+    setSelectedDocumentSources((current) => current.filter((source) => scopeExists(source, spaces, loadedSpaceTrees)));
+  }, [loadedSpaceTrees, spaces]);
+
   const activeTaskSummary = useMemo(() => {
     const runningTask = tasks.find((task) => task.status === "syncing");
     if (runningTask) {
@@ -149,6 +178,7 @@ export default function App(): React.JSX.Element {
       setUserInfo(null);
       setConnectionValidation(null);
       setSelectedScope(null);
+      setSelectedDocumentSources([]);
       setLoadedSpaceTrees({});
       setCurrentPage("auth");
     });
@@ -206,6 +236,7 @@ export default function App(): React.JSX.Element {
                     setUserInfo(null);
                     setSpaces([]);
                     setSelectedScope(null);
+                    setSelectedDocumentSources([]);
                     setLoadedSpaceTrees({});
                     setConnectionValidation(null);
                     setCurrentPage("auth");
@@ -222,6 +253,7 @@ export default function App(): React.JSX.Element {
                   setConnectionValidation(result.validation);
                   setSpaces(result.spaces);
                   setSelectedScope(result.spaces[0] ? buildSpaceScope(result.spaces[0]) : null);
+                  setSelectedDocumentSources([]);
                   setLoadedSpaceTrees({});
                   void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
                   if (result.validation.usable && result.user) {
@@ -242,24 +274,32 @@ export default function App(): React.JSX.Element {
               <HomePage
                 spaces={spaces}
                 selectedScope={selectedScope}
+                selectedDocumentSources={selectedDocumentSources}
                 loadedSpaceTrees={loadedSpaceTrees}
                 syncRoot={syncTarget}
                 connectionValidation={connectionValidation}
                 onScopeChange={setSelectedScope}
-                onLoadSpaceTree={async (space) => {
-                  if (loadedSpaceTrees[space.id]) {
+                onSelectedDocumentSourcesChange={setSelectedDocumentSources}
+                onLoadTreeChildren={async (spaceId, parentNodeToken) => {
+                  if (!parentNodeToken && loadedSpaceTrees[spaceId]) {
                     return;
                   }
-                  const nodes = await listKnowledgeBaseNodes(space.id);
-                  setLoadedSpaceTrees((current) => ({ ...current, [space.id]: nodes }));
+                  const nodes = await listKnowledgeBaseNodes(spaceId, parentNodeToken);
+                  setLoadedSpaceTrees((current) => ({
+                    ...current,
+                    [spaceId]: parentNodeToken
+                      ? attachLoadedChildren(current[spaceId] ?? [], parentNodeToken, nodes)
+                      : nodes
+                  }));
                 }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
                 onCreateTask={async () => {
-                  if (!selectedScope) {
+                  const selectedSources = getEffectiveSelectedSources(selectedScope, selectedDocumentSources);
+                  if (selectedSources.length === 0) {
                     return null;
                   }
-                  const task = await createSyncTask(selectedScope, syncTarget);
+                  const task = await createSyncTask(selectedSources, syncTarget);
                   await startSyncTask(task.id);
                   setTasks(await getSyncTasks());
                   return { task };

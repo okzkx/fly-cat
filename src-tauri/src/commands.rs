@@ -52,6 +52,10 @@ pub struct SyncTask {
     #[serde(default)]
     pub selected_spaces: Vec<String>,
     #[serde(default)]
+    pub selected_sources: Vec<SelectedSyncScope>,
+    #[serde(default)]
+    pub selection_summary: Option<SyncSelectionSummary>,
+    #[serde(default)]
     pub selected_scope: Option<SelectedSyncScope>,
     pub output_path: String,
     pub status: String,
@@ -120,6 +124,19 @@ pub struct SelectedSyncScope {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SyncSelectionSummary {
+    pub kind: String,
+    pub space_id: String,
+    pub space_name: String,
+    pub title: String,
+    pub display_path: String,
+    pub document_count: u32,
+    #[serde(default)]
+    pub preview_paths: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KnowledgeBaseNode {
     pub key: String,
     pub kind: String,
@@ -132,7 +149,8 @@ pub struct KnowledgeBaseNode {
     #[serde(default)]
     pub path_segments: Vec<String>,
     pub has_children: bool,
-    #[serde(default)]
+    pub is_expandable: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<KnowledgeBaseNode>,
 }
 
@@ -167,7 +185,8 @@ pub struct AppBootstrap {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSyncTaskRequest {
-    pub selected_scope: SelectedSyncScope,
+    #[serde(default)]
+    pub selected_sources: Vec<SelectedSyncScope>,
     pub output_path: String,
 }
 
@@ -412,20 +431,7 @@ fn load_tasks_from_disk(app: &AppHandle) -> Result<Vec<SyncTask>, String> {
     let content = fs::read_to_string(&file_path).map_err(|err| err.to_string())?;
     let mut tasks: Vec<SyncTask> = serde_json::from_str(&content).map_err(|err| err.to_string())?;
     for task in &mut tasks {
-        task.created_at = normalize_timestamp_string(&task.created_at);
-        task.updated_at = normalize_timestamp_string(&task.updated_at);
-        if task.name.contains("SystemTime") {
-            task.name = build_task_name(&task.created_at);
-        }
-        task.failure_summary = build_failure_summary(&task.errors);
-        if !Path::new(&task.output_path).is_absolute() {
-            task.output_path = resolve_sync_root_string(app, &task.output_path)?;
-        }
-        task.counters.failed = task.errors.len() as u32;
-        task.counters.succeeded = task
-            .counters
-            .processed
-            .saturating_sub(task.counters.skipped + task.counters.failed);
+        normalize_task(task, app)?;
     }
     Ok(tasks)
 }
@@ -468,6 +474,203 @@ fn join_display_path(space_name: &str, path_segments: &[String]) -> String {
     }
 }
 
+fn selected_source_key(source: &SelectedSyncScope) -> String {
+    match source.kind.as_str() {
+        "space" => format!("space:{}", source.space_id),
+        "document" => format!(
+            "document:{}:{}",
+            source.space_id,
+            source.document_id.clone().unwrap_or_else(|| source.title.clone())
+        ),
+        _ => format!(
+            "{}:{}:{}",
+            source.kind,
+            source.space_id,
+            source.node_token.clone().unwrap_or_else(|| source.title.clone())
+        ),
+    }
+}
+
+fn dedupe_selected_sources(selected_sources: &[SelectedSyncScope]) -> Vec<SelectedSyncScope> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+    for source in selected_sources {
+        let key = selected_source_key(source);
+        if seen.insert(key) {
+            deduped.push(source.clone());
+        }
+    }
+    deduped
+}
+
+fn legacy_selected_scope(selected_sources: &[SelectedSyncScope]) -> Option<SelectedSyncScope> {
+    (selected_sources.len() == 1).then(|| selected_sources[0].clone())
+}
+
+fn build_selection_summary(
+    selected_sources: &[SelectedSyncScope],
+    selected_scope: Option<&SelectedSyncScope>,
+) -> Option<SyncSelectionSummary> {
+    let sources = dedupe_selected_sources(selected_sources);
+    if sources.is_empty() {
+        return selected_scope.map(|scope| SyncSelectionSummary {
+            kind: scope.kind.clone(),
+            space_id: scope.space_id.clone(),
+            space_name: scope.space_name.clone(),
+            title: scope.title.clone(),
+            display_path: scope.display_path.clone(),
+            document_count: u32::from(scope.kind == "document"),
+            preview_paths: vec![scope.display_path.clone()],
+        });
+    }
+
+    if sources.len() == 1 {
+        let source = &sources[0];
+        return Some(SyncSelectionSummary {
+            kind: source.kind.clone(),
+            space_id: source.space_id.clone(),
+            space_name: source.space_name.clone(),
+            title: source.title.clone(),
+            display_path: source.display_path.clone(),
+            document_count: u32::from(source.kind == "document"),
+            preview_paths: vec![source.display_path.clone()],
+        });
+    }
+
+    let first = &sources[0];
+    Some(SyncSelectionSummary {
+        kind: "multi-document".into(),
+        space_id: first.space_id.clone(),
+        space_name: first.space_name.clone(),
+        title: format!("{} 多文档同步", first.space_name),
+        display_path: format!("{}（已选 {} 篇文档）", first.space_name, sources.len()),
+        document_count: sources.len() as u32,
+        preview_paths: sources.iter().take(3).map(|source| source.display_path.clone()).collect(),
+    })
+}
+
+fn normalize_task(task: &mut SyncTask, app: &AppHandle) -> Result<(), String> {
+    task.created_at = normalize_timestamp_string(&task.created_at);
+    task.updated_at = normalize_timestamp_string(&task.updated_at);
+    if task.name.contains("SystemTime") {
+        task.name = build_task_name(&task.created_at);
+    }
+    let selected_sources = if task.selected_sources.is_empty() {
+        task.selected_scope.clone().into_iter().collect::<Vec<_>>()
+    } else {
+        task.selected_sources.clone()
+    };
+    task.selected_sources = dedupe_selected_sources(&selected_sources);
+    if task.selected_scope.is_none() {
+        task.selected_scope = legacy_selected_scope(&task.selected_sources);
+    }
+    task.selection_summary = task
+        .selection_summary
+        .clone()
+        .or_else(|| build_selection_summary(&task.selected_sources, task.selected_scope.as_ref()));
+    if !Path::new(&task.output_path).is_absolute() {
+        task.output_path = resolve_sync_root_string(app, &task.output_path)?;
+    }
+    if task.selected_spaces.is_empty() {
+        let mut unique_spaces = Vec::new();
+        for source in &task.selected_sources {
+            if !unique_spaces.contains(&source.space_id) {
+                unique_spaces.push(source.space_id.clone());
+            }
+        }
+        if unique_spaces.is_empty() {
+            if let Some(scope) = task.selected_scope.as_ref() {
+                unique_spaces.push(scope.space_id.clone());
+            }
+        }
+        task.selected_spaces = unique_spaces;
+    }
+    task.failure_summary = build_failure_summary(&task.errors);
+    task.counters.failed = task.errors.len() as u32;
+    task.counters.succeeded = task
+        .counters
+        .processed
+        .saturating_sub(task.counters.skipped + task.counters.failed);
+    Ok(())
+}
+
+fn effective_selected_sources(task: &SyncTask) -> Vec<SelectedSyncScope> {
+    if !task.selected_sources.is_empty() {
+        return dedupe_selected_sources(&task.selected_sources);
+    }
+    task.selected_scope.clone().into_iter().collect()
+}
+
+fn validate_selected_sources(selected_sources: &[SelectedSyncScope]) -> Result<Vec<SelectedSyncScope>, String> {
+    let normalized = dedupe_selected_sources(selected_sources);
+    if normalized.is_empty() {
+        return Err("请先选择一个同步范围。".into());
+    }
+
+    if normalized.len() > 1 {
+        let space_id = normalized[0].space_id.clone();
+        if normalized
+            .iter()
+            .any(|source| source.kind != "document" || source.space_id != space_id)
+        {
+            return Err("一次只能多选同一知识库内的文档。".into());
+        }
+    }
+
+    for source in &normalized {
+        if source.kind == "document" && source.document_id.as_deref().unwrap_or("").trim().is_empty() {
+            return Err("缺少文档标识，无法创建同步任务。".into());
+        }
+    }
+
+    Ok(normalized)
+}
+
+fn node_kind_from_obj_type(obj_type: &str, has_children: bool) -> String {
+    let normalized = obj_type.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "docx" => "document",
+        "bitable" | "sheet" => "bitable",
+        _ if has_children => "folder",
+        _ => "bitable",
+    }
+    .to_string()
+}
+
+fn is_expandable_node(kind: &str, has_children: bool) -> bool {
+    has_children && kind != "bitable"
+}
+
+fn clone_collapsed_nodes(nodes: &[KnowledgeBaseNode]) -> Vec<KnowledgeBaseNode> {
+    nodes.iter()
+        .map(|node| KnowledgeBaseNode {
+            key: node.key.clone(),
+            kind: node.kind.clone(),
+            space_id: node.space_id.clone(),
+            space_name: node.space_name.clone(),
+            title: node.title.clone(),
+            display_path: node.display_path.clone(),
+            node_token: node.node_token.clone(),
+            document_id: node.document_id.clone(),
+            path_segments: node.path_segments.clone(),
+            has_children: node.has_children,
+            is_expandable: node.is_expandable,
+            children: vec![],
+        })
+        .collect()
+}
+
+fn find_tree_node_by_token<'a>(nodes: &'a [KnowledgeBaseNode], node_token: &str) -> Option<&'a KnowledgeBaseNode> {
+    let mut stack = nodes.iter().collect::<Vec<_>>();
+    while let Some(node) = stack.pop() {
+        if node.node_token == node_token {
+            return Some(node);
+        }
+        stack.extend(node.children.iter());
+    }
+    None
+}
+
 fn make_fixture_document(
     space_id: &str,
     space_name: &str,
@@ -492,7 +695,7 @@ fn make_fixture_document(
     }
 }
 
-fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
+fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
     match space_id {
         "kb-eng" => vec![KnowledgeBaseNode {
             key: build_scope_key("folder", "kb-eng", "eng-guides"),
@@ -505,6 +708,7 @@ fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
             document_id: None,
             path_segments: vec!["研发规范".into()],
             has_children: true,
+            is_expandable: true,
             children: vec![
                 KnowledgeBaseNode {
                     key: build_scope_key("document", "kb-eng", "doc-eng-architecture"),
@@ -517,6 +721,7 @@ fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     document_id: Some("doc-eng-architecture".into()),
                     path_segments: vec!["研发规范".into(), "研发架构设计".into()],
                     has_children: false,
+                    is_expandable: false,
                     children: vec![],
                 },
                 KnowledgeBaseNode {
@@ -530,6 +735,7 @@ fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     document_id: Some("doc-eng-api".into()),
                     path_segments: vec!["研发规范".into(), "研发API概览".into()],
                     has_children: false,
+                    is_expandable: false,
                     children: vec![],
                 },
             ],
@@ -545,6 +751,7 @@ fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
             document_id: None,
             path_segments: vec!["方案库".into()],
             has_children: true,
+            is_expandable: true,
             children: vec![
                 KnowledgeBaseNode {
                     key: build_scope_key("document", "kb-product", "doc-product-overview"),
@@ -557,6 +764,7 @@ fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     document_id: Some("doc-product-overview".into()),
                     path_segments: vec!["方案库".into(), "Product Overview".into()],
                     has_children: false,
+                    is_expandable: false,
                     children: vec![],
                 },
                 KnowledgeBaseNode {
@@ -564,13 +772,43 @@ fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     kind: "document".into(),
                     space_id: "kb-product".into(),
                     space_name: "产品知识库".into(),
-                    title: "产品路线图".into(),
-                    display_path: "产品知识库 / 方案库 / 产品路线图".into(),
+                    title: "产品方案总览".into(),
+                    display_path: "产品知识库 / 方案库 / 产品方案总览".into(),
                     node_token: "node-doc-product-roadmap".into(),
                     document_id: Some("doc-product-roadmap".into()),
-                    path_segments: vec!["方案库".into(), "产品路线图".into()],
-                    has_children: false,
-                    children: vec![],
+                    path_segments: vec!["方案库".into(), "产品方案总览".into()],
+                    has_children: true,
+                    is_expandable: true,
+                    children: vec![
+                        KnowledgeBaseNode {
+                            key: build_scope_key("document", "kb-product", "doc-product-roadmap-h1"),
+                            kind: "document".into(),
+                            space_id: "kb-product".into(),
+                            space_name: "产品知识库".into(),
+                            title: "2026 H1 路线图".into(),
+                            display_path: "产品知识库 / 方案库 / 产品方案总览 / 2026 H1 路线图".into(),
+                            node_token: "node-doc-product-roadmap-h1".into(),
+                            document_id: Some("doc-product-roadmap-h1".into()),
+                            path_segments: vec!["方案库".into(), "产品方案总览".into(), "2026 H1 路线图".into()],
+                            has_children: false,
+                            is_expandable: false,
+                            children: vec![],
+                        },
+                        KnowledgeBaseNode {
+                            key: build_scope_key("bitable", "kb-product", "bitable-product-demand-pool"),
+                            kind: "bitable".into(),
+                            space_id: "kb-product".into(),
+                            space_name: "产品知识库".into(),
+                            title: "需求池".into(),
+                            display_path: "产品知识库 / 方案库 / 产品方案总览 / 需求池".into(),
+                            node_token: "node-bitable-product-demand-pool".into(),
+                            document_id: Some("bitable-product-demand-pool".into()),
+                            path_segments: vec!["方案库".into(), "产品方案总览".into(), "需求池".into()],
+                            has_children: false,
+                            is_expandable: false,
+                            children: vec![],
+                        },
+                    ],
                 },
             ],
         }],
@@ -585,9 +823,20 @@ fn fixture_space_nodes(space_id: &str) -> Vec<KnowledgeBaseNode> {
             document_id: Some("doc-ops-playbook".into()),
             path_segments: vec!["运维值班手册".into()],
             has_children: false,
+            is_expandable: false,
             children: vec![],
         }],
         _ => vec![],
+    }
+}
+
+fn fixture_space_nodes(space_id: &str, parent_node_token: Option<&str>) -> Vec<KnowledgeBaseNode> {
+    let tree = fixture_space_tree(space_id);
+    match parent_node_token {
+        Some(parent_node_token) => find_tree_node_by_token(&tree, parent_node_token)
+            .map(|node| clone_collapsed_nodes(&node.children))
+            .unwrap_or_default(),
+        None => clone_collapsed_nodes(&tree),
     }
 }
 
@@ -609,19 +858,33 @@ fn fixture_documents_for_scope(scope: &SelectedSyncScope) -> Vec<SyncSourceDocum
         ],
         ("kb-product", "space", _, _) | ("kb-product", "folder", _, Some("product-library")) => vec![
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-overview", "doc-product-overview", &["方案库", "Product Overview"], "v3", "2026-03-27T11:00:00Z"),
-            make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品路线图"], "v4", "2026-03-27T11:05:00Z"),
+            make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品方案总览"], "v4", "2026-03-27T11:05:00Z"),
+            make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap-h1", "doc-product-roadmap-h1", &["方案库", "产品方案总览", "2026 H1 路线图"], "v5", "2026-03-27T11:10:00Z"),
         ],
         ("kb-product", "document", Some("doc-product-overview"), _) => vec![
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-overview", "doc-product-overview", &["方案库", "Product Overview"], "v3", "2026-03-27T11:00:00Z"),
         ],
         ("kb-product", "document", Some("doc-product-roadmap"), _) => vec![
-            make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品路线图"], "v4", "2026-03-27T11:05:00Z"),
+            make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品方案总览"], "v4", "2026-03-27T11:05:00Z"),
         ],
         ("kb-ops", "space", _, _) | ("kb-ops", "document", Some("doc-ops-playbook"), _) => vec![
             make_fixture_document("kb-ops", "运维知识库", "node-doc-ops-playbook", "doc-ops-playbook", &["运维值班手册"], "v1", "2026-03-27T12:00:00Z"),
         ],
         _ => vec![],
     }
+}
+
+fn fixture_documents_for_sources(selected_sources: &[SelectedSyncScope]) -> Vec<SyncSourceDocument> {
+    let mut seen = HashSet::new();
+    let mut documents = Vec::new();
+    for source in selected_sources {
+        for document in fixture_documents_for_scope(source) {
+            if seen.insert(document.document_id.clone()) {
+                documents.push(document);
+            }
+        }
+    }
+    documents
 }
 
 fn app_settings_to_openapi_config(
@@ -1144,6 +1407,44 @@ fn resolve_space_name(client: &FeishuOpenApiClient, space_id: &str) -> Result<St
         .ok_or_else(|| format!("未找到知识空间：{space_id}"))
 }
 
+fn resolve_path_segments_for_node(
+    client: &FeishuOpenApiClient,
+    space_id: &str,
+    target_node_token: &str,
+) -> Result<Vec<String>, String> {
+    fn walk(
+        client: &FeishuOpenApiClient,
+        space_id: &str,
+        parent_node_token: Option<&str>,
+        parent_path: &[String],
+        target_node_token: &str,
+    ) -> Result<Option<Vec<String>>, String> {
+        let nodes = client
+            .list_child_nodes(space_id, parent_node_token)
+            .map_err(|err| err.to_string())?;
+
+        for node in nodes {
+            let mut path_segments = parent_path.to_vec();
+            path_segments.push(node.title.clone());
+
+            if node.node_token == target_node_token {
+                return Ok(Some(path_segments));
+            }
+
+            if node.has_child {
+                if let Some(found) = walk(client, space_id, Some(&node.node_token), &path_segments, target_node_token)? {
+                    return Ok(Some(found));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    walk(client, space_id, None, &[], target_node_token)?
+        .ok_or_else(|| format!("未找到知识库节点：{target_node_token}"))
+}
+
 fn build_tree_nodes_from_openapi(
     client: &FeishuOpenApiClient,
     space_id: &str,
@@ -1159,12 +1460,8 @@ fn build_tree_nodes_from_openapi(
     for node in nodes {
         let mut path_segments = parent_path.to_vec();
         path_segments.push(node.title.clone());
-        let kind = if node.obj_type == "docx" { "document" } else { "folder" }.to_string();
-        let children = if node.has_child {
-            build_tree_nodes_from_openapi(client, space_id, space_name, Some(&node.node_token), &path_segments)?
-        } else {
-            vec![]
-        };
+        let kind = node_kind_from_obj_type(&node.obj_type, node.has_child);
+        let is_expandable = is_expandable_node(&kind, node.has_child);
         let identifier = if kind == "document" {
             node.obj_token.clone()
         } else {
@@ -1182,7 +1479,8 @@ fn build_tree_nodes_from_openapi(
             document_id: (node.obj_type == "docx").then_some(node.obj_token.clone()),
             path_segments,
             has_children: node.has_child,
-            children,
+            is_expandable,
+            children: vec![],
         });
     }
 
@@ -1191,6 +1489,7 @@ fn build_tree_nodes_from_openapi(
 
 fn list_space_source_tree_from_openapi(
     space_id: &str,
+    parent_node_token: Option<&str>,
     settings: &AppSettings,
     session: &StoredUserSession,
 ) -> Result<Vec<KnowledgeBaseNode>, String> {
@@ -1198,7 +1497,11 @@ fn list_space_source_tree_from_openapi(
         .ok_or_else(|| "Feishu OpenAPI user session missing".to_string())?;
     let client = FeishuOpenApiClient::new(config);
     let space_name = resolve_space_name(&client, space_id)?;
-    build_tree_nodes_from_openapi(&client, space_id, &space_name, None, &[])
+    let parent_path = parent_node_token
+        .map(|parent_node_token| resolve_path_segments_for_node(&client, space_id, parent_node_token))
+        .transpose()?
+        .unwrap_or_default();
+    build_tree_nodes_from_openapi(&client, space_id, &space_name, parent_node_token, &parent_path)
 }
 
 fn discover_documents_from_openapi(
@@ -1242,7 +1545,10 @@ fn discover_documents_from_openapi(
     for node in nodes {
         let mut path_segments = base_path.clone();
         path_segments.push(node.title.clone());
-        if node.obj_type == "docx" {
+        let kind = node_kind_from_obj_type(&node.obj_type, node.has_child);
+        let is_expandable = is_expandable_node(&kind, node.has_child);
+
+        if kind == "document" {
             let summary = client
                 .fetch_document_summary(&node.obj_token)
                 .map_err(|err| err.to_string())?;
@@ -1255,9 +1561,11 @@ fn discover_documents_from_openapi(
                 version: summary.version,
                 update_time: summary.update_time,
                 source_path: join_display_path(&selected_scope.space_name, &path_segments).replace(" / ", "/"),
-                path_segments,
+                path_segments: path_segments.clone(),
             });
-        } else if node.has_child {
+        }
+
+        if is_expandable {
             let child_scope = SelectedSyncScope {
                 kind: "folder".into(),
                 space_id: selected_scope.space_id.clone(),
@@ -1272,6 +1580,23 @@ fn discover_documents_from_openapi(
         }
     }
 
+    Ok(documents)
+}
+
+fn discover_documents_from_sources(
+    selected_sources: &[SelectedSyncScope],
+    settings: &AppSettings,
+    session: &StoredUserSession,
+) -> Result<Vec<SyncSourceDocument>, String> {
+    let mut seen = HashSet::new();
+    let mut documents = Vec::new();
+    for source in selected_sources {
+        for document in discover_documents_from_openapi(source, settings, session)? {
+            if seen.insert(document.document_id.clone()) {
+                documents.push(document);
+            }
+        }
+    }
     Ok(documents)
 }
 
@@ -1326,27 +1651,32 @@ fn classify_pipeline_failure(error: SyncPipelineError) -> SyncRunError {
 
 fn spawn_sync_progress(task_id: String, app: AppHandle) {
     std::thread::spawn(move || {
-        let (documents, discovery_error, settings, selected_scope) = {
+        let (documents, discovery_error, settings, selected_sources, selected_scope) = {
             let state = app.state::<AppState>();
             let tasks = state.tasks.lock().expect("task state poisoned");
-            let selected_scope = tasks
+            let selected_sources = tasks
                 .iter()
                 .find(|task| task.id == task_id)
-                .and_then(|task| task.selected_scope.clone())
+                .map(effective_selected_sources)
                 .or_else(|| {
                     tasks.iter().find(|task| task.id == task_id).and_then(|task| {
-                        task.selected_spaces.first().map(|space_id| SelectedSyncScope {
-                            kind: "space".into(),
-                            space_id: space_id.clone(),
-                            space_name: space_id.clone(),
-                            title: space_id.clone(),
-                            display_path: space_id.clone(),
-                            node_token: None,
-                            document_id: None,
-                            path_segments: vec![],
+                        task.selected_spaces.first().map(|space_id| {
+                            vec![SelectedSyncScope {
+                                kind: "space".into(),
+                                space_id: space_id.clone(),
+                                space_name: space_id.clone(),
+                                title: space_id.clone(),
+                                display_path: space_id.clone(),
+                                node_token: None,
+                                document_id: None,
+                                path_segments: vec![],
+                            }]
                         })
                     })
                 });
+            let selected_scope = selected_sources
+                .as_ref()
+                .and_then(|sources| legacy_selected_scope(sources));
             drop(tasks);
 
             let settings: Option<AppSettings> =
@@ -1355,9 +1685,15 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
 
             match settings {
                 Some(settings) => match authorized_config_for_session(&app, &settings) {
-                    Ok((session, _)) => match selected_scope.as_ref() {
-                        Some(scope) => match discover_documents_from_openapi(scope, &settings, &session) {
-                            Ok(documents) => (documents, None, Some(settings), Some(scope.clone())),
+                    Ok((session, _)) => match selected_sources.as_ref() {
+                        Some(sources) if !sources.is_empty() => match discover_documents_from_sources(sources, &settings, &session) {
+                            Ok(documents) => (
+                                documents,
+                                None,
+                                Some(settings),
+                                Some(sources.clone()),
+                                legacy_selected_scope(sources),
+                            ),
                             Err(error) => (
                                 vec![],
                                 Some(SyncRunError {
@@ -1371,10 +1707,11 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                                     message: error,
                                 }),
                                 Some(settings),
-                                Some(scope.clone()),
+                                Some(sources.clone()),
+                                legacy_selected_scope(sources),
                             ),
                         },
-                        None => (
+                        _ => (
                             vec![],
                             Some(SyncRunError {
                                 document_id: String::new(),
@@ -1383,6 +1720,7 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                                 message: "请先选择一个同步范围。".into(),
                             }),
                             Some(settings),
+                            None,
                             None,
                         ),
                     },
@@ -1395,6 +1733,7 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                             message: result.validation.message,
                         }),
                         Some(settings),
+                        selected_sources,
                         selected_scope,
                     ),
                 },
@@ -1407,6 +1746,7 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                         message: "请先完成飞书配置并重新登录。".into(),
                     }),
                     None,
+                    selected_sources,
                     selected_scope,
                 ),
             }
@@ -1418,6 +1758,10 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 let state = app.state::<AppState>();
                 let mut tasks = state.tasks.lock().expect("task state poisoned");
                 if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
+                    task.selected_sources = selected_sources.clone().unwrap_or_default();
+                    task.selected_scope = selected_scope.clone();
+                    task.selection_summary =
+                        build_selection_summary(&task.selected_sources, task.selected_scope.as_ref());
                     task.progress = 100;
                     task.counters.total = task.counters.total.max(1);
                     task.counters.processed = task.counters.total;
@@ -1481,7 +1825,9 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
             let state = app.state::<AppState>();
             let mut tasks = state.tasks.lock().expect("task state poisoned");
             if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
+                task.selected_sources = selected_sources.clone().unwrap_or_default();
                 task.selected_scope = selected_scope.clone();
+                task.selection_summary = build_selection_summary(&task.selected_sources, task.selected_scope.as_ref());
                 task.counters.total = (queued_documents.len() + skipped_documents.len()).max(1) as u32;
                 task.counters.processed = skipped_documents.len() as u32;
                 task.counters.skipped = skipped_documents.len() as u32;
@@ -1712,16 +2058,20 @@ pub fn validate_feishu_connection(app: AppHandle) -> Result<ConnectionCheckResul
 }
 
 #[tauri::command]
-pub fn list_space_source_tree(app: AppHandle, space_id: String) -> Result<Vec<KnowledgeBaseNode>, String> {
+pub fn list_space_source_tree(
+    app: AppHandle,
+    space_id: String,
+    parent_node_token: Option<String>,
+) -> Result<Vec<KnowledgeBaseNode>, String> {
     let settings: AppSettings = load_json_file(settings_file_path(&app)?)?
         .ok_or_else(|| "请先在设置页保存飞书应用配置".to_string())?;
     let (session, _) = authorized_config_for_session(&app, &settings)
         .map_err(|result| result.validation.message)?;
 
-    match list_space_source_tree_from_openapi(&space_id, &settings, &session) {
+    match list_space_source_tree_from_openapi(&space_id, parent_node_token.as_deref(), &settings, &session) {
         Ok(nodes) => Ok(nodes),
         Err(error) => {
-            let fixtures = fixture_space_nodes(&space_id);
+            let fixtures = fixture_space_nodes(&space_id, parent_node_token.as_deref());
             if fixtures.is_empty() {
                 Err(error)
             } else {
@@ -1755,10 +2105,12 @@ pub fn create_sync_task(
         .ok_or_else(|| "请先在设置页保存飞书应用配置".to_string())?;
     let (session, _) = authorized_config_for_session(&app, &settings)
         .map_err(|result| result.validation.message)?;
-    let discovered_documents = match discover_documents_from_openapi(&request.selected_scope, &settings, &session) {
+    let selected_sources = validate_selected_sources(&request.selected_sources)?;
+    let legacy_scope = legacy_selected_scope(&selected_sources);
+    let discovered_documents = match discover_documents_from_sources(&selected_sources, &settings, &session) {
         Ok(documents) => documents,
         Err(error) => {
-            let fixtures = fixture_documents_for_scope(&request.selected_scope);
+            let fixtures = fixture_documents_for_sources(&selected_sources);
             if fixtures.is_empty() {
                 return Err(error);
             }
@@ -1773,8 +2125,15 @@ pub fn create_sync_task(
         let task = SyncTask {
             id: Uuid::new_v4().to_string(),
             name: build_task_name(&created_at),
-            selected_spaces: vec![request.selected_scope.space_id.clone()],
-            selected_scope: Some(request.selected_scope.clone()),
+            selected_spaces: selected_sources
+                .iter()
+                .map(|source| source.space_id.clone())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect(),
+            selected_sources: selected_sources.clone(),
+            selected_scope: legacy_scope.clone(),
+            selection_summary: build_selection_summary(&selected_sources, legacy_scope.as_ref()),
             output_path: resolved_output_path,
             status: "pending".into(),
             progress: 0,
@@ -1911,6 +2270,19 @@ mod tests {
         }
     }
 
+    fn sample_document_scope(space_id: &str, space_name: &str, document_id: &str, title: &str) -> SelectedSyncScope {
+        SelectedSyncScope {
+            kind: "document".into(),
+            space_id: space_id.into(),
+            space_name: space_name.into(),
+            title: title.into(),
+            display_path: format!("{space_name} / {title}"),
+            node_token: Some(format!("node-{document_id}")),
+            document_id: Some(document_id.into()),
+            path_segments: vec![title.into()],
+        }
+    }
+
     #[test]
     fn false_negative_preflight_can_recover_when_spaces_are_accessible() {
         let recovered = build_connected_result(
@@ -1971,6 +2343,46 @@ mod tests {
     }
 
     #[test]
+    fn validates_same_space_multi_document_selection() {
+        let selected_sources = validate_selected_sources(&[
+            sample_document_scope("kb-eng", "研发知识库", "doc-a", "A"),
+            sample_document_scope("kb-eng", "研发知识库", "doc-b", "B"),
+            sample_document_scope("kb-eng", "研发知识库", "doc-a", "A"),
+        ])
+        .expect("selection should be valid");
+
+        assert_eq!(selected_sources.len(), 2);
+        assert_eq!(selected_sources[0].document_id.as_deref(), Some("doc-a"));
+        assert_eq!(selected_sources[1].document_id.as_deref(), Some("doc-b"));
+    }
+
+    #[test]
+    fn rejects_cross_space_multi_document_selection() {
+        let result = validate_selected_sources(&[
+            sample_document_scope("kb-eng", "研发知识库", "doc-a", "A"),
+            sample_document_scope("kb-product", "产品知识库", "doc-b", "B"),
+        ]);
+
+        assert!(result.is_err());
+        assert_eq!(result.err().as_deref(), Some("一次只能多选同一知识库内的文档。"));
+    }
+
+    #[test]
+    fn builds_multi_document_selection_summary() {
+        let selected_sources = vec![
+            sample_document_scope("kb-eng", "研发知识库", "doc-a", "A"),
+            sample_document_scope("kb-eng", "研发知识库", "doc-b", "B"),
+        ];
+
+        let summary = build_selection_summary(&selected_sources, None).expect("summary should exist");
+
+        assert_eq!(summary.kind, "multi-document");
+        assert_eq!(summary.space_id, "kb-eng");
+        assert_eq!(summary.document_count, 2);
+        assert_eq!(summary.preview_paths.len(), 2);
+    }
+
+    #[test]
     fn normalizes_legacy_system_time_debug_timestamp() {
         let normalized = normalize_timestamp_string("SystemTime { intervals: 134190038946973727 }");
 
@@ -2013,5 +2425,39 @@ mod tests {
         assert_eq!(summary.category, "content-fetch");
         assert_eq!(summary.count, 2);
         assert!(summary.message.contains("内容抓取"));
+    }
+
+    #[test]
+    fn fixture_tree_loading_returns_only_direct_children() {
+        let root_nodes = fixture_space_nodes("kb-product", None);
+        assert_eq!(root_nodes.len(), 1);
+        assert_eq!(root_nodes[0].title, "方案库");
+        assert!(root_nodes[0].children.is_empty());
+        assert!(root_nodes[0].is_expandable);
+
+        let level_one_nodes = fixture_space_nodes("kb-product", Some("product-library"));
+        assert_eq!(level_one_nodes.len(), 2);
+        assert!(level_one_nodes.iter().all(|node| node.children.is_empty()));
+
+        let parent_document = level_one_nodes
+            .iter()
+            .find(|node| node.node_token == "node-doc-product-roadmap")
+            .expect("parent document should exist");
+        assert_eq!(parent_document.kind, "document");
+        assert!(parent_document.is_expandable);
+
+        let level_two_nodes = fixture_space_nodes("kb-product", Some("node-doc-product-roadmap"));
+        assert_eq!(level_two_nodes.len(), 2);
+        assert!(level_two_nodes.iter().all(|node| node.children.is_empty()));
+        assert!(level_two_nodes.iter().any(|node| node.kind == "bitable" && !node.is_expandable));
+    }
+
+    #[test]
+    fn bitable_kind_is_classified_as_non_expandable_leaf() {
+        assert_eq!(node_kind_from_obj_type("bitable", false), "bitable");
+        assert_eq!(node_kind_from_obj_type("sheet", false), "bitable");
+        assert_eq!(node_kind_from_obj_type("unknown-leaf", false), "bitable");
+        assert_eq!(node_kind_from_obj_type("unknown-folder", true), "folder");
+        assert!(!is_expandable_node("bitable", true));
     }
 }

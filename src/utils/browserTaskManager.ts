@@ -1,5 +1,6 @@
 import type { SyncTask } from "@/types/app";
 import type { KnowledgeBaseNode, SyncRunError, SyncScope } from "@/types/sync";
+import { buildSelectionSummary, dedupeSelectedSources, getLegacySelectedScope } from "@/utils/syncSelection";
 
 const TASK_STORAGE_KEY = "feishu_sync_tasks";
 
@@ -171,6 +172,72 @@ function countDocuments(nodes: KnowledgeBaseNode[]): number {
   }, 0);
 }
 
+function buildNodeScope(node: KnowledgeBaseNode): SyncScope | null {
+  if (node.kind === "bitable") {
+    return null;
+  }
+  return {
+    kind: node.kind,
+    spaceId: node.spaceId,
+    spaceName: node.spaceName,
+    title: node.title,
+    displayPath: node.displayPath,
+    nodeToken: node.nodeToken,
+    documentId: node.documentId,
+    pathSegments: node.pathSegments
+  };
+}
+
+function collectDocumentScopes(nodes: KnowledgeBaseNode[]): SyncScope[] {
+  const scopes: SyncScope[] = [];
+  for (const node of nodes) {
+    if (node.kind === "document") {
+      const scope = buildNodeScope(node);
+      if (scope) {
+        scopes.push(scope);
+      }
+    }
+    if (node.children?.length) {
+      scopes.push(...collectDocumentScopes(node.children));
+    }
+  }
+  return scopes;
+}
+
+function scopesForSelectionSource(source: SyncScope): SyncScope[] {
+  if (source.kind === "document") {
+    return [source];
+  }
+
+  const tree = SAMPLE_TREES[source.spaceId] ?? [];
+  if (source.kind === "space") {
+    return collectDocumentScopes(tree);
+  }
+
+  const stack = [...tree];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (current.nodeToken === source.nodeToken) {
+      return collectDocumentScopes([current]);
+    }
+    stack.push(...(current.children ?? []));
+  }
+
+  return [];
+}
+
+function resolveSelectedSources(selectedSources: SyncScope[]): SyncScope[] {
+  return dedupeSelectedSources(selectedSources);
+}
+
+function discoverDocumentScopes(selectedSources: SyncScope[]): SyncScope[] {
+  const discovered = selectedSources.flatMap((source) => scopesForSelectionSource(source));
+  return dedupeSelectedSources(discovered);
+}
+
 function countScopeDocuments(scope: SyncScope): number {
   if (scope.kind === "document") {
     return 1;
@@ -196,23 +263,44 @@ function countScopeDocuments(scope: SyncScope): number {
   return 1;
 }
 
+function normalizeTask(task: SyncTask): SyncTask {
+  const selectedSources = resolveSelectedSources(task.selectedSources ?? (task.selectedScope ? [task.selectedScope] : []));
+  const selectedScope = task.selectedScope ?? getLegacySelectedScope(selectedSources);
+  const selectionSummary = task.selectionSummary ?? buildSelectionSummary(selectedSources, selectedScope);
+  const selectedSpaces =
+    task.selectedSpaces.length > 0
+      ? task.selectedSpaces
+      : Array.from(new Set(selectedSources.map((source) => source.spaceId).concat(selectedScope ? [selectedScope.spaceId] : [])));
+
+  return {
+    ...task,
+    selectedSpaces,
+    selectedSources,
+    selectedScope,
+    selectionSummary
+  };
+}
+
 function loadStoredTasks(): SyncTask[] {
   try {
     const raw = localStorage.getItem(TASK_STORAGE_KEY);
     if (!raw) {
       return [];
     }
-    return JSON.parse(raw) as SyncTask[];
+    return (JSON.parse(raw) as SyncTask[]).map(normalizeTask);
   } catch {
     return [];
   }
 }
 
 function saveTasks(tasks: SyncTask[]): void {
-  localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks));
+  localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks.map(normalizeTask)));
 }
 
 function emitTaskEvent(name: string, task: SyncTask): void {
+  if (typeof window === "undefined") {
+    return;
+  }
   window.dispatchEvent(new CustomEvent(name, { detail: { task } }));
 }
 
@@ -222,7 +310,7 @@ function updateTask(taskId: string, updater: (task: SyncTask) => SyncTask): Sync
   if (index === -1) {
     return null;
   }
-  const nextTask = updater(tasks[index]);
+  const nextTask = normalizeTask(updater(tasks[index]));
   tasks[index] = nextTask;
   saveTasks(tasks);
   emitTaskEvent(TASK_EVENTS.statusChanged, nextTask);
@@ -243,17 +331,22 @@ export function listKnowledgeBaseNodes(spaceId: string, parentNodeToken?: string
   return cloneCollapsedNodes(parent?.children ?? []);
 }
 
-export function createSyncTask(selectedScope: SyncScope, outputPath: string): SyncTask {
+export function createSyncTask(selectedSources: SyncScope[], outputPath: string): SyncTask {
+  const normalizedSources = resolveSelectedSources(selectedSources);
+  const legacyScope = getLegacySelectedScope(normalizedSources);
+  const discoveredDocuments = discoverDocumentScopes(normalizedSources);
   const task: SyncTask = {
     id: crypto.randomUUID(),
     name: `同步任务 - ${new Date().toLocaleString("zh-CN")}`,
-    selectedSpaces: [selectedScope.spaceId],
-    selectedScope,
+    selectedSpaces: Array.from(new Set(normalizedSources.map((source) => source.spaceId))),
+    selectedSources: normalizedSources,
+    selectedScope: legacyScope,
+    selectionSummary: buildSelectionSummary(normalizedSources, legacyScope),
     outputPath,
     status: "pending",
     progress: 0,
     counters: {
-      total: countScopeDocuments(selectedScope),
+      total: Math.max(1, discoveredDocuments.length),
       processed: 0,
       succeeded: 0,
       skipped: 0,
@@ -267,14 +360,14 @@ export function createSyncTask(selectedScope: SyncScope, outputPath: string): Sy
   };
 
   const tasks = getSyncTasks();
-  tasks.unshift(task);
+  tasks.unshift(normalizeTask(task));
   saveTasks(tasks);
-  emitTaskEvent(TASK_EVENTS.statusChanged, task);
-  return task;
+  emitTaskEvent(TASK_EVENTS.statusChanged, normalizeTask(task));
+  return normalizeTask(task);
 }
 
 function buildSimulatedError(task: SyncTask): SyncRunError[] {
-  if (task.selectedScope?.spaceId === "kb-product") {
+  if (task.selectionSummary?.spaceId === "kb-product") {
     return [
       {
         documentId: "doc-product-overview",
@@ -312,7 +405,7 @@ export function startSyncTask(taskId: string): void {
       const progress = Math.round((processed / task.counters.total) * 100);
       const nextErrors = processed === task.counters.total ? buildSimulatedError(task) : task.errors;
       const failed = nextErrors.length;
-      const skipped = task.selectedScope?.kind === "space" ? 1 : 0;
+      const skipped = task.selectionSummary?.kind === "space" ? 1 : 0;
       const succeeded = Math.max(0, processed - failed - skipped);
       const failureSummary =
         nextErrors.length > 0

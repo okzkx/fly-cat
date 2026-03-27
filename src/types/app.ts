@@ -5,7 +5,8 @@ import type {
   SyncFailureSummary,
   SyncLifecycleState,
   SyncRunError,
-  SyncScope
+  SyncScope,
+  SyncSelectionSummary
 } from "@/types/sync";
 
 export interface UserInfo {
@@ -52,6 +53,8 @@ export interface SyncTask {
   id: string;
   name: string;
   selectedSpaces: string[];
+  selectedSources?: SyncScope[];
+  selectionSummary?: SyncSelectionSummary | null;
   selectedScope?: SyncScope | null;
   outputPath: string;
   status: SyncTaskStatus;
@@ -89,10 +92,12 @@ export interface SyncProgressEventDetail {
 export interface HomePageProps {
   spaces: KnowledgeBaseSpace[];
   selectedScope: SyncScope | null;
+  selectedDocumentSources: SyncScope[];
   loadedSpaceTrees: Record<string, KnowledgeBaseNode[]>;
   syncRoot: string;
   connectionValidation: ConnectionValidation | null;
   onScopeChange: (scope: SyncScope) => void;
+  onSelectedDocumentSourcesChange: (sources: SyncScope[]) => void;
   onLoadTreeChildren: (spaceId: string, parentNodeToken?: string) => Promise<void>;
   onOpenTasks: () => void;
   activeTaskSummary: string;

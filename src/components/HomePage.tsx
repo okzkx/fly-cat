@@ -3,19 +3,24 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
-  SyncOutlined
+  SyncOutlined,
+  TableOutlined
 } from "@ant-design/icons";
 import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
 import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
+import { buildSelectionSummary, dedupeSelectedSources, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 
 const { Text } = Typography;
 
 type ScopeTreeDataNode = DataNode & {
   scopeValue?: SyncScope;
   spaceRef?: KnowledgeBaseSpace;
+  nodeKind?: KnowledgeBaseNode["kind"] | "space";
+  spaceId?: string;
+  nodeToken?: string;
   children?: ScopeTreeDataNode[];
 };
 
@@ -30,7 +35,10 @@ function buildSpaceScope(space: KnowledgeBaseSpace): SyncScope {
   };
 }
 
-function buildNodeScope(node: KnowledgeBaseNode): SyncScope {
+function buildNodeScope(node: KnowledgeBaseNode): SyncScope | undefined {
+  if (node.kind === "bitable") {
+    return undefined;
+  }
   return {
     kind: node.kind,
     spaceId: node.spaceId,
@@ -43,26 +51,25 @@ function buildNodeScope(node: KnowledgeBaseNode): SyncScope {
   };
 }
 
-function scopeKey(scope: SyncScope | null): string[] {
+function selectedKey(scope: SyncScope | null): string[] {
   if (!scope) {
     return [];
   }
-  if (scope.kind === "space") {
-    return [`space:${scope.spaceId}`];
-  }
-  if (scope.kind === "document" && scope.documentId) {
-    return [`document:${scope.spaceId}:${scope.documentId}`];
-  }
-  return [`${scope.kind}:${scope.spaceId}:${scope.nodeToken ?? scope.title}`];
+  return [scopeKey(scope)];
 }
 
 function buildTreeNodes(nodes: KnowledgeBaseNode[]): ScopeTreeDataNode[] {
   return nodes.map((node) => ({
     title: node.title,
     key: node.key,
-    isLeaf: node.kind === "document",
+    isLeaf: !node.isExpandable,
+    selectable: node.kind !== "bitable",
+    disableCheckbox: node.kind !== "document",
+    nodeKind: node.kind,
+    spaceId: node.spaceId,
+    nodeToken: node.nodeToken,
     scopeValue: buildNodeScope(node),
-    children: node.children ? buildTreeNodes(node.children) : undefined
+    children: node.children && node.children.length > 0 ? buildTreeNodes(node.children) : undefined
   }));
 }
 
@@ -75,12 +82,16 @@ function buildTreeData(
       title: "知识库",
       key: "wiki-root",
       selectable: false,
+      disableCheckbox: true,
       children: spaces.map((space) => ({
         title: space.name,
         key: `space:${space.id}`,
         scopeValue: buildSpaceScope(space),
         spaceRef: space,
-        children: buildTreeNodes(loadedSpaceTrees[space.id] ?? [])
+        nodeKind: "space",
+        spaceId: space.id,
+        disableCheckbox: true,
+        children: loadedSpaceTrees[space.id] ? buildTreeNodes(loadedSpaceTrees[space.id]) : undefined
       }))
     }
   ];
@@ -100,20 +111,42 @@ function getScopeLabel(scope: SyncScope | null): string {
   }
 }
 
+function getSelectionLabel(selectionSummary: ReturnType<typeof buildSelectionSummary>, selectedScope: SyncScope | null): string {
+  if (!selectionSummary) {
+    return "未选择";
+  }
+  switch (selectionSummary.kind) {
+    case "multi-document":
+      return "多篇文档";
+    case "document":
+      return "单个文档";
+    case "folder":
+      return "目录子树";
+    case "space":
+      return "整个知识库";
+    default:
+      return getScopeLabel(selectedScope);
+  }
+}
+
 export default function HomePage({
   spaces,
   selectedScope,
+  selectedDocumentSources,
   loadedSpaceTrees,
   syncRoot,
   connectionValidation,
   onScopeChange,
-  onLoadSpaceTree,
+  onSelectedDocumentSourcesChange,
+  onLoadTreeChildren,
   onOpenTasks,
   activeTaskSummary,
   onCreateTask
 }: HomePageProps): React.JSX.Element {
   const { message } = App.useApp();
   const emptyState = getHomePageEmptyState(connectionValidation, spaces.length);
+  const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedDocumentSources);
+  const selectionSummary = buildSelectionSummary(effectiveSelectedSources, selectedScope);
 
   const handleStartSync = async (): Promise<void> => {
     try {
@@ -121,7 +154,7 @@ export default function HomePage({
       if (result) {
         message.success(`已创建同步任务：${result.task.name}`);
       } else {
-        message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围");
+        message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围或勾选文档");
       }
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
@@ -138,6 +171,8 @@ export default function HomePage({
     }
   };
 
+  const checkedDocumentKeys = selectedDocumentSources.map((source) => scopeKey(source));
+
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card
@@ -150,7 +185,12 @@ export default function HomePage({
           </div>
         }
         extra={
-          <Button type="primary" icon={<SyncOutlined />} disabled={spaces.length === 0 || !selectedScope} onClick={() => void handleStartSync()}>
+          <Button
+            type="primary"
+            icon={<SyncOutlined />}
+            disabled={spaces.length === 0 || effectiveSelectedSources.length === 0}
+            onClick={() => void handleStartSync()}
+          >
             开始同步
           </Button>
         }
@@ -165,9 +205,16 @@ export default function HomePage({
               <Space wrap>
                 <FolderOpenOutlined />
                 <Text>已选同步范围：</Text>
-                <Tag color="blue">{getScopeLabel(selectedScope)}</Tag>
-                <Text>{selectedScope?.displayPath ?? "请选择一个知识库、目录或文档"}</Text>
+                <Tag color="blue">{getSelectionLabel(selectionSummary, selectedScope)}</Tag>
+                <Text>{selectionSummary?.displayPath ?? "请选择一个知识库、目录或文档"}</Text>
               </Space>
+              {selectionSummary?.kind === "multi-document" && (
+                <Space wrap>
+                  <FileTextOutlined />
+                  <Text>{selectionSummary.documentCount} 篇文档</Text>
+                  <Text type="secondary">{selectionSummary.previewPaths.join("；")}</Text>
+                </Space>
+              )}
             </Space>
           </div>
 
@@ -182,14 +229,40 @@ export default function HomePage({
 
           {spaces.length > 0 ? (
             <Tree
-              defaultExpandAll
-              selectedKeys={scopeKey(selectedScope)}
+              checkable
+              checkStrictly
+              defaultExpandedKeys={["wiki-root"]}
+              selectedKeys={selectedKey(selectedScope)}
+              checkedKeys={{ checked: checkedDocumentKeys, halfChecked: [] }}
               treeData={treeData}
               loadData={async (treeNode) => {
                 const node = treeNode as ScopeTreeDataNode;
                 if (node.spaceRef && !loadedSpaceTrees[node.spaceRef.id]) {
-                  await onLoadSpaceTree(node.spaceRef);
+                  await onLoadTreeChildren(node.spaceRef.id);
+                  return;
                 }
+                if (!node.scopeValue || !node.spaceId || !node.nodeToken || node.children || node.isLeaf) {
+                  return;
+                }
+                await onLoadTreeChildren(node.spaceId, node.nodeToken);
+              }}
+              onCheck={(_checkedKeys, info) => {
+                const checkedNodes = dedupeSelectedSources(
+                  info.checkedNodes
+                    .map((checkedNode) => (checkedNode as ScopeTreeDataNode).scopeValue)
+                    .filter((scope): scope is SyncScope => Boolean(scope && scope.kind === "document"))
+                );
+                const changedNode = info.node as ScopeTreeDataNode;
+                const changedScope = changedNode.scopeValue;
+                const selectedSpaces = new Set(checkedNodes.map((scope) => scope.spaceId));
+
+                if (selectedSpaces.size > 1 && info.checked && changedScope?.kind === "document") {
+                  message.warning("一次只能多选同一知识库内的文档，已切换到当前知识库。");
+                  onSelectedDocumentSourcesChange([changedScope]);
+                  return;
+                }
+
+                onSelectedDocumentSourcesChange(checkedNodes);
               }}
               onSelect={handleSelect}
               titleRender={(node) => {
@@ -204,11 +277,14 @@ export default function HomePage({
                 }
 
                 const scope = treeNode.scopeValue;
+                const nodeKind = treeNode.nodeKind ?? scope?.kind ?? "space";
                 const icon =
-                  scope?.kind === "document" ? (
+                  nodeKind === "document" ? (
                     <FileTextOutlined style={{ color: "#1677ff" }} />
-                  ) : scope?.kind === "folder" ? (
+                  ) : nodeKind === "folder" ? (
                     <FolderOutlined style={{ color: "#fa8c16" }} />
+                  ) : nodeKind === "bitable" ? (
+                    <TableOutlined style={{ color: "#13a8a8" }} />
                   ) : (
                     <CloudSyncOutlined style={{ color: "#722ed1" }} />
                   );
@@ -217,9 +293,10 @@ export default function HomePage({
                   <Space>
                     {icon}
                     <span>{String(treeNode.title)}</span>
-                    {scope?.kind === "space" && <Tag color="purple">整库</Tag>}
-                    {scope?.kind === "folder" && <Tag color="gold">目录</Tag>}
-                    {scope?.kind === "document" && <Tag color="blue">文档</Tag>}
+                    {nodeKind === "space" && <Tag color="purple">整库</Tag>}
+                    {nodeKind === "folder" && <Tag color="gold">目录</Tag>}
+                    {nodeKind === "document" && <Tag color="blue">文档</Tag>}
+                    {nodeKind === "bitable" && <Tag color="cyan">多维表格</Tag>}
                   </Space>
                 );
               }}
