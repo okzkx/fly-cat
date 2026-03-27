@@ -4,7 +4,7 @@ import {
   PlayCircleOutlined,
   ReloadOutlined
 } from "@ant-design/icons";
-import { App, Button, Card, Popconfirm, Progress, Space, Table, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Popconfirm, Progress, Space, Table, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import type { SyncTask, TaskListPageProps } from "@/types/app";
 import {
@@ -15,8 +15,57 @@ import {
   retryFailedTask,
   resumeSyncTasks
 } from "@/utils/taskManager";
+import { getFriendlyFailureSummary, parsePermissionFailure } from "@/utils/syncFailurePresentation";
 
-const { Text } = Typography;
+const { Link, Paragraph, Text } = Typography;
+
+function parseLegacySystemTime(value: string): Date | null {
+  const match = value.match(/^SystemTime \{ intervals: (\d+) \}$/);
+  if (!match) {
+    return null;
+  }
+  const intervals = BigInt(match[1]);
+  const unixIntervals = intervals - 116444736000000000n;
+  if (unixIntervals < 0n) {
+    return null;
+  }
+  const millis = Number(unixIntervals / 10000n);
+  return Number.isFinite(millis) ? new Date(millis) : null;
+}
+
+function formatTaskTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleString("zh-CN");
+  }
+  const legacy = parseLegacySystemTime(value);
+  if (legacy && !Number.isNaN(legacy.getTime())) {
+    return legacy.toLocaleString("zh-CN");
+  }
+  return value;
+}
+
+function failureCategoryToTag(category: string): { color: string; text: string } {
+  switch (category) {
+    case "auth":
+      return { color: "red", text: "授权" };
+    case "discovery":
+      return { color: "gold", text: "发现" };
+    case "content-fetch":
+    case "mcp":
+      return { color: "orange", text: "内容抓取" };
+    case "markdown-render":
+    case "transform":
+      return { color: "geekblue", text: "Markdown 渲染" };
+    case "image-resolution":
+      return { color: "purple", text: "图片处理" };
+    case "filesystem-write":
+    case "filesystem":
+      return { color: "cyan", text: "文件写入" };
+    default:
+      return { color: "default", text: category };
+  }
+}
 
 function statusToTag(status: SyncTask["status"]): { color: string; text: string } {
   switch (status) {
@@ -36,6 +85,16 @@ function statusToTag(status: SyncTask["status"]): { color: string; text: string 
 export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX.Element {
   const { message } = App.useApp();
   const [tasks, setTasks] = useState<SyncTask[]>([]);
+
+  const runTaskAction = async (action: () => Promise<unknown>): Promise<void> => {
+    try {
+      await action();
+      setTasks(await getSyncTasks());
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      message.error(messageText || "任务操作失败，请重新登录后重试");
+    }
+  };
 
   useEffect(() => {
     let disposeBridge: (() => void) | undefined;
@@ -82,7 +141,7 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
         render: (name: string, record: SyncTask) => (
           <Space direction="vertical" size={0}>
             <Text>{name}</Text>
-            <Text type="secondary">{new Date(record.createdAt).toLocaleString("zh-CN")}</Text>
+            <Text type="secondary">{formatTaskTimestamp(record.createdAt)}</Text>
           </Space>
         )
       },
@@ -108,7 +167,12 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
         title: "统计",
         key: "counters",
         render: (_: unknown, record: SyncTask) => (
-          <Text>{`${record.counters.succeeded} 成功 / ${record.counters.skipped} 跳过 / ${record.counters.failed} 失败`}</Text>
+          <Space direction="vertical" size={2}>
+            <Text>{`${record.counters.succeeded} 成功 / ${record.counters.skipped} 跳过 / ${record.counters.failed} 失败`}</Text>
+            {record.failureSummary && (
+              <Text type="secondary">{record.failureSummary.message}</Text>
+            )}
+          </Space>
         )
       },
       {
@@ -117,17 +181,19 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
         render: (_: unknown, record: SyncTask) => (
           <Space>
             {(record.status === "partial-failed" || record.status === "paused") && (
-              <Button icon={<ReloadOutlined />} onClick={() => void retryFailedTask(record.id)} />
+              <Button icon={<ReloadOutlined />} onClick={() => void runTaskAction(() => retryFailedTask(record.id))} />
             )}
-            {record.status === "pending" && <Button icon={<PlayCircleOutlined />} onClick={() => void resumeSyncTasks()} />}
-            <Popconfirm title="确定删除这个同步任务吗？" onConfirm={() => void deleteSyncTask(record.id)}>
+            {record.status === "pending" && (
+              <Button icon={<PlayCircleOutlined />} onClick={() => void runTaskAction(() => resumeSyncTasks())} />
+            )}
+            <Popconfirm title="确定删除这个同步任务吗？" onConfirm={() => void runTaskAction(() => deleteSyncTask(record.id))}>
               <Button danger icon={<DeleteOutlined />} />
             </Popconfirm>
           </Space>
         )
       }
     ],
-    []
+    [message, runTaskAction]
   );
 
   return (
@@ -140,7 +206,78 @@ export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX
           </Button>
         }
       >
-        <Table rowKey="id" columns={columns} dataSource={tasks} pagination={false} locale={{ emptyText: "暂无同步任务" }} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={tasks}
+          pagination={false}
+          locale={{ emptyText: "暂无同步任务" }}
+          expandable={{
+            rowExpandable: (record) => Boolean(record.failureSummary || record.errors.length > 0),
+            expandedRowRender: (record) => (
+              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                <Text>输出目录：{record.outputPath}</Text>
+                {record.failureSummary && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message={`主要失败阶段：${failureCategoryToTag(record.failureSummary.category).text}`}
+                    description={getFriendlyFailureSummary(record.failureSummary.category, record.failureSummary.message)}
+                  />
+                )}
+                {record.errors.slice(0, 6).map((error, index) => {
+                  const tag = failureCategoryToTag(error.category);
+                  const permissionFailure = parsePermissionFailure(error.message);
+                  return (
+                    <Space key={`${record.id}-${error.documentId}-${index}`} direction="vertical" size={2} style={{ width: "100%" }}>
+                      <Space wrap>
+                        <Tag color={tag.color}>{tag.text}</Tag>
+                        <Text strong>{error.title || error.documentId}</Text>
+                      </Space>
+                      {permissionFailure ? (
+                        <Alert
+                          type="error"
+                          showIcon
+                          message="缺少飞书文档读取权限"
+                          description={
+                            <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                              <Paragraph style={{ marginBottom: 0 }}>
+                                当前飞书应用缺少读取文档详情所需的用户身份权限，因此同步在授权阶段被拦截。请先开通权限，再重新登录授权。
+                              </Paragraph>
+                              {permissionFailure.scopes.length > 0 && (
+                                <Paragraph style={{ marginBottom: 0 }}>
+                                  需要开通的权限：{permissionFailure.scopes.map((scope) => (
+                                    <Tag key={`${error.documentId}-${scope}`} color="red" style={{ marginInlineEnd: 8 }}>
+                                      {scope}
+                                    </Tag>
+                                  ))}
+                                </Paragraph>
+                              )}
+                              {permissionFailure.applyUrl && (
+                                <Paragraph style={{ marginBottom: 0 }}>
+                                  权限申请链接：
+                                  <Link href={permissionFailure.applyUrl} target="_blank" rel="noreferrer">
+                                    {permissionFailure.applyUrl}
+                                  </Link>
+                                </Paragraph>
+                              )}
+                              <Text type="secondary">{error.message}</Text>
+                            </Space>
+                          }
+                        />
+                      ) : (
+                        <Text type="secondary">{error.message}</Text>
+                      )}
+                    </Space>
+                  );
+                })}
+                {record.errors.length > 6 && (
+                  <Text type="secondary">仅展示前 6 条失败详情，共 {record.errors.length} 条。</Text>
+                )}
+              </Space>
+            )
+          }}
+        />
       </Card>
     </Space>
   );

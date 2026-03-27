@@ -38,11 +38,16 @@ export default function HomePage({
   };
 
   const handleStartSync = async (): Promise<void> => {
-    const result = await onCreateTask();
-    if (result) {
-      message.success(`已创建同步任务：${result.task.name}`);
-    } else {
-      message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请至少选择一个知识库空间");
+    try {
+      const result = await onCreateTask();
+      if (result) {
+        message.success(`已创建同步任务：${result.task.name}`);
+      } else {
+        message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请至少选择一个知识库空间");
+      }
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      message.error(messageText || "同步任务创建失败，请重新登录后重试");
     }
   };
 
@@ -67,7 +72,7 @@ export default function HomePage({
           <div style={{ padding: 12, background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0" }}>
             <Space>
               <FolderOpenOutlined />
-              <Text>同步目录：{syncRoot}</Text>
+              <Text>实际写入目录：{syncRoot}</Text>
             </Space>
           </div>
 

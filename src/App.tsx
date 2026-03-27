@@ -18,8 +18,7 @@ import {
   resumeSyncTasks,
   saveAppSettings,
   startSyncTask,
-  TASK_EVENTS,
-  validateFeishuConnection
+  TASK_EVENTS
 } from "@/utils/taskManager";
 
 const { Header, Content } = Layout;
@@ -30,6 +29,7 @@ export default function App(): React.JSX.Element {
   const [authed, setAuthed] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [resolvedSyncRoot, setResolvedSyncRoot] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<KnowledgeBaseSpace[]>([]);
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [connectionValidation, setConnectionValidation] = useState<ConnectionValidation | null>(null);
@@ -45,6 +45,7 @@ export default function App(): React.JSX.Element {
     void getRuntimeInfo();
     void getAppBootstrap().then(async (bootstrap) => {
       setSettings(bootstrap.settings);
+      setResolvedSyncRoot(bootstrap.resolvedSyncRoot);
       setSpaces(bootstrap.spaces);
       setUserInfo(bootstrap.user);
        setConnectionValidation(bootstrap.connectionValidation);
@@ -72,7 +73,7 @@ export default function App(): React.JSX.Element {
     };
   }, []);
 
-  const syncTarget = useMemo(() => settings?.syncRoot ?? "./synced-docs", [settings]);
+  const syncTarget = useMemo(() => resolvedSyncRoot ?? settings?.syncRoot ?? "./synced-docs", [resolvedSyncRoot, settings]);
 
   const activeTaskSummary = useMemo(() => {
     const runningTask = tasks.find((task) => task.status === "syncing");
@@ -147,8 +148,12 @@ export default function App(): React.JSX.Element {
                 onSaved={(nextSettings) => {
                   void saveAppSettings(nextSettings).then((saved) => {
                     setSettings(saved);
+                    setAuthed(false);
+                    setUserInfo(null);
+                    setSpaces([]);
                     setConnectionValidation(null);
                     setCurrentPage("auth");
+                    void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
                   });
                 }}
               />
@@ -157,10 +162,10 @@ export default function App(): React.JSX.Element {
             {currentPage === "auth" && (
               <AuthPage
                 validation={connectionValidation}
-                onAuthorized={async () => {
-                  const result = await validateFeishuConnection();
+                onAuthorized={(result) => {
                   setConnectionValidation(result.validation);
                   setSpaces(result.spaces);
+                  void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
                   if (result.validation.usable && result.user) {
                     setAuthed(true);
                     setUserInfo(result.user);
@@ -170,7 +175,6 @@ export default function App(): React.JSX.Element {
                     setUserInfo(null);
                     setCurrentPage("auth");
                   }
-                  return result;
                 }}
                 onGoToSettings={() => setCurrentPage("settings")}
               />

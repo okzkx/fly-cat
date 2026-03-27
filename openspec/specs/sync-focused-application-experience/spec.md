@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Sync-Oriented Interaction Flow
-The application MUST present synchronization as a primary workflow distinct from export/download actions.
+The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST show the effective local sync destination clearly before and after sync creation.
 
 #### Scenario: Start sync from dedicated action
 - **WHEN** a user enters the document assistant and selects knowledge base sources
@@ -12,14 +12,14 @@ The application MUST present synchronization as a primary workflow distinct from
 
 #### Scenario: Show scoped source context
 - **WHEN** a user reviews sync configuration before execution
-- **THEN** the UI displays selected knowledge base scopes and intended local sync target
+- **THEN** the UI displays selected knowledge base scopes and the effective local sync target that will receive synchronized Markdown output
 
 #### Scenario: Preserve reference home-page role
 - **WHEN** the user reaches the primary workspace after authentication
 - **THEN** the main page serves the same role as the reference project's home page, but its primary action is sync creation rather than export creation
 
 ### Requirement: Sync Lifecycle Status Visibility
-The application MUST expose synchronization lifecycle states and progress at document and run levels.
+The application MUST expose synchronization lifecycle states and progress at document and run levels, and MUST display trustworthy task timestamps and output-location context in task history.
 
 #### Scenario: Show active sync progress
 - **WHEN** a sync run is in progress
@@ -33,8 +33,16 @@ The application MUST expose synchronization lifecycle states and progress at doc
 - **WHEN** the user wants to inspect current or historical sync runs
 - **THEN** the application shows a dedicated task-list style page rather than only inline status summaries on the home page
 
+#### Scenario: Task timestamps are user-readable
+- **WHEN** a task is listed in task history
+- **THEN** the task creation or update time renders as a valid user-readable date/time rather than an invalid or debug-only timestamp string
+
+#### Scenario: Task history shows output destination context
+- **WHEN** a user inspects a sync task in the task list
+- **THEN** the task view shows the resolved output directory for that task rather than only an ambiguous relative path string
+
 ### Requirement: Error Transparency and Retry Guidance
-The application MUST provide actionable error feedback and retry entry points for failed sync items.
+The application MUST provide actionable error feedback and retry entry points for failed sync items, including concise stage-aware diagnostics when failures occur repeatedly.
 
 #### Scenario: Present failure reason
 - **WHEN** a document fails during synchronization
@@ -44,8 +52,12 @@ The application MUST provide actionable error feedback and retry entry points fo
 - **WHEN** a completed run contains failed documents
 - **THEN** the user can trigger a retry workflow for failed items without rerunning successful no-op items
 
+#### Scenario: Repeated run failure shows stage-aware guidance
+- **WHEN** all or most documents in a sync run fail during the same pipeline stage
+- **THEN** the UI surfaces a run-level diagnostic that indicates whether the failure came from authorization, discovery, remote content retrieval, rendering, image handling, or filesystem write behavior
+
 ### Requirement: Configuration and Authentication Experience Parity
-The application MUST provide configuration and authentication experiences that stay structurally aligned with the reference project.
+The application MUST provide configuration and authentication experiences that stay structurally aligned with the reference project, and MUST treat application configuration validity and signed-in user authorization validity as separate user-visible states.
 
 #### Scenario: Settings page provides guided configuration
 - **WHEN** the user opens application settings
@@ -53,7 +65,15 @@ The application MUST provide configuration and authentication experiences that s
 
 #### Scenario: Auth page preserves dedicated authorization flow
 - **WHEN** the user needs to authorize the application
-- **THEN** the application presents a dedicated auth page with clear status feedback, fallback actions, and navigation back to settings
+- **THEN** the application presents a dedicated auth page with a reference-style user login flow, clear status feedback, fallback actions, and navigation back to settings
+
+#### Scenario: Valid configuration still requires user sign-in
+- **WHEN** Feishu application settings are valid but no signed-in user session is active
+- **THEN** the application directs the user to the auth page instead of treating configuration as equivalent to authorization
+
+#### Scenario: Expired session requires reauthorization
+- **WHEN** the application detects that a previously signed-in user session has expired or can no longer be refreshed
+- **THEN** the auth experience presents a reauthorization path instead of a generic connection validation failure
 
 ### Requirement: Connection Validation Shows Actionable Discovery Outcomes
 The application MUST present connection validation results using user-actionable outcome categories instead of a single generic failure message.
@@ -80,4 +100,19 @@ The application MUST only present a normal empty knowledge space state when back
 #### Scenario: Empty list from failed discovery
 - **WHEN** the backend fails to load knowledge spaces and no authoritative successful discovery result exists
 - **THEN** the UI renders an error state rather than an empty knowledge space list
+
+### Requirement: User Authorization State Guidance
+The application MUST present user-authorization recovery states distinctly from generic transport or configuration failures.
+
+#### Scenario: Signed-out guidance is actionable
+- **WHEN** the user has not completed the required Feishu user login flow
+- **THEN** the UI indicates that sign-in is required before knowledge bases can be loaded and provides a direct action to begin authorization
+
+#### Scenario: Permission-denied guidance reflects user access
+- **WHEN** the backend determines that the signed-in user lacks access to the requested knowledge base operations
+- **THEN** the UI tells the user that the current account lacks permission and does not describe the state as only an application-configuration problem
+
+#### Scenario: Reauthorization guidance is shown for expired session
+- **WHEN** the backend classifies the current authorization state as expired or reauthorization-required
+- **THEN** the UI shows a reauthorization-focused recovery message and retry entry point
 

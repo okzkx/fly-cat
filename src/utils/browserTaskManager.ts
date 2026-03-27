@@ -66,6 +66,7 @@ export function createSyncTask(selectedSpaces: string[], outputPath: string): Sy
     },
     lifecycleState: "idle",
     errors: [],
+    failureSummary: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -83,8 +84,8 @@ function buildSimulatedError(task: SyncTask): SyncRunError[] {
       {
         documentId: "doc-product-overview",
         title: "Product Overview",
-        category: "mcp",
-        message: "MCP request timeout"
+        category: "content-fetch",
+        message: "远程文档内容获取超时"
       }
     ];
   }
@@ -118,6 +119,14 @@ export function startSyncTask(taskId: string): void {
       const failed = nextErrors.length;
       const skipped = task.selectedSpaces.length > 1 ? 1 : 0;
       const succeeded = Math.max(0, processed - failed - skipped);
+      const failureSummary =
+        nextErrors.length > 0
+          ? {
+              category: nextErrors[0].category,
+              message: `本次失败主要发生在内容抓取阶段（${nextErrors.length}项）。${nextErrors[0].message}`,
+              count: nextErrors.length
+            }
+          : null;
 
       return {
         ...task,
@@ -130,6 +139,7 @@ export function startSyncTask(taskId: string): void {
           succeeded
         },
         errors: nextErrors,
+        failureSummary,
         updatedAt: new Date().toISOString()
       };
     });
@@ -175,6 +185,7 @@ export function retryFailedTask(taskId: string): void {
       succeeded: 0
     },
     errors: [],
+    failureSummary: null,
     updatedAt: new Date().toISOString()
   }));
 

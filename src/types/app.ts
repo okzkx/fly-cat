@@ -1,12 +1,17 @@
-import type { KnowledgeBaseSpace, SyncCounters, SyncLifecycleState, SyncRunError } from "@/types/sync";
+import type { KnowledgeBaseSpace, SyncCounters, SyncFailureSummary, SyncLifecycleState, SyncRunError } from "@/types/sync";
 
 export interface UserInfo {
   name: string;
   avatar?: string;
+  email?: string;
+  userId?: string;
 }
 
 export type ConnectionValidationStatus =
   | "not-configured"
+  | "not-signed-in"
+  | "session-expired"
+  | "reauthorization-required"
   | "connected-with-spaces"
   | "connected-no-spaces"
   | "permission-denied"
@@ -45,6 +50,7 @@ export interface SyncTask {
   counters: SyncCounters;
   lifecycleState: SyncLifecycleState;
   errors: SyncRunError[];
+  failureSummary?: SyncFailureSummary | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -55,6 +61,7 @@ export interface HomeSyncResult {
 
 export interface AppBootstrap {
   settings: AppSettings | null;
+  resolvedSyncRoot: string | null;
   user: UserInfo | null;
   spaces: KnowledgeBaseSpace[];
   connectionValidation: ConnectionValidation | null;
@@ -86,7 +93,7 @@ export interface TaskListPageProps {
 
 export interface AuthPageProps {
   validation: ConnectionValidation | null;
-  onAuthorized: () => Promise<ConnectionCheckResult>;
+  onAuthorized: (result: ConnectionCheckResult) => void;
   onGoToSettings: () => void;
 }
 

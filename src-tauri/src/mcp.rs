@@ -54,6 +54,8 @@ impl fmt::Display for McpError {
 
 impl std::error::Error for McpError {}
 
+const FEISHU_TOKEN_ENDPOINT: &str = "https://passport.feishu.cn/suite/passport/oauth/token";
+
 fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
     let code = value.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
     if code == 0 {
@@ -66,11 +68,66 @@ fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
     Some(McpError::Transport(format!("{context}失败(code={code}): {msg}")))
 }
 
+fn status_error_from_response(response: ureq::Response, context: &str) -> McpError {
+    let status = response.status();
+    match response.into_json::<Value>() {
+        Ok(value) => extract_openapi_error(&value, context).unwrap_or_else(|| {
+            let msg = value
+                .get("msg")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown error");
+            McpError::Transport(format!("{context}失败(status={status}): {msg}"))
+        }),
+        Err(err) => McpError::Transport(format!("{context}失败(status={status}): {err}")),
+    }
+}
+
+fn call_openapi_json(request: ureq::Request, context: &str) -> Result<Value, McpError> {
+    let response = match request.call() {
+        Ok(response) => response,
+        Err(ureq::Error::Status(_, response)) => return Err(status_error_from_response(response, context)),
+        Err(err) => return Err(McpError::Transport(format!("{context}请求失败: {err}"))),
+    };
+
+    response
+        .into_json()
+        .map_err(|err| McpError::InvalidResponse(format!("{context}响应格式无效: {err}")))
+}
+
+fn extract_oauth_error(value: &Value, context: &str) -> Option<McpError> {
+    if let Some(error) = value.get("error").and_then(|value| value.as_str()) {
+        let description = value
+            .get("error_description")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown oauth error");
+        return Some(McpError::Transport(format!("{context}失败: {error}: {description}")));
+    }
+
+    extract_openapi_error(value, context)
+}
+
 #[derive(Clone, Debug)]
 pub struct FeishuOpenApiConfig {
-    pub app_id: String,
-    pub app_secret: String,
     pub endpoint: String,
+    pub access_token: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct FeishuOAuthTokenInfo {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: i64,
+    pub refresh_expires_in: i64,
+    pub refresh_token: String,
+    pub scope: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct FeishuAuthorizedUser {
+    pub name: String,
+    pub avatar: Option<String>,
+    pub email: Option<String>,
+    pub user_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -91,6 +148,123 @@ pub struct FeishuWikiNode {
 
 pub trait ImageProvider {
     fn fetch_image_resource(&self, media_id: &str) -> Result<ImageResource, McpError>;
+}
+
+fn parse_token_info(value: Value, context: &str) -> Result<FeishuOAuthTokenInfo, McpError> {
+    if let Some(error) = extract_oauth_error(&value, context) {
+        return Err(error);
+    }
+
+    Ok(FeishuOAuthTokenInfo {
+        access_token: value
+            .get("access_token")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| McpError::InvalidResponse(format!("{context}响应缺少 access_token")))?
+            .to_string(),
+        token_type: value
+            .get("token_type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Bearer")
+            .to_string(),
+        expires_in: value.get("expires_in").and_then(|value| value.as_i64()).unwrap_or(0),
+        refresh_expires_in: value
+            .get("refresh_expires_in")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0),
+        refresh_token: value
+            .get("refresh_token")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| McpError::InvalidResponse(format!("{context}响应缺少 refresh_token")))?
+            .to_string(),
+        scope: value
+            .get("scope")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+pub fn exchange_user_access_token(
+    app_id: &str,
+    app_secret: &str,
+    code: &str,
+    redirect_uri: &str,
+) -> Result<FeishuOAuthTokenInfo, McpError> {
+    let response = ureq::post(FEISHU_TOKEN_ENDPOINT)
+        .send_json(json!({
+            "grant_type": "authorization_code",
+            "client_id": app_id,
+            "client_secret": app_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        }))
+        .map_err(|err| McpError::Transport(format!("OAuth token request failed: {err}")))?;
+
+    let value: Value = response
+        .into_json()
+        .map_err(|err| McpError::InvalidResponse(format!("Invalid OAuth token response: {err}")))?;
+
+    parse_token_info(value, "获取用户 access_token")
+}
+
+pub fn refresh_user_access_token(
+    app_id: &str,
+    app_secret: &str,
+    refresh_token: &str,
+) -> Result<FeishuOAuthTokenInfo, McpError> {
+    let response = ureq::post(FEISHU_TOKEN_ENDPOINT)
+        .send_json(json!({
+            "grant_type": "refresh_token",
+            "client_id": app_id,
+            "client_secret": app_secret,
+            "refresh_token": refresh_token,
+        }))
+        .map_err(|err| McpError::Transport(format!("OAuth refresh request failed: {err}")))?;
+
+    let value: Value = response
+        .into_json()
+        .map_err(|err| McpError::InvalidResponse(format!("Invalid OAuth refresh response: {err}")))?;
+
+    parse_token_info(value, "刷新用户 access_token")
+}
+
+pub fn fetch_user_info(endpoint: &str, access_token: &str) -> Result<FeishuAuthorizedUser, McpError> {
+    let endpoint = format!("{}/{}", endpoint.trim_end_matches('/'), "authen/v1/user_info");
+    let value = call_openapi_json(
+        ureq::get(&endpoint)
+        .set("Authorization", &format!("Bearer {access_token}"))
+        ,
+        "获取用户信息",
+    )?;
+
+    if let Some(error) = extract_openapi_error(&value, "获取用户信息") {
+        return Err(error);
+    }
+
+    let data = value
+        .get("data")
+        .ok_or_else(|| McpError::InvalidResponse("User info response missing data".into()))?;
+
+    Ok(FeishuAuthorizedUser {
+        name: data
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("飞书用户")
+            .to_string(),
+        avatar: data
+            .get("avatar_thumb")
+            .and_then(|value| value.as_str())
+            .or_else(|| data.get("avatar_url").and_then(|value| value.as_str()))
+            .map(|value| value.to_string()),
+        email: data
+            .get("email")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        user_id: data
+            .get("user_id")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+    })
 }
 
 pub struct FixtureMcpClient {
@@ -213,35 +387,16 @@ impl FeishuOpenApiClient {
         format!("{}/{}", self.config.endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
     }
 
-    fn tenant_access_token(&self) -> Result<String, McpError> {
-        let response = ureq::post(&self.endpoint("/auth/v3/tenant_access_token/internal"))
-            .send_json(json!({
-                "app_id": self.config.app_id,
-                "app_secret": self.config.app_secret
-            }))
-            .map_err(|err| McpError::Transport(format!("Tenant token request failed: {err}")))?;
-
-        let value: Value = response
-            .into_json()
-            .map_err(|err| McpError::InvalidResponse(format!("Invalid tenant token response: {err}")))?;
-
-        if let Some(error) = extract_openapi_error(&value, "获取tenant_access_token") {
-            return Err(error);
+    fn access_token(&self) -> Result<&str, McpError> {
+        if self.config.access_token.trim().is_empty() {
+            return Err(McpError::Transport("Missing user access token".into()));
         }
 
-        value
-            .get("tenant_access_token")
-            .and_then(|value| value.as_str())
-            .map(|token| token.to_string())
-            .ok_or_else(|| {
-                McpError::InvalidResponse(
-                    "获取tenant_access_token失败: 响应中缺少tenant_access_token，请检查App ID/App Secret是否正确".into(),
-                )
-            })
+        Ok(self.config.access_token.as_str())
     }
 
     pub fn list_spaces(&self) -> Result<Vec<FeishuSpace>, McpError> {
-        let token = self.tenant_access_token()?;
+        let token = self.access_token()?;
         let mut page_token: Option<String> = None;
         let mut spaces = Vec::new();
 
@@ -255,13 +410,7 @@ impl FeishuOpenApiClient {
                 request = request.query("page_token", current_page_token);
             }
 
-            let response = request
-                .call()
-                .map_err(|err| McpError::Transport(format!("List spaces request failed: {err}")))?;
-
-            let value: Value = response
-                .into_json()
-                .map_err(|err| McpError::InvalidResponse(format!("Invalid spaces response: {err}")))?;
+            let value = call_openapi_json(request, "获取知识空间列表")?;
 
             if let Some(error) = extract_openapi_error(&value, "获取知识空间列表") {
                 return Err(error);
@@ -304,7 +453,7 @@ impl FeishuOpenApiClient {
     }
 
     pub fn list_child_nodes(&self, space_id: &str, parent_node_token: Option<&str>) -> Result<Vec<FeishuWikiNode>, McpError> {
-        let token = self.tenant_access_token()?;
+        let token = self.access_token()?;
         let mut page_token: Option<String> = None;
         let mut nodes = Vec::new();
 
@@ -321,13 +470,7 @@ impl FeishuOpenApiClient {
                 request = request.query("page_token", current_page_token);
             }
 
-            let response = request
-                .call()
-                .map_err(|err| McpError::Transport(format!("List child nodes request failed: {err}")))?;
-
-            let value: Value = response
-                .into_json()
-                .map_err(|err| McpError::InvalidResponse(format!("Invalid child node response: {err}")))?;
+            let value = call_openapi_json(request, "获取知识空间子节点列表")?;
 
             if let Some(error) = extract_openapi_error(&value, "获取知识空间子节点列表") {
                 return Err(error);
@@ -374,15 +517,12 @@ impl FeishuOpenApiClient {
     }
 
     pub fn fetch_document(&self, document_id: &str) -> Result<RawDocument, McpError> {
-        let token = self.tenant_access_token()?;
-        let info_response = ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
-            .set("Authorization", &format!("Bearer {token}"))
-            .call()
-            .map_err(|err| McpError::Transport(format!("Document info request failed: {err}")))?;
-
-        let info_value: Value = info_response
-            .into_json()
-            .map_err(|err| McpError::InvalidResponse(format!("Invalid document info response: {err}")))?;
+        let token = self.access_token()?;
+        let info_value = call_openapi_json(
+            ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
+                .set("Authorization", &format!("Bearer {token}")),
+            "获取文档信息",
+        )?;
 
         if let Some(error) = extract_openapi_error(&info_value, "获取文档信息") {
             return Err(error);
@@ -396,14 +536,11 @@ impl FeishuOpenApiClient {
             .unwrap_or(document_id)
             .to_string();
 
-        let raw_response = ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/raw_content")))
-            .set("Authorization", &format!("Bearer {token}"))
-            .call()
-            .map_err(|err| McpError::Transport(format!("Document raw_content request failed: {err}")))?;
-
-        let raw_value: Value = raw_response
-            .into_json()
-            .map_err(|err| McpError::InvalidResponse(format!("Invalid raw_content response: {err}")))?;
+        let raw_value = call_openapi_json(
+            ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/raw_content")))
+                .set("Authorization", &format!("Bearer {token}")),
+            "获取文档原始内容",
+        )?;
 
         if let Some(error) = extract_openapi_error(&raw_value, "获取文档原始内容") {
             return Err(error);
@@ -529,5 +666,39 @@ mod tests {
         );
 
         assert!(matches!(result, Err(McpError::Transport(_))));
+    }
+
+    #[test]
+    fn parses_oauth_token_shape() {
+        let parsed = parse_token_info(
+            json!({
+                "access_token": "access",
+                "token_type": "Bearer",
+                "expires_in": 7200,
+                "refresh_expires_in": 2592000,
+                "refresh_token": "refresh",
+                "scope": "offline_access"
+            }),
+            "oauth",
+        )
+        .expect("token shape should parse");
+
+        assert_eq!(parsed.access_token, "access");
+        assert_eq!(parsed.refresh_token, "refresh");
+    }
+
+    #[test]
+    fn openapi_error_keeps_scope_details() {
+        let error = extract_openapi_error(
+            &json!({
+                "code": 99991672,
+                "msg": "Access denied. One of the following scopes is required: [docx:document, docx:document:readonly]."
+            }),
+            "获取文档信息",
+        )
+        .expect("error should exist");
+
+        assert!(error.to_string().contains("docx:document"));
+        assert!(error.to_string().contains("Access denied"));
     }
 }

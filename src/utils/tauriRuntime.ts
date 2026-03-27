@@ -16,6 +16,9 @@ export interface RuntimeInfo {
   version: string;
 }
 
+const BROWSER_SETTINGS_KEY = "feishu_sync_settings";
+const BROWSER_USER_KEY = "feishu_sync_user";
+
 export function isTauriRuntime(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
@@ -70,18 +73,26 @@ export async function getRuntimeInfo(): Promise<RuntimeInfo> {
 
 export async function getAppBootstrap(): Promise<AppBootstrap> {
   if (!isTauriRuntime()) {
-    const settingsRaw = localStorage.getItem("feishu_sync_settings");
-    const userRaw = localStorage.getItem("feishu_sync_user");
+    const settingsRaw = localStorage.getItem(BROWSER_SETTINGS_KEY);
+    const userRaw = localStorage.getItem(BROWSER_USER_KEY);
     return {
       settings: settingsRaw ? (JSON.parse(settingsRaw) as AppSettings) : null,
+      resolvedSyncRoot: settingsRaw ? (JSON.parse(settingsRaw) as AppSettings).syncRoot : null,
       user: userRaw ? (JSON.parse(userRaw) as UserInfo) : null,
-      connectionValidation: userRaw
-        ? {
-            status: "connected-with-spaces",
-            usable: true,
-            message: "当前处于浏览器模拟环境，已加载默认知识空间。",
-            spacesLoaded: true
-          }
+      connectionValidation: settingsRaw
+        ? userRaw
+          ? {
+              status: "connected-with-spaces",
+              usable: true,
+              message: "当前处于浏览器模拟环境，已加载默认知识空间。",
+              spacesLoaded: true
+            }
+          : {
+              status: "not-signed-in",
+              usable: false,
+              message: "当前处于浏览器模拟环境，请点击授权按钮进入模拟登录状态。",
+              spacesLoaded: false
+            }
         : null,
       spaces: [
         { id: "kb-eng", name: "研发知识库", selected: true },
@@ -95,17 +106,59 @@ export async function getAppBootstrap(): Promise<AppBootstrap> {
 
 export async function saveAppSettings(settings: AppSettings): Promise<AppSettings> {
   if (!isTauriRuntime()) {
-    localStorage.setItem("feishu_sync_settings", JSON.stringify(settings));
+    localStorage.setItem(BROWSER_SETTINGS_KEY, JSON.stringify(settings));
     return settings;
   }
   return invoke<AppSettings>("save_app_settings", { settings });
 }
 
-export async function validateFeishuConnection(): Promise<ConnectionCheckResult> {
+export async function beginUserAuthorization(redirectUri: string): Promise<string> {
   if (!isTauriRuntime()) {
-    const user = { name: "已连接_模拟环境", avatar: "" };
+    return redirectUri;
+  }
+  return invoke<string>("begin_user_authorization", { redirectUri });
+}
+
+export async function completeUserAuthorization(code: string, redirectUri: string): Promise<ConnectionCheckResult> {
+  if (!isTauriRuntime()) {
+    const user = { name: "模拟登录用户", avatar: "", userId: "browser-user" };
     const result: ConnectionCheckResult = {
       user,
+      spaces: [
+        { id: "kb-eng", name: "研发知识库", selected: true },
+        { id: "kb-product", name: "产品知识库", selected: false },
+        { id: "kb-ops", name: "运维知识库", selected: false }
+      ],
+      validation: {
+        status: "connected-with-spaces",
+        usable: true,
+        message: `浏览器模拟授权成功（code=${code || "mock"}）。`,
+        spacesLoaded: true
+      }
+    };
+    localStorage.setItem(BROWSER_USER_KEY, JSON.stringify(user));
+    return result;
+  }
+  return invoke<ConnectionCheckResult>("complete_user_authorization", { code, redirectUri });
+}
+
+export async function validateFeishuConnection(): Promise<ConnectionCheckResult> {
+  if (!isTauriRuntime()) {
+    const userRaw = localStorage.getItem(BROWSER_USER_KEY);
+    if (!userRaw) {
+      return {
+        user: null,
+        spaces: [],
+        validation: {
+          status: "not-signed-in",
+          usable: false,
+          message: "当前处于浏览器模拟环境，请先完成模拟登录。",
+          spacesLoaded: false
+        }
+      };
+    }
+    return {
+      user: JSON.parse(userRaw) as UserInfo,
       spaces: [
         { id: "kb-eng", name: "研发知识库", selected: true },
         { id: "kb-product", name: "产品知识库", selected: false },
@@ -118,15 +171,13 @@ export async function validateFeishuConnection(): Promise<ConnectionCheckResult>
         spacesLoaded: true
       }
     };
-    localStorage.setItem("feishu_sync_user", JSON.stringify(user));
-    return result;
   }
   return invoke<ConnectionCheckResult>("validate_feishu_connection");
 }
 
 export async function logoutUser(): Promise<void> {
   if (!isTauriRuntime()) {
-    localStorage.removeItem("feishu_sync_user");
+    localStorage.removeItem(BROWSER_USER_KEY);
     return;
   }
   await invoke("logout_user");

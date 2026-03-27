@@ -15,7 +15,7 @@ The application MUST be implemented and runnable as a real Tauri desktop applica
 - **THEN** it uses an explicit Tauri window and application configuration rather than relying solely on browser defaults
 
 ### Requirement: Rust-Side Sync Orchestration
-The system MUST execute native sync responsibilities in the Tauri/Rust backend.
+The system MUST execute native sync responsibilities in the Tauri/Rust backend, and MUST normalize sync task metadata so output destinations and timestamps remain trustworthy across the desktop runtime.
 
 #### Scenario: Frontend starts sync through backend command
 - **WHEN** a user starts a synchronization job from the UI
@@ -24,6 +24,25 @@ The system MUST execute native sync responsibilities in the Tauri/Rust backend.
 #### Scenario: Backend writes synchronized outputs
 - **WHEN** a document is synchronized successfully
 - **THEN** Markdown files, manifests, and fallback image assets are written by backend-owned filesystem logic
+
+#### Scenario: Backend resolves effective sync root
+- **WHEN** a sync task is created from a configured output path
+- **THEN** the backend resolves the effective sync destination deterministically and stores a trustworthy path for task display and file writes
+
+#### Scenario: Backend stores parseable task timestamps
+- **WHEN** sync task metadata is created or updated
+- **THEN** the backend stores timestamps in a machine-parseable format that frontend task history can render without invalid dates
+
+### Requirement: Structured Sync Failure Reporting
+The system MUST return structured sync failure categories and concise diagnostics from the backend runtime to the frontend task views.
+
+#### Scenario: Backend classifies failed document stage
+- **WHEN** a document fails during synchronization
+- **THEN** the backend records the pipeline stage category and a concise diagnostic message for that failure
+
+#### Scenario: Backend preserves run-level failure context
+- **WHEN** a sync run completes with repeated failures across many or all documents
+- **THEN** the backend preserves enough summary context for the frontend to indicate the dominant failure stage without inspecting raw logs
 
 ### Requirement: Frontend and Backend Event Bridging
 The system MUST communicate long-running sync state through explicit frontend/backend command and event channels.
@@ -35,4 +54,37 @@ The system MUST communicate long-running sync state through explicit frontend/ba
 #### Scenario: Frontend restores task state after restart
 - **WHEN** the application restarts while prior sync tasks exist
 - **THEN** the frontend requests persisted task state from the backend and restores task visibility consistently
+
+### Requirement: Backend-Owned User Session Persistence
+The system MUST persist and restore the signed-in user's authorization session in the Tauri/Rust backend.
+
+#### Scenario: Bootstrap restores valid signed-in session
+- **WHEN** the application starts and previously stored user session state is still valid
+- **THEN** backend bootstrap returns signed-in user information and authorization status without requiring immediate re-login
+
+#### Scenario: Bootstrap reports expired session state
+- **WHEN** stored user session state can no longer be refreshed or used for protected Feishu operations
+- **THEN** backend bootstrap reports an expired or reauthorization-required state instead of presenting the user as fully authorized
+
+### Requirement: User-Authorized API Execution
+The system MUST execute Feishu knowledge-base operations through backend-owned user-authorized API clients.
+
+#### Scenario: Knowledge base discovery uses user-authorized client
+- **WHEN** the frontend requests knowledge base loading or connection validation
+- **THEN** the backend performs those protected Feishu operations with the current signed-in user's authorization context
+
+#### Scenario: Sync command rejects missing user session
+- **WHEN** the frontend asks the backend to start or resume synchronization without a valid signed-in user session
+- **THEN** the backend rejects the request with an authorization-specific result instead of attempting protected operations with application-only credentials
+
+### Requirement: Session Refresh and Reauthorization Classification
+The system MUST refresh user session state when possible and MUST classify reauthorization-required failures explicitly when refresh cannot be completed.
+
+#### Scenario: Protected call refreshes expiring session
+- **WHEN** a protected Feishu knowledge-base operation requires a refreshable user session before execution
+- **THEN** the backend attempts session refresh before classifying the request as unauthorized
+
+#### Scenario: Refresh failure requires reauthorization
+- **WHEN** the backend cannot refresh the signed-in user's session for a protected knowledge-base operation
+- **THEN** the operation returns a reauthorization-required result that the frontend can map to a dedicated recovery flow
 

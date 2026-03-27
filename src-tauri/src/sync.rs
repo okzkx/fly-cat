@@ -5,6 +5,7 @@ use crate::mcp::{
 use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord};
 use crate::render::{markdown_output_path, render_markdown, source_signature, stable_hash};
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
+use chrono::Utc;
 use std::{fs, path::Path};
 
 fn normalize_block(raw_block: RawBlock) -> CanonicalBlock {
@@ -53,28 +54,106 @@ pub struct SyncWriteResult {
     pub source_signature: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct SyncPipelineError {
+    pub stage: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for SyncPipelineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for SyncPipelineError {}
+
+fn now_iso() -> String {
+    Utc::now().to_rfc3339()
+}
+
+fn is_auth_related_message(message: &str) -> bool {
+    let normalized = message.to_lowercase();
+    [
+        "access denied",
+        "authorization",
+        "unauthorized",
+        "permission",
+        "scope",
+        "token",
+        "登录",
+        "授权",
+        "权限",
+    ]
+    .iter()
+    .any(|keyword| normalized.contains(keyword))
+}
+
+fn classify_fetch_error(error: McpError) -> SyncPipelineError {
+    let message = error.to_string();
+    let stage = if is_auth_related_message(&message) {
+        "auth"
+    } else {
+        "content-fetch"
+    };
+    SyncPipelineError {
+        stage: stage.into(),
+        message,
+    }
+}
+
+fn classify_render_error(error: McpError) -> SyncPipelineError {
+    let message = error.to_string();
+    let lower = message.to_lowercase();
+    let stage = if is_auth_related_message(&message) {
+        "auth"
+    } else if lower.contains("image") || lower.contains("media") {
+        "image-resolution"
+    } else {
+        "markdown-render"
+    };
+    SyncPipelineError {
+        stage: stage.into(),
+        message,
+    }
+}
+
+fn filesystem_error(err: std::io::Error) -> SyncPipelineError {
+    SyncPipelineError {
+        stage: "filesystem-write".into(),
+        message: err.to_string(),
+    }
+}
+
+fn storage_error(err: String) -> SyncPipelineError {
+    SyncPipelineError {
+        stage: "filesystem-write".into(),
+        message: err,
+    }
+}
+
 pub fn sync_document_to_disk(
     document_id: &str,
     sync_root: &Path,
     image_dir_name: &str,
     mcp_server_name: &str,
     openapi_config: Option<&FeishuOpenApiConfig>,
-) -> Result<SyncWriteResult, String> {
+) -> Result<SyncWriteResult, SyncPipelineError> {
     let canonical =
-        fetch_canonical_document(document_id, mcp_server_name, openapi_config).map_err(|err| err.to_string())?;
+        fetch_canonical_document(document_id, mcp_server_name, openapi_config).map_err(classify_fetch_error)?;
     let rendered = if let Some(config) = openapi_config {
         let client = FeishuOpenApiClient::new(config.clone());
-        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(|err| err.to_string())?
+        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(classify_render_error)?
     } else {
         let client = FixtureMcpClient::new(mcp_server_name.to_string());
-        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(|err| err.to_string())?
+        render_markdown(&canonical, sync_root, image_dir_name, &client).map_err(classify_render_error)?
     };
     let output_path = markdown_output_path(sync_root, &canonical);
 
     if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        fs::create_dir_all(parent).map_err(filesystem_error)?;
     }
-    fs::write(&output_path, &rendered.markdown).map_err(|err| err.to_string())?;
+    fs::write(&output_path, &rendered.markdown).map_err(filesystem_error)?;
 
     let mut written_assets = Vec::new();
     for asset in rendered.image_assets {
@@ -83,17 +162,17 @@ pub fn sync_document_to_disk(
             .unwrap_or(sync_root)
             .join(&asset.relative_path);
         if let Some(parent) = asset_path.parent() {
-            fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+            fs::create_dir_all(parent).map_err(filesystem_error)?;
         }
         if !asset_path.exists() {
-            fs::write(&asset_path, asset.bytes).map_err(|err| err.to_string())?;
+            fs::write(&asset_path, asset.bytes).map_err(filesystem_error)?;
         }
         written_assets.push(asset.relative_path);
     }
 
     let content_hash = stable_hash(rendered.markdown.as_bytes());
     let source_signature = source_signature(&canonical);
-    let mut manifest = load_manifest(sync_root)?;
+    let mut manifest = load_manifest(sync_root).map_err(storage_error)?;
     upsert_manifest_record(
         &mut manifest,
         ManifestRecord {
@@ -105,10 +184,10 @@ pub fn sync_document_to_disk(
             source_signature: source_signature.clone(),
             status: "success".into(),
             image_assets: written_assets.clone(),
-            last_synced_at: format!("{:?}", std::time::SystemTime::now()),
+            last_synced_at: now_iso(),
         },
     );
-    save_manifest(sync_root, &manifest)?;
+    save_manifest(sync_root, &manifest).map_err(storage_error)?;
 
     Ok(SyncWriteResult {
         output_path: output_path.to_string_lossy().to_string(),
@@ -150,5 +229,23 @@ mod tests {
 
         assert!(result.output_path.ends_with(".md"));
         assert_eq!(result.image_assets.len(), 1);
+    }
+
+    #[test]
+    fn classifies_permission_fetch_failures_as_auth() {
+        let error = classify_fetch_error(McpError::Transport(
+            "Access denied. One of the following scopes is required".into(),
+        ));
+
+        assert_eq!(error.stage, "auth");
+    }
+
+    #[test]
+    fn classifies_media_render_failures_as_image_resolution() {
+        let error = classify_render_error(McpError::Transport(
+            "Image resource `media-1` not found".into(),
+        ));
+
+        assert_eq!(error.stage, "image-resolution");
     }
 }

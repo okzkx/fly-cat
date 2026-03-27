@@ -48,9 +48,26 @@ export interface SyncCounters {
   failed: number;
 }
 
+export type SyncFailureCategory =
+  | "auth"
+  | "discovery"
+  | "content-fetch"
+  | "markdown-render"
+  | "image-resolution"
+  | "filesystem-write"
+  | "mcp"
+  | "transform"
+  | "filesystem";
+
 export interface SyncRunError {
   documentId: string;
   title: string;
-  category: "mcp" | "transform" | "filesystem";
+  category: SyncFailureCategory;
   message: string;
+}
+
+export interface SyncFailureSummary {
+  category: SyncFailureCategory;
+  message: string;
+  count: number;
 }

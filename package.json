@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
+    "@fabianlars/tauri-plugin-oauth": "^2.0.0",
     "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-opener": "^2.5.3",
     "antd": "^6.3.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
