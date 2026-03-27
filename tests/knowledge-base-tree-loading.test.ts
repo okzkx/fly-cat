@@ -158,4 +158,32 @@ describe("knowledge base tree loading", () => {
     expect(task.selectionSummary?.kind).toBe("folder");
     expect(task.selectionSummary?.documentCount).toBe(3);
   });
+
+  it("creates folder-root task metadata for a selected library node", () => {
+    const library = listKnowledgeBaseNodes("kb-product")[0];
+
+    expect(library?.kind).toBe("folder");
+
+    const task = createSyncTask(
+      [
+        {
+          kind: "folder",
+          spaceId: library!.spaceId,
+          spaceName: library!.spaceName,
+          title: library!.title,
+          displayPath: library!.displayPath,
+          nodeToken: library!.nodeToken,
+          pathSegments: library!.pathSegments
+        }
+      ],
+      "C:/tmp/sync-target"
+    );
+
+    expect(task.selectedSources).toHaveLength(1);
+    expect(task.selectedSources?.[0]?.nodeToken).toBe("product-library");
+    expect(task.selectionSummary?.kind).toBe("folder");
+    expect(task.selectionSummary?.documentCount).toBe(3);
+    expect(task.selectionSummary?.rootCount).toBe(1);
+    expect(task.selectionSummary?.displayPath).toBe("产品知识库 / 方案库");
+  });
 });

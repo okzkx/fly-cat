@@ -53,6 +53,19 @@ describe("sync selection summaries", () => {
     expect(summary?.rootCount).toBe(1);
   });
 
+  it("builds folder-root summary for a single selected library source", () => {
+    const summary = buildSelectionSummary(
+      [makeFolderScope("product-library", "方案库", { spaceId: "kb-product", spaceName: "产品知识库", displayPath: "产品知识库 / 方案库" })],
+      null,
+      { effectiveDocumentCount: 3 }
+    );
+
+    expect(summary?.kind).toBe("folder");
+    expect(summary?.documentCount).toBe(3);
+    expect(summary?.rootCount).toBe(1);
+    expect(summary?.displayPath).toBe("产品知识库 / 方案库");
+  });
+
   it("builds subtree-aware multi-root summary with effective document count", () => {
     const summary = buildSelectionSummary(
       [

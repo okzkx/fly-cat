@@ -54,7 +54,7 @@ export function buildSelectionSummary(
           documentCount: selectedScope.kind === "document" ? 1 : 0,
           previewPaths: [selectedScope.displayPath],
           includesDescendants: Boolean(selectedScope.includesDescendants),
-          rootCount: selectedScope.kind === "document" ? 1 : 0
+          rootCount: 1
         }
       : null;
   }
@@ -72,7 +72,7 @@ export function buildSelectionSummary(
       documentCount: effectiveDocumentCount,
       previewPaths: [source.displayPath],
       includesDescendants: Boolean(source.includesDescendants),
-      rootCount: source.kind === "document" ? 1 : 0
+      rootCount: 1
     };
   }
 

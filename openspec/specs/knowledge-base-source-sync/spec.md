@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Knowledge Base Scoped Discovery
-The system MUST discover, classify, present, and queue only documents that belong to user-selected knowledge base sources. A selectable source MUST support an entire knowledge base, a directory subtree within that knowledge base, or one or more selected subtree roots from the same knowledge base where each root can be either a directory node or a document node. Selecting a directory source MUST implicitly include every descendant document under that directory. Selecting a document source that has descendant documents MUST implicitly include that document and all descendant documents in the effective sync set. Source discovery used for scoped selection MUST return only the immediate children of the expanded knowledge base or parent node for each expansion step, MUST classify non-directory items such as Feishu Bitable as leaf nodes rather than directories, and MUST NOT issue additional remote discovery requests when a user only changes local checkbox selection state.
+The system MUST discover, classify, present, and queue only documents that belong to user-selected knowledge base sources. A selectable source MUST support an entire knowledge base, a directory subtree within that knowledge base, or one or more selected subtree roots from the same knowledge base where each root can be either a directory node or a document node. Selecting a directory source MUST implicitly include every descendant document under that directory. Selecting a document source that has descendant documents MUST implicitly include that document and all descendant documents in the effective sync set. Source discovery used for scoped selection MUST return only the immediate children of the expanded knowledge base or parent node for each expansion step, MUST classify non-directory items such as Feishu Bitable as leaf nodes rather than directories, MUST classify knowledge-base library/container nodes that represent grouped documents as directory nodes, and MUST NOT issue additional remote discovery requests when a user only changes local checkbox selection state.
 
 #### Scenario: Ignore non-knowledge-base sources
 - **WHEN** the source enumeration includes Feishu document containers outside selected knowledge base sources
@@ -37,6 +37,10 @@ The system MUST discover, classify, present, and queue only documents that belon
 #### Scenario: Expanding a parent node returns only direct children
 - **WHEN** the user expands a directory or parent document that has child documents
 - **THEN** the discovery result contains only that parent node's immediate child nodes and excludes grandchildren until those immediate children are expanded
+
+#### Scenario: Library node is selectable as a directory source
+- **WHEN** the discovery result contains a knowledge-base library/container node that groups descendant documents within the same space
+- **THEN** the system classifies that node as a directory source with a selectable sync scope instead of as an unsupported leaf node
 
 #### Scenario: Checkbox selection does not trigger remote discovery
 - **WHEN** the user checks or unchecks a directory or document node that already exists in the current tree state

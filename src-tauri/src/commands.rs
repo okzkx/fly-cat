@@ -580,7 +580,7 @@ fn build_selection_summary(
             document_count: u32::from(scope.kind == "document"),
             preview_paths: vec![scope.display_path.clone()],
             includes_descendants: scope.includes_descendants,
-            root_count: u32::from(scope.kind == "document"),
+            root_count: 1,
         });
     }
 
@@ -595,7 +595,7 @@ fn build_selection_summary(
             document_count: effective_document_count.unwrap_or(u32::from(source.kind == "document")),
             preview_paths: vec![source.display_path.clone()],
             includes_descendants: source.includes_descendants,
-            root_count: u32::from(source.kind == "document"),
+            root_count: 1,
         });
     }
 
@@ -727,6 +727,7 @@ fn node_kind_from_obj_type(obj_type: &str, has_children: bool) -> String {
     let normalized = obj_type.trim().to_ascii_lowercase();
     match normalized.as_str() {
         "docx" => "document",
+        "wiki" | "folder" => "folder",
         "bitable" | "sheet" => "bitable",
         _ if has_children => "folder",
         _ => "bitable",
@@ -2620,6 +2621,20 @@ mod tests {
     }
 
     #[test]
+    fn builds_folder_selection_summary_with_effective_document_count() {
+        let summary = build_selection_summary(
+            &[sample_folder_scope("kb-product", "产品知识库", "product-library", "方案库")],
+            None,
+            Some(3),
+        )
+        .expect("summary should exist");
+
+        assert_eq!(summary.kind, "folder");
+        assert_eq!(summary.document_count, 3);
+        assert_eq!(summary.root_count, 1);
+    }
+
+    #[test]
     fn normalizes_legacy_system_time_debug_timestamp() {
         let normalized = normalize_timestamp_string("SystemTime { intervals: 134190038946973727 }");
 
@@ -2690,7 +2705,23 @@ mod tests {
     }
 
     #[test]
+    fn fixture_library_root_discovers_all_descendant_documents() {
+        let documents = fixture_documents_for_sources(&[sample_folder_scope(
+            "kb-product",
+            "产品知识库",
+            "product-library",
+            "方案库",
+        )]);
+
+        assert_eq!(documents.len(), 3);
+        assert_eq!(documents[0].source_path, "产品知识库/方案库/Product Overview");
+        assert_eq!(documents[2].source_path, "产品知识库/方案库/产品方案总览/2026 H1 路线图");
+    }
+
+    #[test]
     fn bitable_kind_is_classified_as_non_expandable_leaf() {
+        assert_eq!(node_kind_from_obj_type("wiki", false), "folder");
+        assert_eq!(node_kind_from_obj_type("folder", false), "folder");
         assert_eq!(node_kind_from_obj_type("bitable", false), "bitable");
         assert_eq!(node_kind_from_obj_type("sheet", false), "bitable");
         assert_eq!(node_kind_from_obj_type("unknown-leaf", false), "bitable");
