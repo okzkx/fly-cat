@@ -15,6 +15,7 @@ import {
   getAppBootstrap,
   getRuntimeInfo,
   getSyncTasks,
+  getSyncedDocumentIds,
   initializeTaskEventBridge,
   listKnowledgeBaseNodes,
   logoutUser,
@@ -78,6 +79,7 @@ export default function App(): React.JSX.Element {
   const [loadedSpaceTrees, setLoadedSpaceTrees] = useState<Record<string, KnowledgeBaseNode[]>>({});
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [connectionValidation, setConnectionValidation] = useState<ConnectionValidation | null>(null);
+  const [downloadedDocumentIds, setDownloadedDocumentIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let disposeBridge: (() => void) | undefined;
@@ -151,6 +153,14 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     document.title = pageTitle;
   }, [pageTitle]);
+
+  useEffect(() => {
+    if (!syncTarget) {
+      setDownloadedDocumentIds(new Set());
+      return;
+    }
+    void getSyncedDocumentIds(syncTarget).then(setDownloadedDocumentIds);
+  }, [syncTarget]);
 
   const activeTaskSummary = useMemo(() => {
     const runningTask = tasks.find((task) => task.status === "syncing");
@@ -282,6 +292,7 @@ export default function App(): React.JSX.Element {
                 loadedSpaceTrees={loadedSpaceTrees}
                 syncRoot={syncTarget}
                 connectionValidation={connectionValidation}
+                downloadedDocumentIds={downloadedDocumentIds}
                 onScopeChange={setSelectedScope}
                 onToggleSource={async (scope, checked) => {
                   let replacedCrossSpaceSelection = false;

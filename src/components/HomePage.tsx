@@ -45,24 +45,25 @@ function selectedKey(scope: SyncScope | null): string[] {
   return [scopeKey(scope)];
 }
 
-function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>): ScopeTreeDataNode[] {
+function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, downloadedIds: Set<string>): ScopeTreeDataNode[] {
   return nodes.map((node) => {
     const scopeValue = buildScopeFromNode(node) ?? undefined;
     const isDisabledNode = scopeValue ? disabledKeys.has(scopeKey(scopeValue)) : false;
+    const isAlreadyDownloaded = node.documentId ? downloadedIds.has(node.documentId) : false;
 
     return {
       title: node.title,
       key: node.key,
       isLeaf: !node.isExpandable,
       selectable: node.kind !== "bitable",
-      disableCheckbox: node.kind === "bitable" || isDisabledNode,
+      disableCheckbox: node.kind === "bitable" || isDisabledNode || isAlreadyDownloaded,
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
       scopeValue,
-      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys) : undefined
+      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys, downloadedIds) : undefined
     };
   });
 }
@@ -70,7 +71,8 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>): 
 function buildTreeData(
   spaces: HomePageProps["spaces"],
   loadedSpaceTrees: HomePageProps["loadedSpaceTrees"],
-  selectedSources: SyncScope[]
+  selectedSources: SyncScope[],
+  downloadedDocumentIds: Set<string>
 ): ScopeTreeDataNode[] {
   return [
     {
@@ -88,7 +90,8 @@ function buildTreeData(
         children: loadedSpaceTrees[space.id]
           ? buildTreeNodes(
               loadedSpaceTrees[space.id],
-              new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedSources))
+              new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedSources)),
+              downloadedDocumentIds
             )
           : undefined
       }))
@@ -137,6 +140,7 @@ export default function HomePage({
   loadedSpaceTrees,
   syncRoot,
   connectionValidation,
+  downloadedDocumentIds,
   onScopeChange,
   onToggleSource,
   onLoadTreeChildren,
@@ -163,7 +167,7 @@ export default function HomePage({
     }
   };
 
-  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources);
+  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources, downloadedDocumentIds);
 
   const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
     const node = info.node as ScopeTreeDataNode;

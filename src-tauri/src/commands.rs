@@ -2237,6 +2237,18 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn get_synced_document_ids(sync_root: String) -> Vec<String> {
+    let path = std::path::Path::new(&sync_root);
+    let manifest = crate::storage::load_manifest(path).unwrap_or_default();
+    manifest
+        .records
+        .into_iter()
+        .filter(|r| r.status == "success")
+        .map(|r| r.document_id)
+        .collect()
+}
+
+#[tauri::command]
 pub fn get_runtime_info() -> RuntimeInfo {
     RuntimeInfo {
         runtime: "tauri",

@@ -4,6 +4,7 @@ export {
   createSyncTask,
   deleteSyncTask,
   getRuntimeInfo,
+  getSyncedDocumentIds,
   listKnowledgeBaseNodes,
   getSyncTasks,
   initializeTaskEventBridge,
