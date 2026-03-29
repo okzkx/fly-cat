@@ -125,6 +125,7 @@ pub struct FeishuOpenApiConfig {
 #[derive(Clone, Debug)]
 pub struct FeishuOAuthTokenInfo {
     pub access_token: String,
+    #[allow(dead_code)] // retained from OAuth response; may be needed for future API calls
     pub token_type: String,
     pub expires_in: i64,
     pub refresh_expires_in: i64,

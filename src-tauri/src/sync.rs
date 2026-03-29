@@ -4,6 +4,7 @@ use crate::mcp::{
 };
 use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord, SyncManifest, SyncSourceDocument};
 use crate::render::{markdown_output_path, render_markdown, source_signature, stable_hash};
+#[cfg(test)]
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
 use chrono::Utc;
 use std::{fs, path::Path, time::Duration};
@@ -48,9 +49,13 @@ pub fn fetch_canonical_document(
 }
 
 pub struct SyncWriteResult {
+    #[allow(dead_code)] // populated during write; fields read in test assertions
     pub output_path: String,
+    #[allow(dead_code)]
     pub image_assets: Vec<String>,
+    #[allow(dead_code)]
     pub content_hash: String,
+    #[allow(dead_code)]
     pub source_signature: String,
 }
 
@@ -228,6 +233,7 @@ fn filesystem_error(err: std::io::Error) -> SyncPipelineError {
     }
 }
 
+#[cfg(test)]
 fn storage_error(err: String) -> SyncPipelineError {
     SyncPipelineError {
         stage: "filesystem-write".into(),
@@ -318,6 +324,7 @@ pub fn sync_document_content(
     }, record))
 }
 
+#[cfg(test)]
 pub fn sync_document_to_disk(
     source_document: &SyncSourceDocument,
     sync_root: &Path,
