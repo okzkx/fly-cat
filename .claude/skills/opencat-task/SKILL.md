@@ -339,6 +339,7 @@ On completion, summarize:
 
 ## Guardrails
 
+- **IMPORTANT: Never delete linked worktree directories** - They are meant to be kept for reuse. After merge, only switch worktree back to `<base_branch>` and delete the work branch. The worktree directory itself must remain.
 - Invoke the existing OpenSpec skills directly (`openspec-propose`, `openspec-apply-change`, `openspec-archive-change`) instead of inventing a parallel workflow or trying to replicate their behavior
 - `opencat-check` must be run manually before this skill; do not invoke it from within the workflow
 - Always read CLI-provided context files before implementation
