@@ -13,7 +13,7 @@ import type { HomePageProps } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
 import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
-import { buildScopeFromNode, collectCoveredDescendantKeys } from "@/utils/treeSelection";
+import { buildScopeFromNode, collectCoveredDescendantKeys, computeCascadedCheckedKeys, computeTriState } from "@/utils/treeSelection";
 
 const { Text } = Typography;
 
@@ -332,6 +332,88 @@ function getSelectionLabel(selectionSummary: ReturnType<typeof buildSelectionSum
   }
 }
 
+/**
+ * Collect all descendant keys from the built tree data (ScopeTreeDataNode).
+ */
+function collectTreeDataDescendantKeys(treeData: ScopeTreeDataNode[], targetKey: string): string[] {
+  const result: string[] = [];
+  let found = false;
+
+  function walk(nodes: ScopeTreeDataNode[]): void {
+    for (const node of nodes) {
+      if (!found) {
+        if (String(node.key) === targetKey) {
+          found = true;
+          addChildKeys(node.children);
+          return;
+        }
+        if (node.children?.length) {
+          walk(node.children);
+        }
+      }
+    }
+  }
+
+  function addChildKeys(children: ScopeTreeDataNode[] | undefined): void {
+    if (!children) return;
+    for (const child of children) {
+      result.push(String(child.key));
+      addChildKeys(child.children);
+    }
+  }
+
+  walk(treeData);
+  return result;
+}
+
+/**
+ * Compute half-checked keys for Ant Design Tree with checkStrictly.
+ * A parent node is half-checked if it is not checked but has any checked descendant,
+ * and it is not fully checked (not all descendants are checked and self is not checked).
+ */
+function computeHalfCheckedKeys(treeData: ScopeTreeDataNode[], checkedKeys: Set<string>): string[] {
+  const halfChecked: string[] = [];
+
+  // First pass: determine which nodes have any checked descendant
+  const hasCheckedDescendant = new Set<string>();
+
+  function markCheckedDescendants(nodes: ScopeTreeDataNode[]): boolean {
+    let anyChecked = false;
+    for (const node of nodes) {
+      const key = String(node.key);
+      const childHasChecked = node.children?.length ? markCheckedDescendants(node.children) : false;
+      const selfOrChildChecked = checkedKeys.has(key) || childHasChecked;
+      if (childHasChecked && !checkedKeys.has(key)) {
+        // This node has checked descendants but is not itself checked -> half-checked
+        halfChecked.push(key);
+      }
+      if (selfOrChildChecked) {
+        anyChecked = true;
+      }
+    }
+    return anyChecked;
+  }
+
+  markCheckedDescendants(treeData);
+  return halfChecked;
+}
+
+/**
+ * Find a ScopeTreeDataNode by its key in the tree data.
+ */
+function findNodeByKey(treeData: ScopeTreeDataNode[], targetKey: string): ScopeTreeDataNode | null {
+  for (const node of treeData) {
+    if (String(node.key) === targetKey) {
+      return node;
+    }
+    if (node.children?.length) {
+      const found = findNodeByKey(node.children, targetKey);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export default function HomePage({
   spaces,
   selectedScope,
@@ -420,6 +502,16 @@ export default function HomePage({
     return merged;
   }, [checkedSourceKeys, syncedDocTreeKeys, uncheckedSyncedDocKeys]);
 
+  // Build tree data once (needed for tri-state cascade logic)
+  const treeData = useMemo(() =>
+    buildTreeData(spaces, loadedSpaceTrees, selectedSources, syncingKeys),
+  [spaces, loadedSpaceTrees, selectedSources, syncingKeys]);
+
+  // Compute half-checked keys for proper visual indeterminate display
+  const halfCheckedKeys = useMemo(() =>
+    computeHalfCheckedKeys(treeData, allCheckedKeys),
+  [treeData, allCheckedKeys]);
+
   // Compute unchecked synced document IDs for cleanup
   const uncheckedSyncedDocumentIds = useMemo(() => {
     if (uncheckedSyncedDocKeys.size === 0) {
@@ -449,7 +541,79 @@ export default function HomePage({
     }
   };
 
-  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources, syncingKeys);
+  const handleTriStateToggle = (node: ScopeTreeDataNode): void => {
+    if (!node.scopeValue || node.disableCheckbox) {
+      return;
+    }
+
+    const nodeKey = String(node.key);
+    const descendantKeys = collectTreeDataDescendantKeys(treeData, nodeKey);
+    const currentState = computeTriState(allCheckedKeys, nodeKey, descendantKeys);
+    const newCheckedKeys = computeCascadedCheckedKeys(allCheckedKeys, nodeKey, descendantKeys, currentState);
+
+    // Determine which keys were added and removed
+    const addedKeys = new Set<string>();
+    const removedKeys = new Set<string>();
+    for (const key of newCheckedKeys) {
+      if (!allCheckedKeys.has(key)) {
+        addedKeys.add(key);
+      }
+    }
+    for (const key of allCheckedKeys) {
+      if (!newCheckedKeys.has(key)) {
+        removedKeys.add(key);
+      }
+    }
+
+    // Update uncheckedSyncedDocKeys for cascaded changes
+    if (addedKeys.size > 0 || removedKeys.size > 0) {
+      setUncheckedSyncedDocKeys((prev) => {
+        const next = new Set(prev);
+        // Keys that are now checked should not be in unchecked set
+        for (const key of addedKeys) {
+          if (syncedDocTreeKeys.has(key)) {
+            next.delete(key);
+          }
+        }
+        // Keys that are now unchecked and are synced should be in unchecked set
+        for (const key of removedKeys) {
+          if (syncedDocTreeKeys.has(key)) {
+            next.add(key);
+          }
+        }
+        return next;
+      });
+    }
+
+    // Synchronize highlight: checking also selects/highlights the node
+    if (newCheckedKeys.has(nodeKey)) {
+      onScopeChange(node.scopeValue);
+    }
+
+    // Update selectedSources to reflect the cascade
+    if (currentState === "all-checked") {
+      // Unchecking: remove self and all individually-selected descendants
+      void onToggleSource(node.scopeValue, false).then(({ replacedCrossSpaceSelection }) => {
+        if (replacedCrossSpaceSelection) {
+          message.warning("一次只能在同一知识库内组合选择目录或文档，已切换到当前知识库。");
+        }
+      });
+      // Also uncheck any individually-checked descendant sources
+      for (const descendantKey of descendantKeys) {
+        const descendantNode = findNodeByKey(treeData, descendantKey);
+        if (descendantNode?.scopeValue && checkedSourceKeys.includes(descendantKey)) {
+          void onToggleSource(descendantNode.scopeValue, false);
+        }
+      }
+    } else {
+      // Checking: toggle on self (covers descendants via includesDescendants)
+      void onToggleSource(node.scopeValue, true).then(({ replacedCrossSpaceSelection }) => {
+        if (replacedCrossSpaceSelection) {
+          message.warning("一次只能在同一知识库内组合选择目录或文档，已切换到当前知识库。");
+        }
+      });
+    }
+  };
 
   const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
     const node = info.node as ScopeTreeDataNode;
@@ -457,29 +621,8 @@ export default function HomePage({
       return;
     }
     onScopeChange(node.scopeValue);
-    // Synchronize checkbox: click name toggles the box to match current checked state
-    if (!node.disableCheckbox) {
-      const nodeKey = String(node.key);
-      const isChecked = allCheckedKeys.has(nodeKey);
-      const shouldBeChecked = !isChecked;
-      // Track unchecked synced documents (same logic as onCheck)
-      if (syncedDocTreeKeys.has(nodeKey)) {
-        setUncheckedSyncedDocKeys((prev) => {
-          const next = new Set(prev);
-          if (shouldBeChecked) {
-            next.delete(nodeKey);
-          } else {
-            next.add(nodeKey);
-          }
-          return next;
-        });
-      }
-      void onToggleSource(node.scopeValue, shouldBeChecked).then(({ replacedCrossSpaceSelection }) => {
-        if (replacedCrossSpaceSelection) {
-          message.warning("一次只能在同一知识库内组合选择目录或文档，已切换到当前知识库。");
-        }
-      });
-    }
+    // Tri-state toggle on name click
+    handleTriStateToggle(node);
   };
 
   return (
@@ -550,9 +693,10 @@ export default function HomePage({
             <div data-testid="knowledge-base-tree">
               <Tree
               checkable
+              checkStrictly
               defaultExpandedKeys={["wiki-root"]}
               selectedKeys={selectedKey(selectedScope)}
-              checkedKeys={{ checked: Array.from(allCheckedKeys), halfChecked: [] }}
+              checkedKeys={{ checked: Array.from(allCheckedKeys), halfChecked: halfCheckedKeys }}
               treeData={treeData}
               loadData={async (treeNode) => {
                 const node = treeNode as ScopeTreeDataNode;
@@ -567,32 +711,7 @@ export default function HomePage({
               }}
               onCheck={(_checkedKeys, info) => {
                 const changedNode = info.node as ScopeTreeDataNode;
-                const changedScope = changedNode.scopeValue;
-                if (!changedScope) {
-                  return;
-                }
-                // Track unchecked synced documents
-                const nodeKey = String(changedNode.key);
-                if (syncedDocTreeKeys.has(nodeKey)) {
-                  setUncheckedSyncedDocKeys((prev) => {
-                    const next = new Set(prev);
-                    if (info.checked) {
-                      next.delete(nodeKey);
-                    } else {
-                      next.add(nodeKey);
-                    }
-                    return next;
-                  });
-                }
-                // Synchronize highlight: checking checkbox also selects/highlights the node
-                if (info.checked) {
-                  onScopeChange(changedScope);
-                }
-                void onToggleSource(changedScope, info.checked).then(({ replacedCrossSpaceSelection }) => {
-                  if (replacedCrossSpaceSelection) {
-                    message.warning("一次只能在同一知识库内组合选择目录或文档，已切换到当前知识库。");
-                  }
-                });
+                handleTriStateToggle(changedNode);
               }}
               onSelect={handleSelect}
               titleRender={(node) => {

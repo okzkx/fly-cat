@@ -139,6 +139,101 @@ export function toggleSourceSelection(
   };
 }
 
+/**
+ * Collect all descendant keys from KnowledgeBaseNode tree data for a given node key.
+ */
+export function collectAllDescendantKeys(nodes: KnowledgeBaseNode[], targetKey: string): string[] {
+  const result: string[] = [];
+  let found = false;
+
+  function walk(currentNodes: KnowledgeBaseNode[]): void {
+    for (const node of currentNodes) {
+      if (!found) {
+        if (node.key === targetKey) {
+          found = true;
+          // Add all children of the target
+          addChildrenKeys(node.children);
+          return;
+        }
+        if (node.children?.length) {
+          walk(node.children);
+        }
+      }
+    }
+  }
+
+  function addChildrenKeys(children: KnowledgeBaseNode[] | undefined): void {
+    if (!children) return;
+    for (const child of children) {
+      result.push(child.key);
+      addChildrenKeys(child.children);
+    }
+  }
+
+  walk(nodes);
+  return result;
+}
+
+/**
+ * Tri-state type for a node's aggregate check state.
+ */
+export type TriState = "all-checked" | "none-checked" | "mixed";
+
+/**
+ * Compute the tri-state of a node based on current checked keys and its descendant keys.
+ * Returns "all-checked" if self + all descendants are checked.
+ * Returns "none-checked" if self + all descendants are unchecked.
+ * Returns "mixed" if some but not all are checked.
+ */
+export function computeTriState(
+  currentCheckedKeys: Set<string>,
+  nodeKey: string,
+  allDescendantKeys: string[]
+): TriState {
+  // Include self in the evaluation
+  const allKeys = [nodeKey, ...allDescendantKeys];
+  const checkedCount = allKeys.filter((key) => currentCheckedKeys.has(key)).length;
+
+  if (checkedCount === allKeys.length) {
+    return "all-checked";
+  }
+  if (checkedCount === 0) {
+    return "none-checked";
+  }
+  return "mixed";
+}
+
+/**
+ * Compute the new set of checked keys after a tri-state toggle.
+ *
+ * From none-checked -> check self and all descendants
+ * From all-checked -> uncheck self and all descendants
+ * From mixed -> check self and all descendants
+ */
+export function computeCascadedCheckedKeys(
+  currentCheckedKeys: Set<string>,
+  nodeKey: string,
+  allDescendantKeys: string[],
+  currentState: TriState
+): Set<string> {
+  const next = new Set(currentCheckedKeys);
+  const allKeys = [nodeKey, ...allDescendantKeys];
+
+  if (currentState === "all-checked") {
+    // Transition to none-checked: remove all
+    for (const key of allKeys) {
+      next.delete(key);
+    }
+  } else {
+    // Transition to all-checked: from none-checked or mixed, check all
+    for (const key of allKeys) {
+      next.add(key);
+    }
+  }
+
+  return next;
+}
+
 export function attachLoadedChildren(
   nodes: KnowledgeBaseNode[],
   parentNodeToken: string,
