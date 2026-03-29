@@ -132,10 +132,7 @@ Commit message rules:
 
    Do **not** create a worktree yet and do **not** move to the linked worktree yet.
 
-   Follow the `openspec-propose` behavior:
-   - create the change if needed
-   - generate artifacts required for implementation
-   - read dependency artifacts and CLI instructions before writing files
+   Invoke the `openspec-propose` skill directly with the change name or request description as arguments.
 
 5. **Validate after purpose**
 
@@ -176,12 +173,7 @@ Commit message rules:
 
 8. **Run implementation in the linked worktree**
 
-   Follow the `openspec-apply-change` behavior:
-   - read context files from `openspec instructions apply --change "<name>" --json`
-   - implement pending tasks in order
-   - keep edits minimal and scoped
-   - mark completed tasks in `tasks.md` immediately
-   - stop if the work reveals a design issue that should be reflected in artifacts first
+   Invoke the `openspec-apply-change` skill directly with the change name as arguments.
 
 9. **Validate after apply**
 
@@ -219,12 +211,10 @@ Commit message rules:
 
 12. **Run archive in the linked worktree**
 
-    Follow the `openspec-archive-change` behavior:
-    - check incomplete artifacts/tasks
-    - assess delta spec sync state
-    - prompt when archive safeguards require confirmation
-    - archive the change only after the required checks
-    - after archive succeeds, generate a Chinese Markdown report at `openspec/changes/archive/YYYY-MM-DD-<name>/change-report.zh-CN.md`
+    Invoke the `openspec-archive-change` skill directly with the change name as arguments.
+
+    After the archive skill completes:
+    - generate a Chinese Markdown report at `openspec/changes/archive/YYYY-MM-DD-<name>/change-report.zh-CN.md`
     - build the report from archived artifacts already present in that directory, especially `proposal.md`, `design.md`, `specs/**/*.md`, and `tasks.md`
     - keep the report concise and user-facing; include at least:
       - basic info (change name, schema, archive path)
@@ -335,7 +325,7 @@ On completion, summarize:
 
 ## Guardrails
 
-- Reuse the existing OpenSpec skills' logic instead of inventing a parallel workflow
+- Invoke the existing OpenSpec skills directly (`openspec-propose`, `openspec-apply-change`, `openspec-archive-change`) instead of inventing a parallel workflow or trying to replicate their behavior
 - `opencat-check` must be run manually before this skill; do not invoke it from within the workflow
 - Always read CLI-provided context files before implementation
 - Prefer reusable linked worktree copies outside the repo root rather than disposable per-change worktrees
