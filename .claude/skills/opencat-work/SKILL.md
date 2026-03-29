@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires `opencat-check` to have been run manually to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
 metadata:
   author: opencat
-  version: "1.4"
+  version: "1.5"
   derivedFrom: "openspec-all-in-one"
 ---
 
@@ -270,9 +270,22 @@ Commit message rules:
     - keep any other existing `-worktree` sibling copies in place for future reuse
     - do **not** remove linked worktree directories unless the user explicitly asks
 
+16. **Verify cleanup**
+
+    After cleanup steps, verify the workflow completed cleanly:
+    - confirm `<work_branch>` no longer exists: `git branch --list "<work_branch>"` should return empty
+    - confirm linked worktree is on `<base_branch>`: `git -C "<worktree_path>" branch --show-current` should return `<base_branch>`
+    - confirm linked worktree is clean: `git -C "<worktree_path>" status --short` should return empty
+    - confirm no orphaned archive directories with placeholder dates exist: `openspec/changes/archive/YYYY-MM-DD-*` should not exist
+    - report any anomalies in the completion summary
+
+    If verification fails:
+    - attempt to fix the anomaly if safe (e.g., delete orphan branch, switch worktree to base branch, remove placeholder archive directories)
+    - if the anomaly cannot be safely fixed, include it as a "remaining issue" in the completion summary
+
 ## Default Behavior
 
-- When the user explicitly invokes `opencat-work`, run the whole workflow continuously through `purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup`.
+- When the user explicitly invokes `opencat-work`, run the whole workflow continuously through `purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup -> verify`.
 - Keep the `simple|complex` classification for risk awareness, progress reporting, and decision quality, but do **not** use complexity alone as a reason to pause.
 - Pause only when a listed pause condition or a repository safety rule requires user confirmation.
 
@@ -302,7 +315,7 @@ During execution, keep progress updates compact and structured like:
 **Complexity:** simple|complex
 **Base:** <base-branch>
 **Worktree Branch:** <work-branch>
-**Stage:** purpose|validate|purpose-commit|worktree|apply|validate|apply-commit|rebase|archive|archive-commit|merge|cleanup
+**Stage:** purpose|validate|purpose-commit|worktree|apply|validate|apply-commit|rebase|archive|archive-commit|merge|cleanup|verify
 
 <short progress note>
 ```
@@ -319,6 +332,7 @@ On completion, summarize:
 - whether `change-report.zh-CN.md` was generated
 - whether merge succeeded
 - whether the branch was deleted
+- whether cleanup verification passed
 - which `worktree_path` was used
 - whether the linked worktree copy was kept for reuse
 - any remaining issues
