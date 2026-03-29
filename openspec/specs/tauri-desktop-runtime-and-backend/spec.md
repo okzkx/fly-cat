@@ -112,7 +112,7 @@ The repository MUST provide a tauri-driver based desktop automation workflow tha
 - **THEN** it verifies subtree-aware source-summary rendering and effective document-count presentation for seeded subtree tasks
 
 ### Requirement: Non-Blocking Tree and Task Commands
-The application MUST execute tree-loading and sync-task-creation Tauri commands asynchronously so the UI thread remains responsive during Feishu API calls.
+The application MUST execute tree-loading and sync-task-creation Tauri commands asynchronously so the UI thread remains responsive during Feishu API calls. The `get_app_bootstrap` command MUST also execute asynchronously so that bootstrap-time network calls do not block the UI thread.
 
 #### Scenario: Expanding tree nodes does not freeze the UI
 - **WHEN** a user expands a knowledge base node or document node in the source-selection tree
@@ -121,4 +121,8 @@ The application MUST execute tree-loading and sync-task-creation Tauri commands 
 #### Scenario: Creating a sync task does not freeze the UI
 - **WHEN** a user creates a sync task that requires discovering documents from multiple knowledge base nodes
 - **THEN** the document discovery HTTP calls run on a background thread and the window remains responsive
+
+#### Scenario: App bootstrap does not freeze the UI
+- **WHEN** the frontend calls `get_app_bootstrap` (at application start, after settings save, or after authorization)
+- **THEN** the bootstrap command executes its network calls on a background thread and the window remains responsive
 
