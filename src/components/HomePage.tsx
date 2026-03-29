@@ -299,11 +299,6 @@ export default function HomePage({
                   <Space>
                     {icon}
                     <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
-                    {nodeKind === "space" && <Tag color="purple">整库</Tag>}
-                    {nodeKind === "folder" && <Tag color="gold">目录</Tag>}
-                    {nodeKind === "document" && <Tag color="blue">文档</Tag>}
-                    {nodeKind === "document" && scope?.includesDescendants && <Tag color="geekblue">含子文档</Tag>}
-                    {nodeKind === "bitable" && <Tag color="cyan">多维表格</Tag>}
                   </Space>
                 );
               }}
