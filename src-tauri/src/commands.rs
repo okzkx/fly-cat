@@ -62,6 +62,8 @@ pub struct SyncTask {
     pub progress: u32,
     pub counters: SyncCounters,
     pub lifecycle_state: String,
+    #[serde(default)]
+    pub discovered_document_ids: Vec<String>,
     pub errors: Vec<SyncRunError>,
     pub failure_summary: Option<SyncFailureSummary>,
     pub created_at: String,
@@ -2004,6 +2006,11 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 task.counters.succeeded = 0;
                 task.progress = ((task.counters.processed as f32 / task.counters.total as f32) * 100.0).round() as u32;
                 task.lifecycle_state = "syncing".into();
+                task.discovered_document_ids = queued_documents
+                    .iter()
+                    .chain(skipped_documents.iter())
+                    .map(|d| d.document_id.clone())
+                    .collect();
                 task.updated_at = now_iso();
             }
         }
@@ -2043,9 +2050,6 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
             running.remove(&task_id);
             return;
         }
-
-        let total_steps = queued_documents.len() as u32;
-        let manifest_batch_size: usize = 10;
 
         // Pre-resolve auth config once for the entire sync run
         let auth_config: Result<(String, Option<FeishuOpenApiConfig>), String> = {
@@ -2167,15 +2171,13 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 }
             }
 
-            // Save tasks and manifest to disk periodically
-            if step % (manifest_batch_size as u32) == 0 || step == total_steps {
-                {
-                    let state = app.state::<AppState>();
-                    let tasks = state.tasks.lock().expect("task state poisoned");
-                    let _ = save_tasks_to_disk(&app, &tasks);
-                }
-                let _ = save_manifest(&sync_root, &manifest);
+            // Save tasks and manifest to disk after every document for real-time status
+            {
+                let state = app.state::<AppState>();
+                let tasks = state.tasks.lock().expect("task state poisoned");
+                let _ = save_tasks_to_disk(&app, &tasks);
             }
+            let _ = save_manifest(&sync_root, &manifest);
 
             // Emit progress event per document for real-time UI updates
             {
@@ -2185,11 +2187,6 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                     emit_task_event(&app, "sync-progress", task);
                 }
             }
-        }
-
-        // Final manifest save
-        {
-            let _ = save_manifest(&sync_root, &manifest);
         }
 
         // Mark task as completed
@@ -2442,6 +2439,7 @@ pub async fn create_sync_task(
                 failed: 0,
             },
             lifecycle_state: "idle".into(),
+            discovered_document_ids: vec![],
             errors: vec![],
             failure_summary: None,
             created_at: created_at.clone(),
