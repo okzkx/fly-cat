@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Sync-Oriented Interaction Flow
-The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync sources together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances, MUST treat a selected parent document as covering its full descendant document subtree by default, MUST allow directory nodes and document nodes from the same knowledge base to be added to the explicit source set, and MUST update checkbox state immediately from local selection state rather than waiting for remote subtree discovery.
+The application MUST present synchronization as a primary workflow distinct from export/download actions, and MUST let users choose and review the effective knowledge base sync sources together with the mirrored local output destination before and after sync creation. The source-selection tree MUST reveal only one hierarchy level per expansion action, MUST present non-directory node types, including Feishu Bitable items, with trustworthy non-folder affordances, MUST treat a selected parent document as covering its full descendant document subtree by default, MUST allow directory nodes and document nodes from the same knowledge base to be added to the explicit source set, MUST update checkbox state immediately from local selection state rather than waiting for remote subtree discovery, and MUST synchronize checkbox selection state and node highlight selection so that clicking a node name and clicking its checkbox produce the same checked-and-highlighted result.
 
 #### Scenario: Start sync from dedicated action
 - **WHEN** a user enters the document assistant and selects knowledge base sources
@@ -45,6 +45,14 @@ The application MUST present synchronization as a primary workflow distinct from
 #### Scenario: Bitable item is not shown as a folder
 - **WHEN** a Feishu Bitable item appears in the source-selection tree
 - **THEN** the UI renders it as a non-directory leaf node without folder-style expansion affordances
+
+#### Scenario: Clicking node name checks its checkbox
+- **WHEN** a user clicks on a document or directory node's name (title text) in the source-selection tree
+- **THEN** the node becomes both highlighted and checked, producing the same visual and state result as if the user had clicked the node's checkbox
+
+#### Scenario: Clicking checkbox highlights the node
+- **WHEN** a user checks a document or directory node's checkbox in the source-selection tree
+- **THEN** the node becomes both checked and highlighted, producing the same visual and state result as if the user had clicked the node's name
 
 ### Requirement: Sync Lifecycle Status Visibility
 The application MUST expose synchronization lifecycle states and progress at document and tree-node level. When a sync task is active, individual document nodes within the task's discovered scope MUST display "同步中" status regardless of whether the original selection was a leaf document, a directory subtree, or a whole space.
