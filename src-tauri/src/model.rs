@@ -18,6 +18,8 @@ pub struct SyncSourceDocument {
     pub path_segments: Vec<String>,
     #[serde(default)]
     pub source_path: String,
+    #[serde(default)]
+    pub obj_type: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

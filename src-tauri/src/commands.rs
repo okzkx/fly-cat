@@ -5,7 +5,7 @@ use crate::mcp::{
 use crate::model::SyncSourceDocument;
 use crate::render::markdown_output_path;
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
-use crate::sync::{sync_document_content, SyncPipelineError};
+use crate::sync::{sync_document_content, sync_document_via_export, SyncPipelineError};
 use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -790,6 +790,7 @@ fn make_fixture_document(
         update_time: update_time.into(),
         source_path: join_display_path(space_name, &path_segments).replace(" / ", "/"),
         path_segments,
+        obj_type: String::new(),
     }
 }
 
@@ -1684,6 +1685,7 @@ fn discover_documents_from_openapi(
                     update_time: summary.update_time,
                     source_path: join_display_path(&scope.space_name, &path_segments).replace(" / ", "/"),
                     path_segments: path_segments.clone(),
+                    obj_type: node.obj_type.clone(),
                 });
             }
 
@@ -1722,6 +1724,7 @@ fn discover_documents_from_openapi(
             update_time: summary.update_time,
             source_path: join_display_path(&selected_scope.space_name, &selected_scope.path_segments).replace(" / ", "/"),
             path_segments: selected_scope.path_segments.clone(),
+            obj_type: "docx".into(),
         }];
         if selected_scope.includes_descendants {
             documents.extend(collect_documents_from_child_nodes(
@@ -2032,7 +2035,7 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
         }
 
         let total_steps = queued_documents.len() as u32;
-        let concurrency: usize = 4;
+        let concurrency: usize = 8;
         let manifest_batch_size: usize = 10;
 
         // Pre-resolve auth config once for the entire batch
@@ -2112,6 +2115,14 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                         let manifest = &manifest;
                         s.spawn(move || {
                             let manifest_guard = manifest.lock().expect("manifest lock poisoned");
+                            // Try export task API first (fast path)
+                            if let Some(ref config) = oa_config {
+                                match sync_document_via_export(document, &sync_root, config, &manifest_guard) {
+                                    Ok(record) => return Ok::<_, SyncPipelineError>(record),
+                                    Err(_) => {} // Fallback below
+                                }
+                            }
+                            // Fallback: raw content + markdown rendering
                             sync_document_content(
                                 document,
                                 &sync_root,
@@ -2119,7 +2130,7 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                                 &mcp_name,
                                 oa_config.as_ref(),
                                 &manifest_guard,
-                            )
+                            ).map(|(_, record)| record)
                         })
                     })
                     .collect();
@@ -2136,7 +2147,7 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                             task.counters.processed = task.counters.skipped + step;
                             task.progress = ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
                             match result {
-                                Ok((_write_result, record)) => {
+                                Ok(record) => {
                                     let mut manifest_guard = manifest.lock().expect("manifest lock poisoned");
                                     upsert_manifest_record(&mut manifest_guard, record);
                                 }

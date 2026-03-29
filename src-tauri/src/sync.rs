@@ -6,7 +6,7 @@ use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord, SyncManife
 use crate::render::{markdown_output_path, render_markdown, source_signature, stable_hash};
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
 use chrono::Utc;
-use std::{fs, path::Path};
+use std::{fs, path::Path, time::Duration};
 
 fn normalize_block(raw_block: RawBlock) -> CanonicalBlock {
     match raw_block {
@@ -70,6 +70,109 @@ impl std::error::Error for SyncPipelineError {}
 
 fn now_iso() -> String {
     Utc::now().to_rfc3339()
+}
+
+/// Map Feishu obj_type to the default export file extension.
+pub fn default_extension(obj_type: &str) -> &'static str {
+    match obj_type.trim().to_ascii_lowercase().as_str() {
+        "doc" | "docx" => "docx",
+        "sheet" | "bitable" => "xlsx",
+        "mindnote" => "pdf",
+        "slides" => "pptx",
+        _ => "docx",
+    }
+}
+
+/// Export a document via the Feishu Export Task API (server-side rendering).
+/// Returns a ManifestRecord; the caller is responsible for writing it to the manifest.
+pub fn sync_document_via_export(
+    source_document: &SyncSourceDocument,
+    sync_root: &Path,
+    openapi_config: &FeishuOpenApiConfig,
+    manifest: &SyncManifest,
+) -> Result<ManifestRecord, SyncPipelineError> {
+    let obj_type = if source_document.obj_type.is_empty() { "docx" } else { &source_document.obj_type };
+    let extension = default_extension(obj_type);
+    let client = FeishuOpenApiClient::new(openapi_config.clone());
+
+    // Step 1: Create export task
+    let response = client
+        .create_export_task(&source_document.document_id, extension, obj_type)
+        .map_err(classify_export_error)?;
+    let ticket = response.ticket;
+
+    // Step 2: Poll until done (max 60s)
+    let result = loop {
+        match client.get_export_task_status(&ticket, &source_document.document_id) {
+            Ok(Some(result)) => break result,
+            Ok(None) => std::thread::sleep(Duration::from_secs(1)),
+            Err(err) => return Err(classify_export_error(err)),
+        }
+    };
+
+    // Step 3: Download the exported file
+    let file_bytes = client
+        .download_export_file(&result.file_token)
+        .map_err(classify_export_error)?;
+
+    // Step 4: Build output path preserving directory structure
+    let file_name = format!("{}.{}", source_document.title, extension);
+    let output_path = if source_document.path_segments.is_empty() {
+        sync_root.join(&file_name)
+    } else {
+        sync_root.join(source_document.path_segments.join("/")).join(&file_name)
+    };
+    let output_path_string = output_path.to_string_lossy().to_string();
+
+    // Remove previous output if path changed
+    if let Some(previous_output_path) = manifest
+        .records
+        .iter()
+        .find(|record| record.document_id == source_document.document_id)
+        .map(|record| record.output_path.clone())
+    {
+        if previous_output_path != output_path_string && Path::new(&previous_output_path).exists() {
+            let _ = fs::remove_file(previous_output_path);
+        }
+    }
+
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(filesystem_error)?;
+    }
+    fs::write(&output_path, &file_bytes).map_err(filesystem_error)?;
+
+    let content_hash = stable_hash(&file_bytes);
+
+    Ok(ManifestRecord {
+        document_id: source_document.document_id.clone(),
+        space_id: source_document.space_id.clone(),
+        space_name: source_document.space_name.clone(),
+        node_token: source_document.node_token.clone(),
+        title: source_document.title.clone(),
+        version: source_document.version.clone(),
+        update_time: source_document.update_time.clone(),
+        source_path: source_document.source_path.clone(),
+        path_segments: source_document.path_segments.clone(),
+        output_path: output_path_string,
+        content_hash,
+        source_signature: format!("export:{extension}"),
+        status: "success".into(),
+        image_assets: Vec::new(),
+        last_synced_at: now_iso(),
+    })
+}
+
+fn classify_export_error(error: McpError) -> SyncPipelineError {
+    let message = error.to_string();
+    let stage = if is_auth_related_message(&message) {
+        "auth"
+    } else {
+        "export-task"
+    };
+    SyncPipelineError {
+        stage: stage.into(),
+        message,
+    }
 }
 
 fn is_auth_related_message(message: &str) -> bool {
@@ -267,6 +370,7 @@ mod tests {
             update_time: "t1".into(),
             path_segments: vec!["研发规范".into(), "研发API概览".into()],
             source_path: "研发知识库/研发规范/研发API概览".into(),
+            obj_type: String::new(),
         };
 
         let result = sync_document_to_disk(&source, &sync_root, "_assets", "user-feishu-mcp", None)

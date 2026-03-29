@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::{fmt, thread, time::Duration};
+use std::{fmt, io::Read, thread, time::Duration};
 
 #[derive(Clone)]
 pub struct McpClientConfig {
@@ -53,6 +53,16 @@ impl fmt::Display for McpError {
 }
 
 impl std::error::Error for McpError {}
+
+#[derive(Clone, Debug)]
+pub struct ExportTaskResponse {
+    pub ticket: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExportTaskResult {
+    pub file_token: String,
+}
 
 const FEISHU_TOKEN_ENDPOINT: &str = "https://passport.feishu.cn/suite/passport/oauth/token";
 
@@ -395,11 +405,15 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
 
 pub struct FeishuOpenApiClient {
     config: FeishuOpenApiConfig,
+    agent: ureq::Agent,
 }
 
 impl FeishuOpenApiClient {
     pub fn new(config: FeishuOpenApiConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            agent: ureq::Agent::new(),
+        }
     }
 
     fn endpoint(&self, path: &str) -> String {
@@ -420,7 +434,7 @@ impl FeishuOpenApiClient {
         let mut spaces = Vec::new();
 
         loop {
-            let mut request = ureq::get(&self.endpoint("/wiki/v2/spaces"))
+            let mut request = self.agent.get(&self.endpoint("/wiki/v2/spaces"))
                 .set("Authorization", &format!("Bearer {token}"))
                 .query("page_size", "50")
                 .query("user_id_type", "user_id");
@@ -474,7 +488,7 @@ impl FeishuOpenApiClient {
     pub fn fetch_document_summary(&self, document_id: &str) -> Result<FeishuDocumentSummary, McpError> {
         let token = self.access_token()?;
         let info_value = call_openapi_json(
-            ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
+            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
                 .set("Authorization", &format!("Bearer {token}")),
             "获取文档信息",
         )?;
@@ -515,7 +529,7 @@ impl FeishuOpenApiClient {
         let mut nodes = Vec::new();
 
         loop {
-            let mut request = ureq::get(&self.endpoint(&format!("/wiki/v2/spaces/{space_id}/nodes")))
+            let mut request = self.agent.get(&self.endpoint(&format!("/wiki/v2/spaces/{space_id}/nodes")))
                 .set("Authorization", &format!("Bearer {token}"))
                 .query("page_size", "50")
                 .query("user_id_type", "user_id");
@@ -578,7 +592,7 @@ impl FeishuOpenApiClient {
         let summary = self.fetch_document_summary(document_id)?;
 
         let raw_value = call_openapi_json(
-            ureq::get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/raw_content")))
+            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/raw_content")))
                 .set("Authorization", &format!("Bearer {token}")),
             "获取文档原始内容",
         )?;
@@ -613,6 +627,108 @@ impl FeishuOpenApiClient {
                 blocks
             },
         })
+    }
+
+    /// Create an export task for a document (server-side rendering).
+    pub fn create_export_task(
+        &self,
+        token: &str,
+        file_extension: &str,
+        file_type: &str,
+    ) -> Result<ExportTaskResponse, McpError> {
+        let access = self.access_token()?;
+        let response = match self.agent.post(&self.endpoint("/drive/v1/export_tasks"))
+            .set("Authorization", &format!("Bearer {access}"))
+            .send_json(json!({
+                "token": token,
+                "file_extension": file_extension,
+                "type": file_type,
+            }))
+        {
+            Ok(response) => response,
+            Err(ureq::Error::Status(_, response)) => return Err(status_error_from_response(response, "创建导出任务")),
+            Err(err) => return Err(McpError::Transport(format!("创建导出任务请求失败: {err}"))),
+        };
+
+        let value: Value = response.into_json()
+            .map_err(|err| McpError::InvalidResponse(format!("导出任务响应解析失败: {err}")))?;
+
+        let ticket = value
+            .get("ticket")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::InvalidResponse("export_tasks missing ticket".into()))?
+            .to_string();
+
+        Ok(ExportTaskResponse { ticket })
+    }
+
+    /// Poll export task status. Returns ExportTaskResult when job_status == 0 (success).
+    pub fn get_export_task_status(
+        &self,
+        ticket: &str,
+        token: &str,
+    ) -> Result<Option<ExportTaskResult>, McpError> {
+        let access = self.access_token()?;
+        let value = call_openapi_json(
+            self.agent.get(&self.endpoint(&format!("/drive/v1/export_tasks/{ticket}")))
+                .query("token", token)
+                .set("Authorization", &format!("Bearer {access}")),
+            "查询导出任务状态",
+        )?;
+
+        let result = value
+            .get("result")
+            .ok_or_else(|| McpError::InvalidResponse("export task status missing result".into()))?;
+        let job_status = result
+            .get("job_status")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
+
+        match job_status {
+            0 => {
+                // Success
+                let file_token = result
+                    .get("file_token")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        McpError::InvalidResponse("export result missing file_token".into())
+                    })?
+                    .to_string();
+                Ok(Some(ExportTaskResult { file_token }))
+            }
+            1 | 2 => Ok(None), // Initializing or processing
+            _ => {
+                let msg = result
+                    .get("job_error_msg")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown export error");
+                Err(McpError::Transport(format!(
+                    "导出任务失败(status={job_status}): {msg}"
+                )))
+            }
+        }
+    }
+
+    /// Download the exported file binary content.
+    pub fn download_export_file(&self, file_token: &str) -> Result<Vec<u8>, McpError> {
+        let access = self.access_token()?;
+        let url = self.endpoint(&format!(
+            "/drive/v1/export_tasks/file/{file_token}/download"
+        ));
+        let response = match self.agent.get(&url).set("Authorization", &format!("Bearer {access}")).call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(_, response)) => {
+                return Err(status_error_from_response(response, "下载导出文件"));
+            }
+            Err(err) => return Err(McpError::Transport(format!("下载导出文件请求失败: {err}"))),
+        };
+
+        let mut buf = Vec::new();
+        response
+            .into_reader()
+            .read_to_end(&mut buf)
+            .map_err(|err| McpError::Transport(format!("读取导出文件内容失败: {err}")))?;
+        Ok(buf)
     }
 }
 
