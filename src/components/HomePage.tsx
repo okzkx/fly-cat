@@ -66,6 +66,65 @@ function formatSyncTime(isoString: string): string {
   }
 }
 
+function collectDescendantDocumentIds(node: ScopeTreeDataNode): string[] {
+  const ids: string[] = [];
+  if (node.scopeValue?.documentId) {
+    ids.push(node.scopeValue.documentId);
+  }
+  if (node.children) {
+    for (const child of node.children) {
+      ids.push(...collectDescendantDocumentIds(child));
+    }
+  }
+  return ids;
+}
+
+function AggregateSyncStatusTag({
+  treeNode,
+  syncStatuses,
+  syncingIds,
+  activeTask
+}: {
+  treeNode: ScopeTreeDataNode;
+  syncStatuses: Record<string, DocumentSyncStatus>;
+  syncingIds: Set<string>;
+  activeTask: HomePageProps["activeSyncTask"];
+}): React.JSX.Element | null {
+  const docIds = collectDescendantDocumentIds(treeNode);
+  if (docIds.length === 0) {
+    return null;
+  }
+  const tagStyle = { fontSize: 11, lineHeight: "18px", marginRight: 0 };
+
+  let synced = 0;
+  let failed = 0;
+  let syncing = false;
+  for (const id of docIds) {
+    if (syncingIds.has(id)) {
+      syncing = true;
+    }
+    const status = syncStatuses[id];
+    if (status?.status === "synced") {
+      synced++;
+    } else if (status?.status === "failed") {
+      failed++;
+    }
+  }
+
+  if (syncing) {
+    const processed = activeTask?.counters.processed ?? 0;
+    const total = activeTask?.counters.total ?? 0;
+    return <Tag color="processing" style={tagStyle}>同步中 {processed}/{total}</Tag>;
+  }
+  if (synced === docIds.length) {
+    return <Tag color="success" style={tagStyle}>全部已同步</Tag>;
+  }
+  if (synced > 0 || failed > 0) {
+    return <Tag color={failed > 0 ? "warning" : "processing"} style={tagStyle}>{synced}/{docIds.length} 已同步</Tag>;
+  }
+  return <Tag style={tagStyle}>未同步</Tag>;
+}
+
 function DocumentSyncStatusTag({
   documentId,
   syncStatuses,
@@ -94,6 +153,44 @@ function DocumentSyncStatusTag({
     return <Tag color="processing" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>同步中 {processed}/{total}</Tag>;
   }
   return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>未同步</Tag>;
+}
+
+function NodeSyncStatusTag({
+  treeNode,
+  syncStatuses,
+  syncingIds,
+  activeTask
+}: {
+  treeNode: ScopeTreeDataNode;
+  syncStatuses: Record<string, DocumentSyncStatus>;
+  syncingIds: Set<string>;
+  activeTask: HomePageProps["activeSyncTask"];
+}): React.JSX.Element | null {
+  const nodeKind = treeNode.nodeKind;
+  if (!nodeKind || Object.keys(syncStatuses).length === 0) {
+    return null;
+  }
+  if (nodeKind === "bitable") {
+    return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>不支持</Tag>;
+  }
+  if (nodeKind === "document") {
+    return (
+      <DocumentSyncStatusTag
+        documentId={treeNode.scopeValue?.documentId}
+        syncStatuses={syncStatuses}
+        syncingIds={syncingIds}
+        activeTask={activeTask}
+      />
+    );
+  }
+  return (
+    <AggregateSyncStatusTag
+      treeNode={treeNode}
+      syncStatuses={syncStatuses}
+      syncingIds={syncingIds}
+      activeTask={activeTask}
+    />
+  );
 }
 
 function selectedKey(scope: SyncScope | null): string[] {
@@ -347,8 +444,7 @@ export default function HomePage({
                   );
                 }
 
-                const scope = treeNode.scopeValue;
-                const nodeKind = treeNode.nodeKind ?? scope?.kind ?? "space";
+                const nodeKind = treeNode.nodeKind ?? treeNode.scopeValue?.kind ?? "space";
                 const icon =
                   nodeKind === "document" ? (
                     <FileTextOutlined style={{ color: "#1677ff" }} />
@@ -360,20 +456,16 @@ export default function HomePage({
                     <CloudSyncOutlined style={{ color: "#722ed1" }} />
                   );
 
-                const showSyncStatus = nodeKind === "document" && Object.keys(documentSyncStatuses).length > 0;
-
                 return (
                   <Space size={4}>
                     {icon}
                     <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
-                    {showSyncStatus && (
-                      <DocumentSyncStatusTag
-                        documentId={scope?.documentId}
-                        syncStatuses={documentSyncStatuses}
-                        syncingIds={syncingIds}
-                        activeTask={activeSyncTask}
-                      />
-                    )}
+                    <NodeSyncStatusTag
+                      treeNode={treeNode}
+                      syncStatuses={documentSyncStatuses}
+                      syncingIds={syncingIds}
+                      activeTask={activeSyncTask}
+                    />
                   </Space>
                 );
               }}
