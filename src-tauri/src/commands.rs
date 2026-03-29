@@ -2258,6 +2258,30 @@ pub fn get_synced_document_ids(sync_root: String) -> Vec<String> {
 }
 
 #[tauri::command]
+pub fn get_document_sync_statuses(
+    sync_root: String,
+) -> std::collections::HashMap<String, crate::model::DocumentSyncStatusEntry> {
+    let path = std::path::Path::new(&sync_root);
+    let manifest = crate::storage::load_manifest(path).unwrap_or_default();
+    let mut result = std::collections::HashMap::new();
+    for record in manifest.records {
+        let status = if record.status == "success" {
+            "synced".to_string()
+        } else {
+            "failed".to_string()
+        };
+        result.insert(
+            record.document_id,
+            crate::model::DocumentSyncStatusEntry {
+                status,
+                last_synced_at: record.last_synced_at,
+            },
+        );
+    }
+    result
+}
+
+#[tauri::command]
 pub fn get_runtime_info() -> RuntimeInfo {
     RuntimeInfo {
         runtime: "tauri",
