@@ -1,6 +1,7 @@
 export type SyncLifecycleState =
   | "idle"
   | "preparing"
+  | "discovering"
   | "syncing"
   | "partial-failed"
   | "completed";

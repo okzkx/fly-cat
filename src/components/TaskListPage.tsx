@@ -68,7 +68,10 @@ function failureCategoryToTag(category: string): { color: string; text: string }
   }
 }
 
-function statusToTag(status: SyncTask["status"]): { color: string; text: string } {
+function statusToTag(status: SyncTask["status"], lifecycleState: SyncTask["lifecycleState"]): { color: string; text: string } {
+  if (status === "syncing" && lifecycleState === "discovering") {
+    return { color: "processing", text: "发现文档中" };
+  }
   switch (status) {
     case "syncing":
       return { color: "processing", text: "同步中" };
@@ -188,27 +191,37 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
       {
         title: "进度",
         key: "progress",
-        render: (_: unknown, record: SyncTask) => <Progress percent={record.progress} size="small" />
+        render: (_: unknown, record: SyncTask) => {
+          if (record.status === "syncing" && record.lifecycleState === "discovering") {
+            return <Progress percent={0} size="small" status="active" />;
+          }
+          return <Progress percent={record.progress} size="small" />;
+        }
       },
       {
         title: "状态",
         key: "status",
         render: (_: unknown, record: SyncTask) => {
-          const tag = statusToTag(record.status);
+          const tag = statusToTag(record.status, record.lifecycleState);
           return <Tag color={tag.color}>{tag.text}</Tag>;
         }
       },
       {
         title: "统计",
         key: "counters",
-        render: (_: unknown, record: SyncTask) => (
-          <Space direction="vertical" size={2}>
-            <Text>{`${record.counters.succeeded} 成功 / ${record.counters.skipped} 跳过 / ${record.counters.failed} 失败`}</Text>
-            {record.failureSummary && (
-              <Text type="secondary">{record.failureSummary.message}</Text>
-            )}
-          </Space>
-        )
+        render: (_: unknown, record: SyncTask) => {
+          if (record.status === "syncing" && record.lifecycleState === "discovering") {
+            return <Text type="secondary">正在发现文档...</Text>;
+          }
+          return (
+            <Space direction="vertical" size={2}>
+              <Text>{`${record.counters.succeeded} 成功 / ${record.counters.skipped} 跳过 / ${record.counters.failed} 失败`}</Text>
+              {record.failureSummary && (
+                <Text type="secondary">{record.failureSummary.message}</Text>
+              )}
+            </Space>
+          );
+        }
       },
       {
         title: "操作",
