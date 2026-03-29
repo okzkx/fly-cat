@@ -116,9 +116,9 @@ function scopeLabel(task: SyncTask): string {
   }
 }
 
-export default function TaskListPage({ onGoBack }: TaskListPageProps): React.JSX.Element {
+export default function TaskListPage({ onGoBack, initialTasks }: TaskListPageProps): React.JSX.Element {
   const { message } = App.useApp();
-  const [tasks, setTasks] = useState<SyncTask[]>([]);
+  const [tasks, setTasks] = useState<SyncTask[]>(initialTasks ?? []);
 
   const runTaskAction = async (action: () => Promise<unknown>): Promise<void> => {
     try {
