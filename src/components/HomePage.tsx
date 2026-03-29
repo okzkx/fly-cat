@@ -275,24 +275,41 @@ function collectSyncedDocKeysFromTree(
   return keys;
 }
 
+/**
+ * Collect document IDs for nodes matching treeKeys.
+ * For folder nodes (without documentId), recursively collect all descendant document IDs.
+ */
 function collectDocumentIdsByTreeKeys(
   nodes: KnowledgeBaseNode[],
   treeKeys: Set<string>
 ): string[] {
   const docIds: string[] = [];
-  const stack = [...nodes];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (!node) {
-      continue;
-    }
-    if (treeKeys.has(node.key) && node.documentId) {
-      docIds.push(node.documentId);
-    }
-    if (node.children && node.children.length > 0) {
-      stack.push(...node.children);
+
+  function collectFromNode(node: KnowledgeBaseNode, shouldCollect: boolean): void {
+    // If this node is in treeKeys or we're in a "collect all descendants" mode
+    if (shouldCollect || treeKeys.has(node.key)) {
+      // Collect this node's documentId if it has one
+      if (node.documentId) {
+        docIds.push(node.documentId);
+      }
+      // For folder nodes, collect all descendants
+      if (node.children && node.children.length > 0) {
+        for (const child of node.children) {
+          collectFromNode(child, true);
+        }
+      }
+    } else if (node.children && node.children.length > 0) {
+      // Not in collect mode, but still need to check children
+      for (const child of node.children) {
+        collectFromNode(child, false);
+      }
     }
   }
+
+  for (const node of nodes) {
+    collectFromNode(node, false);
+  }
+
   return docIds;
 }
 
