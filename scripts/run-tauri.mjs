@@ -132,6 +132,186 @@ function probePort(port) {
   });
 }
 
+/**
+ * Find the PID of the process occupying a given port on the local machine.
+ * Returns null if the port is not in use or the PID cannot be determined.
+ */
+export async function findPortOwnerPid(
+  port,
+  { platform = process.platform, spawnImpl = spawn } = {},
+) {
+  if (platform === "win32") {
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const child = spawnImpl("netstat", ["-ano"], {
+          stdio: ["ignore", "pipe", "pipe"],
+          shell: false,
+          encoding: "utf-8",
+        });
+
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", reject);
+        child.on("exit", (code) => {
+          if (code === 0) { resolve(stdout); }
+          else { reject(new Error(stderr || `netstat exited with code ${code}`)); }
+        });
+      });
+
+      const pattern = new RegExp(`:\\s*${port}\\s+.*\\s+LISTENING\\s+(\\d+)\\s*$`, "m");
+      const match = result.match(pattern);
+      return match ? Number(match[1]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const child = spawnImpl("lsof", ["-ti", `:${port}`], {
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: false,
+        encoding: "utf-8",
+      });
+
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.on("error", reject);
+      child.on("exit", (code) => {
+        if (code === 0) { resolve(stdout); }
+        else { reject(new Error(stderr || `lsof exited with code ${code}`)); }
+      });
+    });
+
+    const pid = result.trim();
+    return pid ? Number(pid) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check whether a given PID belongs to a Node.js process.
+ * Returns true if the process name matches, false otherwise.
+ */
+export async function isNodeProcess(
+  pid,
+  { platform = process.platform, spawnImpl = spawn } = {},
+) {
+  if (!pid) {
+    return false;
+  }
+
+  if (platform === "win32") {
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const child = spawnImpl("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+          stdio: ["ignore", "pipe", "pipe"],
+          shell: false,
+          encoding: "utf-8",
+        });
+
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", reject);
+        child.on("exit", (code) => {
+          if (code === 0) { resolve(stdout); }
+          else { reject(new Error(stderr || `tasklist exited with code ${code}`)); }
+        });
+      });
+
+      return /node\.exe/i.test(result);
+    } catch {
+      return false;
+    }
+  }
+
+  try {
+    const result = await new Promise((resolve, reject) => {
+      const child = spawnImpl("ps", ["-p", String(pid), "-o", "comm="], {
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: false,
+        encoding: "utf-8",
+      });
+
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.on("error", reject);
+      child.on("exit", (code) => {
+        if (code === 0) { resolve(stdout); }
+        else { reject(new Error(stderr || `ps exited with code ${code}`)); }
+      });
+    });
+
+    return /^node\b/.test(result.trim());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Kill orphaned Node.js processes occupying ports in the dev port range.
+ * Scans each port, checks if it's held by a Node process, and kills the tree if so.
+ * Returns the number of processes killed.
+ */
+export async function killOrphanedDevProcesses(
+  startPort,
+  maxAttempts,
+  { platform = process.platform, spawnImpl = spawn } = {},
+) {
+  let killed = 0;
+
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const port = startPort + offset;
+
+    if (await probePort(port)) {
+      continue;
+    }
+
+    const pid = await findPortOwnerPid(port, { platform, spawnImpl });
+    if (!pid) {
+      continue;
+    }
+
+    const nodeOwned = await isNodeProcess(pid, { platform, spawnImpl });
+    if (!nodeOwned) {
+      continue;
+    }
+
+    const killCommand = buildProcessTreeKillCommand(pid, platform);
+    if (!killCommand) {
+      continue;
+    }
+
+    try {
+      await new Promise((resolveKill) => {
+        const killer = spawnImpl(killCommand.command, killCommand.args, {
+          stdio: "ignore",
+          shell: false,
+        });
+
+        killer.once("error", () => resolveKill());
+        killer.once("exit", () => resolveKill());
+      });
+
+      console.log(`[flycat] Killed orphaned Node process (PID ${pid}) on port ${port}`);
+      killed += 1;
+    } catch {
+      console.warn(`[flycat] Warning: failed to kill orphaned process on port ${port}`);
+    }
+  }
+
+  return killed;
+}
+
 async function findAvailablePort(startPort, maxAttempts) {
   for (let offset = 0; offset < maxAttempts; offset += 1) {
     const port = startPort + offset;
@@ -170,6 +350,8 @@ function spawnTauri(extraArgs, extraEnv = {}) {
 }
 
 async function runDev() {
+  await killOrphanedDevProcesses(preferredDevPort, maxDevPortAttempts);
+
   const devPort = await findAvailablePort(preferredDevPort, maxDevPortAttempts);
   const generatedDir = join(projectRoot, "scripts", ".generated");
   const overridePath = join(generatedDir, "tauri.dev.override.json");
