@@ -2272,7 +2272,7 @@ pub fn get_runtime_info() -> RuntimeInfo {
 }
 
 #[tauri::command]
-pub fn get_app_bootstrap(app: AppHandle) -> Result<AppBootstrap, String> {
+pub async fn get_app_bootstrap(app: AppHandle) -> Result<AppBootstrap, String> {
     let settings: Option<AppSettings> = load_json_file(settings_file_path(&app)?)?;
     let resolved_sync_root = settings
         .as_ref()

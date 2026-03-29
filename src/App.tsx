@@ -295,7 +295,6 @@ export default function App(): React.JSX.Element {
                   setSelectedScope(result.spaces[0] ? buildSpaceScope(result.spaces[0]) : null);
                   setSelectedSources([]);
                   setLoadedSpaceTrees({});
-                  void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
                   if (result.validation.usable && result.user) {
                     setAuthed(true);
                     setUserInfo(result.user);
@@ -305,6 +304,7 @@ export default function App(): React.JSX.Element {
                     setUserInfo(null);
                     setCurrentPage("auth");
                   }
+                  void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
                 }}
                 onGoToSettings={() => setCurrentPage("settings")}
               />
