@@ -1,5 +1,5 @@
 ---
-name: opencat-run-task
+name: opencat-work
 description: OpenCat 任务列表连续执行器。按 TODO.md 中的优先级顺序执行任务，通过 SubAgent + opencat-task 逐个执行、验收、归档，全程无需人工干预。Use when the user wants to run through a TODO.md task list automatically.
 license: MIT
 compatibility: Requires opencat-task skill to be available in the project.
