@@ -316,14 +316,14 @@ export default function App(): React.JSX.Element {
                     selectedSources.length > 0 ? normalizeSelectedSources(selectedSources) : effectiveSelectedSources,
                     syncTarget
                   );
-                  await startSyncTask(task.id);
                   setTasks(await getSyncTasks());
+                  startSyncTask(task.id);
                   return { task };
                 }}
               />
             )}
 
-            {currentPage === "tasks" && authed && <TaskListPage onGoBack={() => setCurrentPage("home")} />}
+            {currentPage === "tasks" && authed && <TaskListPage onGoBack={() => setCurrentPage("home")} initialTasks={tasks} />}
           </Content>
         </Layout>
       </AntdApp>

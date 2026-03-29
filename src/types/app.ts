@@ -109,6 +109,7 @@ export interface HomePageProps {
 
 export interface TaskListPageProps {
   onGoBack: () => void;
+  initialTasks?: SyncTask[];
 }
 
 export interface AuthPageProps {
