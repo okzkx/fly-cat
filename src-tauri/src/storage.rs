@@ -37,6 +37,11 @@ pub fn upsert_manifest_record(manifest: &mut SyncManifest, record: ManifestRecor
     manifest.records.push(record);
 }
 
+pub fn remove_manifest_records(manifest: &mut SyncManifest, document_ids: &[String]) {
+    let id_set: std::collections::HashSet<&str> = document_ids.iter().map(|s| s.as_str()).collect();
+    manifest.records.retain(|r| !id_set.contains(r.document_id.as_str()));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
