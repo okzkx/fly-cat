@@ -457,9 +457,24 @@ export default function HomePage({
       return;
     }
     onScopeChange(node.scopeValue);
-    // Synchronize checkbox: click name also checks the box (only for checkable nodes)
+    // Synchronize checkbox: click name toggles the box to match current checked state
     if (!node.disableCheckbox) {
-      void onToggleSource(node.scopeValue, true).then(({ replacedCrossSpaceSelection }) => {
+      const nodeKey = String(node.key);
+      const isChecked = allCheckedKeys.has(nodeKey);
+      const shouldBeChecked = !isChecked;
+      // Track unchecked synced documents (same logic as onCheck)
+      if (syncedDocTreeKeys.has(nodeKey)) {
+        setUncheckedSyncedDocKeys((prev) => {
+          const next = new Set(prev);
+          if (shouldBeChecked) {
+            next.delete(nodeKey);
+          } else {
+            next.add(nodeKey);
+          }
+          return next;
+        });
+      }
+      void onToggleSource(node.scopeValue, shouldBeChecked).then(({ replacedCrossSpaceSelection }) => {
         if (replacedCrossSpaceSelection) {
           message.warning("一次只能在同一知识库内组合选择目录或文档，已切换到当前知识库。");
         }
