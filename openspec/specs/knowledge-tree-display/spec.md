@@ -1,5 +1,8 @@
-## MODIFIED Requirements
+# knowledge-tree-display Specification
 
+## Purpose
+TBD - created by archiving change remove-chinese-labels. Update Purpose after archive.
+## Requirements
 ### Requirement: Tree node labels
 Tree nodes MUST display the node title alongside a type icon only. The system SHALL NOT render additional text labels (such as Chinese type tags) for the node type.
 
@@ -22,3 +25,4 @@ Tree nodes MUST display the node title alongside a type icon only. The system SH
 #### Scenario: Bitable node rendering
 - **WHEN** a bitable node is rendered in the knowledge tree
 - **THEN** it shows a table icon and the bitable title, with no "多维表格" tag
+
