@@ -51,11 +51,9 @@ When a parent node and ALL of its descendants are in the same state (all checked
 - **WHEN** cascading check causes previously unchecked synced documents to become checked
 - **THEN** those document keys are removed from `uncheckedSyncedDocKeys`
 
-## MODIFIED Requirements
-
 ### Requirement: Parent node half-checked state calculation
-The existing requirement for parent half-checked display is updated: the system SHALL compute half-checked keys from the actual checked keys set rather than passing an empty `halfChecked` array. The `checkedKeys` prop MUST only contain truly checked keys; Ant Design's Tree component will compute the visual half-checked state automatically based on parent-child key relationships.
+The system SHALL compute half-checked keys from the actual checked keys set. The `checkedKeys` prop MUST contain truly checked keys and computed half-checked keys, using `checkStrictly` mode to prevent Ant Design's default cascade behavior.
 
 #### Scenario: Half-checked parent computed from children
 - **WHEN** a folder node has some but not all descendant keys in the checked keys set
-- **THEN** Ant Design Tree renders the folder node with an indeterminate (half-checked) visual state automatically
+- **THEN** the folder node is rendered with an indeterminate (half-checked) visual state
