@@ -453,8 +453,17 @@ export default function HomePage({
 
   const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
     const node = info.node as ScopeTreeDataNode;
-    if (node.scopeValue) {
-      onScopeChange(node.scopeValue);
+    if (!node.scopeValue) {
+      return;
+    }
+    onScopeChange(node.scopeValue);
+    // Synchronize checkbox: click name also checks the box (only for checkable nodes)
+    if (!node.disableCheckbox) {
+      void onToggleSource(node.scopeValue, true).then(({ replacedCrossSpaceSelection }) => {
+        if (replacedCrossSpaceSelection) {
+          message.warning("一次只能在同一知识库内组合选择目录或文档，已切换到当前知识库。");
+        }
+      });
     }
   };
 
@@ -560,6 +569,10 @@ export default function HomePage({
                     }
                     return next;
                   });
+                }
+                // Synchronize highlight: checking checkbox also selects/highlights the node
+                if (info.checked) {
+                  onScopeChange(changedScope);
                 }
                 void onToggleSource(changedScope, info.checked).then(({ replacedCrossSpaceSelection }) => {
                   if (replacedCrossSpaceSelection) {
