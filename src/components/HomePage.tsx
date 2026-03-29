@@ -883,7 +883,7 @@ export default function HomePage({
                       syncStatus={documentSyncStatuses[treeNode.scopeValue?.documentId || ""]}
                       freshnessMap={freshnessMap}
                     />
-                    {treeNode.nodeKind === "document" && treeNode.nodeToken && (
+                    {(treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable") && treeNode.nodeToken && (
                       <Button
                         type="text"
                         size="small"
@@ -891,7 +891,10 @@ export default function HomePage({
                         title="在浏览器打开"
                         onClick={(e) => {
                           e.stopPropagation();
-                          void openDocumentInBrowser(treeNode.nodeToken!, "document");
+                          void openDocumentInBrowser(
+                            treeNode.nodeToken!,
+                            treeNode.nodeKind === "bitable" ? "bitable" : "document"
+                          );
                         }}
                         style={{ padding: "0 4px" }}
                       />
