@@ -1,0 +1,7 @@
+name: fix-sync-task-list-freeze
+status: active
+created: "2026-03-29"
+artifacts:
+  proposal: true
+  design: false
+  tasks: true
