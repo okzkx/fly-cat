@@ -708,7 +708,7 @@ fn validate_selected_sources(selected_sources: &[SelectedSyncScope]) -> Result<V
         let space_id = normalized[0].space_id.clone();
         if normalized
             .iter()
-            .any(|source| source.kind == "space" || source.space_id != space_id)
+            .any(|source| source.space_id != space_id)
         {
             return Err("一次只能在同一知识库内组合选择目录或文档。".into());
         }

@@ -85,7 +85,6 @@ function buildTreeData(
         spaceRef: space,
         nodeKind: "space",
         spaceId: space.id,
-        disableCheckbox: true,
         children: loadedSpaceTrees[space.id]
           ? buildTreeNodes(
               loadedSpaceTrees[space.id],
@@ -262,7 +261,7 @@ export default function HomePage({
               onCheck={(_checkedKeys, info) => {
                 const changedNode = info.node as ScopeTreeDataNode;
                 const changedScope = changedNode.scopeValue;
-                if (!changedScope || changedScope.kind === "space") {
+                if (!changedScope) {
                   return;
                 }
                 void onToggleSource(changedScope, info.checked).then(({ replacedCrossSpaceSelection }) => {
