@@ -72,9 +72,10 @@ Before each commit:
 - do not stage build outputs, caches, secrets, or unrelated local work
 
 Commit message rules:
-- `purpose commit`: use a concise checkpoint message that records purpose/proposal artifacts for the change
-- `apply commit`: use a concise checkpoint message that records completed implementation work for the change
-- `archive commit`: derive the git commit title and body from `change-report.zh-CN.md`
+- all three commits **must** start with a stage prefix: `[propose]`, `[apply]`, or `[archive]` respectively
+- `purpose commit`: message format `[propose] <change-name>: <concise description of the purpose/proposal artifacts>`
+- `apply commit`: message format `[apply] <change-name>: <concise description of the completed implementation work>`
+- `archive commit`: message format `[archive] <change-name>: <Chinese summary title from change-report.zh-CN.md>`
 - for the archive commit, use the report's Chinese summary as the source of truth for both title and message body
 - keep the archive title concise and summary-like, reflecting the main outcome of the archived change
 - keep the archive body aligned with the report's key points, such as motivation, scope, spec impact, and task completion, when those sections exist
@@ -167,7 +168,8 @@ Commit message rules:
    - inspect reusable sibling paths in this order: `../<repo-name>-worktree`, then `../<repo-name>-2-worktree`, `../<repo-name>-3-worktree`, and so on
    - if a candidate path does not exist, create a linked worktree there from `<base_branch>` and use it
    - if a candidate path already exists and is on `<base_branch>` and clean, reuse it
-   - if a candidate path already exists but is not on `<base_branch>`, treat it as occupied by another AI run and continue to the next candidate instead of blocking
+   - if a candidate path already exists but is detached and clean, reuse it (detached is normal after a previous merge + branch delete)
+   - if a candidate path already exists and is on a different named branch (not detached), treat it as occupied by another AI run and continue to the next candidate instead of blocking
    - if a candidate path already exists on `<base_branch>` but is dirty or otherwise unsafe, continue to the next candidate or create a new one
    - in the linked worktree, switch to `<work_branch>`
    - verify `git worktree list` reflects the expected branch/path before continuing
