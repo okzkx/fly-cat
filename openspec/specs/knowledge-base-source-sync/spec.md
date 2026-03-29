@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Knowledge Base Scoped Discovery
-The system MUST discover, classify, present, and queue only documents that belong to user-selected knowledge base sources. A selectable source MUST support an entire knowledge base, a directory subtree within that knowledge base, or one or more selected subtree roots from the same knowledge base where each root can be either a directory node or a document node. Selecting a directory source MUST implicitly include every descendant document under that directory. Selecting a document source that has descendant documents MUST implicitly include that document and all descendant documents in the effective sync set. Selecting an entire knowledge base (space) MUST be presented as a checkable option in the source tree and MUST include all descendant documents within that space when discovery runs. Source discovery used for scoped selection MUST return only the immediate children of the expanded knowledge base or parent node for each expansion step, MUST classify non-directory items such as Feishu Bitable as leaf nodes rather than directories, MUST classify knowledge-base library/container nodes that represent grouped documents as directory nodes, and MUST NOT issue additional remote discovery requests when a user only changes local checkbox selection state.
+The system MUST discover, classify, present, and queue only documents that belong to user-selected knowledge base sources. A selectable source MUST support an entire knowledge base, a directory subtree within that knowledge base, or one or more selected subtree roots from the same knowledge base where each root can be either a directory node or a document node. Selecting a directory source MUST implicitly include every descendant document under that directory. Selecting a document source that has descendant documents MUST implicitly include that document and all descendant documents in the effective sync set. Selecting an entire knowledge base (space) MUST be presented as a checkable option in the source tree and MUST include all descendant documents within that space when discovery runs. Source discovery used for scoped selection MUST return only the immediate children of the expanded knowledge base or parent node for each expansion step, MUST classify non-directory items such as Feishu Bitable as leaf nodes rather than directories, MUST classify knowledge-base library/container nodes that represent grouped documents as directory nodes, and MUST NOT issue additional remote discovery requests when a user only changes local checkbox selection state. The system MUST emit a progress event to the frontend after each individual document completes synchronization, and MUST report the total document count so the frontend can display "已处理 X / 共 Y" alongside existing success/skip/failure counters.
 
 #### Scenario: Ignore non-knowledge-base sources
 - **WHEN** the source enumeration includes Feishu document containers outside selected knowledge base sources
@@ -65,6 +65,14 @@ The system MUST discover, classify, present, and queue only documents that belon
 #### Scenario: Space discovery finds all documents via root listing
 - **WHEN** a space-level scope is used for document discovery and the scope has no node_token
 - **THEN** the system lists child nodes from the space root and recursively collects all descendant documents
+
+#### Scenario: Progress event emitted per document
+- **WHEN** a single document in the sync queue finishes processing (success or failure)
+- **THEN** the backend emits one sync-progress event with updated counters reflecting that single document's completion
+
+#### Scenario: Total document count reported in counters
+- **WHEN** the sync task starts and document discovery completes
+- **THEN** the counters.total field reflects the total number of documents to synchronize and the frontend displays "已处理 X / 共 Y" where Y equals counters.total
 
 ### Requirement: Incremental Synchronization Planning
 The system MUST perform incremental synchronization using persisted sync state for the currently selected knowledge base sources, and MUST skip unchanged selected documents safely without re-queuing documents outside the current source set.
@@ -143,4 +151,19 @@ The system MUST use the same user authorization context for synchronization exec
 #### Scenario: Session expiry during sync does not fall back to app-only access
 - **WHEN** the signed-in user's session expires or is revoked while a synchronization task is running
 - **THEN** the task stops or becomes partially failed with an authorization-specific error instead of silently falling back to application-only credentials
+
+### Requirement: Per-Document Sync Progress Display
+The frontend MUST display the total document count alongside per-document progress in the task list. The "统计" column SHALL show "已处理 X / 共 Y" above the existing success/skip/failure counters, where X is counters.processed and Y is counters.total.
+
+#### Scenario: Syncing task shows total count
+- **WHEN** a sync task is in "syncing" state with counters.processed = 3 and counters.total = 20
+- **THEN** the UI displays "已处理 3 / 共 20" above the success/skip/failure line
+
+#### Scenario: Completed task shows total count
+- **WHEN** a sync task is in "completed" state with counters.processed = 20 and counters.total = 20
+- **THEN** the UI displays "已处理 20 / 共 20" above the success/skip/failure line
+
+#### Scenario: Discovering task shows total as not yet known
+- **WHEN** a sync task is in "discovering" lifecycle state
+- **THEN** the UI shows "正在发现文档..." without a total count, preserving existing behavior
 
