@@ -1,20 +1,13 @@
 # Tasks
 
-## 1. 巻加打开工作区按钮封装函数
+## 1. 添加打开工作区按钮封装函数
 
-在 `src/utils/tauriRuntime.ts` 中添加 `openWorkspaceFolder` 封装函数，用于 Tauri 的 opener 插件在系统文件管理器中打开同步目录。
+- [x] 在 `src/utils/tauriRuntime.ts` 中添加 `openWorkspaceFolder` 封装函数，使用 Tauri 的 opener 插件在系统文件管理器中打开同步目录
+- [x] 目录不存在时显示错误提示
+- [x] 打开失败时显示错误提示
 
-- **路径**: 目录不存在时，应禁用按钮
-- 目录无效时显示提示信息
+## 2. 在 HomePage 添加打开工作区按钮
 
-- 目录无效时静默处理错误
-
-- 目录不存在时静默打开（不提示错误)
-
-- 打开失败时，提示信息并让用户手动验证
-
-- 目录权限错误时，错误信息
-
-- 目录不存在时警告
-
-- 目录无效时显示警告但不保持启用状态
+- [x] 在 HomePage 的"实际写入目录"显示区域添加"打开"按钮
+- [x] 按钮使用 FolderOpenOutlined 图标
+- [x] 点击按钮调用 openWorkspaceFolder 函数
