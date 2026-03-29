@@ -1,11 +1,11 @@
 ---
 name: opencat-work
-description: Run a staged OpenSpec workflow with checkpoint commits and reusable linked worktree copies: run `opencat-check`, finish the purpose/proposal stage in the main worktree, create a branch and record the purpose commit, select or create a `-worktree` sibling copy for apply, rebase onto the latest trunk before archive, commit after apply and archive, merge back, delete the branch, and keep the worktree copies for reuse. Use when the user wants end-to-end OpenSpec work with safer git checkpoints and reusable worktree isolation, including automatic fallback to another worktree copy when one is already occupied.
+description: Run a staged OpenSpec workflow with checkpoint commits and reusable linked worktree copies: finish the purpose/proposal stage in the main worktree, create a branch and record the purpose commit, select or create a `-worktree` sibling copy for apply, rebase onto the latest trunk before archive, commit after apply and archive, merge back, delete the branch, and keep the worktree copies for reuse. Use when the user wants end-to-end OpenSpec work with safer git checkpoints and reusable worktree isolation, including automatic fallback to another worktree copy when one is already occupied. Prerequisite: run `opencat-check` manually before invoking this skill.
 license: MIT
-compatibility: Requires `opencat-check` to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
+compatibility: Requires `opencat-check` to have been run manually to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
 metadata:
   author: opencat
-  version: "1.3"
+  version: "1.4"
   derivedFrom: "openspec-all-in-one"
 ---
 
@@ -35,12 +35,12 @@ Use it when the user wants:
 
 ## Dependency
 
-Before this workflow, run `opencat-check`.
+`opencat-check` must be run **manually** before invoking this skill.
 
-`opencat-work` does **not** own environment installation anymore:
+`opencat-work` does **not** run environment checks itself:
+- do not invoke `opencat-check` from this skill
 - do not duplicate prerequisite checks here
 - do not invent bootstrap logic here
-- if `opencat-check` reports missing prerequisites, fix them there before continuing
 
 ## Git Defaults
 
@@ -108,12 +108,7 @@ Commit message rules:
    - otherwise derive a kebab-case change name from the request
    - if the request may refer to an existing active change, verify before creating a new one
 
-3. **Run environment check**
-
-   - invoke `opencat-check`
-   - continue only after prerequisites are confirmed usable
-
-4. **Prepare the git plan from the main worktree**
+3. **Prepare the git plan from the main worktree**
 
    From the main worktree:
    - capture the current branch as `<base_branch>`
@@ -132,7 +127,7 @@ Commit message rules:
    - if an existing candidate worktree is on `<base_branch>` but dirty, blocked, or otherwise unsafe to reuse, skip it and keep scanning for another candidate or create the next `-worktree` copy
    - pause only if no existing candidate can be reused and a new `-worktree` copy cannot be created safely
 
-5. **Run the purpose stage in the main worktree**
+4. **Run the purpose stage in the main worktree**
 
    Do **not** create a worktree yet and do **not** move to the linked worktree yet.
 
@@ -141,7 +136,7 @@ Commit message rules:
    - generate artifacts required for implementation
    - read dependency artifacts and CLI instructions before writing files
 
-6. **Validate after purpose**
+5. **Validate after purpose**
 
    In the main worktree, run:
 
@@ -153,7 +148,7 @@ Commit message rules:
    - fix straightforward issues and re-run validation
    - if the fix is unclear or risky, pause and report the blocker
 
-7. **Create the branch and record the purpose commit**
+6. **Create the branch and record the purpose commit**
 
    After purpose validation passes:
    - create and switch to `<work_branch>` from the current main-worktree state
@@ -165,7 +160,7 @@ Commit message rules:
    - the purpose commit would mix in unrelated changes
    - the branch cannot be created safely
 
-8. **Prepare or reuse the linked worktree for apply**
+7. **Prepare or reuse the linked worktree for apply**
 
    The apply stage is the first point where the linked worktree is used.
 
@@ -177,7 +172,7 @@ Commit message rules:
    - in the linked worktree, switch to `<work_branch>`
    - verify `git worktree list` reflects the expected branch/path before continuing
 
-9. **Run implementation in the linked worktree**
+8. **Run implementation in the linked worktree**
 
    Follow the `openspec-apply-change` behavior:
    - read context files from `openspec instructions apply --change "<name>" --json`
@@ -186,25 +181,25 @@ Commit message rules:
    - mark completed tasks in `tasks.md` immediately
    - stop if the work reveals a design issue that should be reflected in artifacts first
 
-10. **Validate after apply**
+9. **Validate after apply**
 
-    In the linked worktree, run again:
+   In the linked worktree, run again:
 
-    ```bash
-    openspec validate --change "<name>"
-    ```
+   ```bash
+   openspec validate --change "<name>"
+   ```
 
-    If validation fails:
-    - repair obvious issues and re-run
-    - do not continue to the apply commit or archive while validation is meaningfully broken unless the user explicitly approves
+   If validation fails:
+   - repair obvious issues and re-run
+   - do not continue to the apply commit or archive while validation is meaningfully broken unless the user explicitly approves
 
-11. **Create the apply commit**
+10. **Create the apply commit**
 
     After apply validation passes:
     - stage only implementation files relevant to the change
     - create the `apply commit`
 
-12. **Refresh trunk and rebase before archive**
+11. **Refresh trunk and rebase before archive**
 
     Before archive, move the work branch onto the latest trunk state.
 
@@ -220,7 +215,7 @@ Commit message rules:
     - do not ask the user to resolve ordinary or ambiguous code conflicts for you; the AI should finish the conflict resolution itself
     - pause only if the repository state is technically unrecoverable, such as corrupted git metadata or missing conflict inputs that prevent completing the rebase
 
-13. **Run archive in the linked worktree**
+12. **Run archive in the linked worktree**
 
     Follow the `openspec-archive-change` behavior:
     - check incomplete artifacts/tasks
@@ -243,13 +238,13 @@ Commit message rules:
       4. report clearly that archive completed via copy+delete fallback
     - when archive succeeds via either normal move or fallback, ensure the Chinese report is written into the final archived directory before moving to the archive commit
 
-14. **Create the archive commit**
+13. **Create the archive commit**
 
     After archive and report generation succeed:
     - stage only archive-related files relevant to the change
     - create the `archive commit`
 
-15. **Merge back from the main worktree**
+14. **Merge back from the main worktree**
 
     After the linked worktree workflow succeeds:
     - return to the original main worktree
@@ -274,7 +269,7 @@ Commit message rules:
     If merge cannot complete cleanly for reasons other than ordinary file conflicts:
     - pause and report the blocking state
 
-16. **Keep the worktree and delete the branch**
+15. **Keep the worktree and delete the branch**
 
     After a successful merge:
     - in the linked worktree, switch back to `<base_branch>` and ensure it is clean
@@ -285,7 +280,7 @@ Commit message rules:
 
 ## Default Behavior
 
-- When the user explicitly invokes `opencat-work`, run the whole workflow continuously through `check -> purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup`.
+- When the user explicitly invokes `opencat-work`, run the whole workflow continuously through `purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup`.
 - Keep the `simple|complex` classification for risk awareness, progress reporting, and decision quality, but do **not** use complexity alone as a reason to pause.
 - Pause only when a listed pause condition or a repository safety rule requires user confirmation.
 
@@ -315,7 +310,7 @@ During execution, keep progress updates compact and structured like:
 **Complexity:** simple|complex
 **Base:** <base-branch>
 **Worktree Branch:** <work-branch>
-**Stage:** check|purpose|validate|purpose-commit|worktree|apply|apply-commit|rebase|archive|archive-commit|merge|cleanup
+**Stage:** purpose|validate|purpose-commit|worktree|apply|validate|apply-commit|rebase|archive|archive-commit|merge|cleanup
 
 <short progress note>
 ```
@@ -339,7 +334,7 @@ On completion, summarize:
 ## Guardrails
 
 - Reuse the existing OpenSpec skills' logic instead of inventing a parallel workflow
-- Run `opencat-check` before purpose work rather than duplicating install logic here
+- `opencat-check` must be run manually before this skill; do not invoke it from within the workflow
 - Always read CLI-provided context files before implementation
 - Prefer reusable linked worktree copies outside the repo root rather than disposable per-change worktrees
 - Use `-worktree` suffix naming for reusable worktree copies and create the next numbered copy when an existing one is occupied
