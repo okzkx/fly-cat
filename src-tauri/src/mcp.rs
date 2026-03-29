@@ -197,6 +197,7 @@ pub fn exchange_user_access_token(
     code: &str,
     redirect_uri: &str,
 ) -> Result<FeishuOAuthTokenInfo, McpError> {
+    let scope = "docs:doc docs:document.media:download docs:document:export docx:document drive:drive drive:file drive:file:download offline_access";
     let response = ureq::post(FEISHU_TOKEN_ENDPOINT)
         .send_json(json!({
             "grant_type": "authorization_code",
@@ -204,6 +205,7 @@ pub fn exchange_user_access_token(
             "client_secret": app_secret,
             "code": code,
             "redirect_uri": redirect_uri,
+            "scope": scope,
         }))
         .map_err(|err| McpError::Transport(format!("OAuth token request failed: {err}")))?;
 
