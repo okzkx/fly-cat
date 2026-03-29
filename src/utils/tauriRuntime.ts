@@ -262,4 +262,16 @@ export async function getDocumentSyncStatuses(
   );
 }
 
+export async function removeSyncedDocuments(
+  syncRoot: string,
+  documentIds: string[]
+): Promise<number> {
+  if (!isTauriRuntime()) {
+    return 0;
+  }
+  return invoke<number>("remove_synced_documents", {
+    request: { syncRoot, documentIds }
+  });
+}
+
 export { TASK_EVENTS };

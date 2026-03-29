@@ -11,6 +11,7 @@ export {
   initializeTaskEventBridge,
   isTauriRuntime,
   logoutUser,
+  removeSyncedDocuments,
   resumeSyncTasks,
   retryFailedTask,
   saveAppSettings,

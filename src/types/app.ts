@@ -109,7 +109,7 @@ export interface HomePageProps {
   onLoadTreeChildren: (spaceId: string, parentNodeToken?: string) => Promise<void>;
   onOpenTasks: () => void;
   activeTaskSummary: string;
-  onCreateTask: () => Promise<HomeSyncResult | null>;
+  onCreateTask: (uncheckedSyncedDocumentIds: string[]) => Promise<HomeSyncResult | null>;
 }
 
 export interface TaskListPageProps {

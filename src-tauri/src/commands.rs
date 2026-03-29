@@ -4,7 +4,7 @@ use crate::mcp::{
 };
 use crate::model::SyncSourceDocument;
 use crate::render::markdown_output_path;
-use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
+use crate::storage::{load_manifest, remove_manifest_records, save_manifest, upsert_manifest_record};
 use crate::sync::{sync_document_content, sync_document_via_export, SyncPipelineError};
 use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -2541,6 +2541,89 @@ pub fn resume_sync_tasks(app: AppHandle, state: State<'_, AppState>) -> Result<V
     }
 
     Ok(resumable)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveSyncedDocumentsRequest {
+    pub sync_root: String,
+    pub document_ids: Vec<String>,
+}
+
+#[tauri::command]
+pub fn remove_synced_documents(
+    _app: AppHandle,
+    request: RemoveSyncedDocumentsRequest,
+) -> Result<u32, String> {
+    let path = std::path::Path::new(&request.sync_root);
+    let mut manifest = crate::storage::load_manifest(path).unwrap_or_default();
+
+    // Collect output paths and image assets to delete
+    let to_remove: Vec<(String, Vec<String>)> = request
+        .document_ids
+        .iter()
+        .filter_map(|id| {
+            manifest
+                .records
+                .iter()
+                .find(|r| r.document_id == *id)
+                .map(|r| (r.output_path.clone(), r.image_assets.clone()))
+        })
+        .collect();
+
+    // Remove files
+    let mut deleted_count = 0u32;
+    for (output_path, image_assets) in &to_remove {
+        let file_path = std::path::Path::new(output_path);
+        if file_path.exists() {
+            let _ = fs::remove_file(file_path);
+            deleted_count += 1;
+        }
+        for asset in image_assets {
+            let asset_path = std::path::Path::new(output_path)
+                .parent()
+                .unwrap_or(std::path::Path::new(&request.sync_root))
+                .join(asset);
+            if asset_path.exists() {
+                let _ = fs::remove_file(&asset_path);
+            }
+        }
+    }
+
+    // Remove from manifest
+    remove_manifest_records(&mut manifest, &request.document_ids);
+    crate::storage::save_manifest(path, &manifest)?;
+
+    // Clean up empty directories
+    clean_empty_dirs(path);
+
+    Ok(deleted_count)
+}
+
+/// Remove empty directories bottom-up within the sync root.
+fn clean_empty_dirs(sync_root: &Path) {
+    fn is_empty_dir(p: &Path) -> bool {
+        fs::read_dir(p).map(|mut entries| entries.next().is_none()).unwrap_or(false)
+    }
+
+    fn remove_empty_recursive(dir: &Path, root: &Path) {
+        if !dir.is_dir() {
+            return;
+        }
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    remove_empty_recursive(&path, root);
+                }
+            }
+        }
+        if dir != root && is_empty_dir(dir) {
+            let _ = fs::remove_dir(dir);
+        }
+    }
+
+    remove_empty_recursive(sync_root, sync_root);
 }
 
 #[cfg(test)]

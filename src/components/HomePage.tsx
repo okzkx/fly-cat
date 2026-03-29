@@ -7,7 +7,7 @@ import {
   TableOutlined
 } from "@ant-design/icons";
 import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
@@ -202,11 +202,52 @@ function selectedKey(scope: SyncScope | null): string[] {
   return [scopeKey(scope)];
 }
 
-function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, downloadedIds: Set<string>, syncingKeys: Set<string>): ScopeTreeDataNode[] {
+function collectSyncedDocKeysFromTree(
+  nodes: KnowledgeBaseNode[],
+  syncedDocumentIds: Set<string>
+): string[] {
+  const keys: string[] = [];
+  const stack = [...nodes];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) {
+      continue;
+    }
+    if (node.documentId && syncedDocumentIds.has(node.documentId)) {
+      keys.push(node.key);
+    }
+    if (node.children && node.children.length > 0) {
+      stack.push(...node.children);
+    }
+  }
+  return keys;
+}
+
+function collectDocumentIdsByTreeKeys(
+  nodes: KnowledgeBaseNode[],
+  treeKeys: Set<string>
+): string[] {
+  const docIds: string[] = [];
+  const stack = [...nodes];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) {
+      continue;
+    }
+    if (treeKeys.has(node.key) && node.documentId) {
+      docIds.push(node.documentId);
+    }
+    if (node.children && node.children.length > 0) {
+      stack.push(...node.children);
+    }
+  }
+  return docIds;
+}
+
+function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, syncingKeys: Set<string>): ScopeTreeDataNode[] {
   return nodes.map((node) => {
     const scopeValue = buildScopeFromNode(node) ?? undefined;
     const isDisabledNode = scopeValue ? disabledKeys.has(scopeKey(scopeValue)) : false;
-    const isAlreadyDownloaded = node.documentId ? downloadedIds.has(node.documentId) : false;
     const isSyncing = scopeValue ? syncingKeys.has(scopeKey(scopeValue)) : false;
 
     return {
@@ -214,14 +255,14 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, d
       key: node.key,
       isLeaf: !node.isExpandable,
       selectable: node.kind !== "bitable",
-      disableCheckbox: node.kind === "bitable" || isDisabledNode || isAlreadyDownloaded || isSyncing,
+      disableCheckbox: node.kind === "bitable" || isDisabledNode || isSyncing,
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
       scopeValue,
-      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys, downloadedIds, syncingKeys) : undefined
+      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys, syncingKeys) : undefined
     };
   });
 }
@@ -230,7 +271,6 @@ function buildTreeData(
   spaces: HomePageProps["spaces"],
   loadedSpaceTrees: HomePageProps["loadedSpaceTrees"],
   selectedSources: SyncScope[],
-  downloadedDocumentIds: Set<string>,
   syncingKeys: Set<string>
 ): ScopeTreeDataNode[] {
   return [
@@ -250,7 +290,6 @@ function buildTreeData(
           ? buildTreeNodes(
               loadedSpaceTrees[space.id],
               new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedSources)),
-              downloadedDocumentIds,
               syncingKeys
             )
           : undefined
@@ -316,9 +355,89 @@ export default function HomePage({
   const selectionSummary = buildSelectionSummary(effectiveSelectedSources, selectedScope);
   const syncingIds = getSyncingDocumentIds(activeSyncTask);
 
+  const [uncheckedSyncedDocKeys, setUncheckedSyncedDocKeys] = useState<Set<string>>(new Set());
+
+  // Collect document IDs that are already synced successfully
+  const syncedDocumentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [docId, status] of Object.entries(documentSyncStatuses)) {
+      if (status.status === "synced") {
+        ids.add(docId);
+      }
+    }
+    return ids;
+  }, [documentSyncStatuses]);
+
+  // Reset unchecked state when sync statuses change (e.g., after task completion)
+  useMemo(() => {
+    setUncheckedSyncedDocKeys(new Set());
+  }, [documentSyncStatuses]);
+
+  const checkedSourceKeys = selectedSources.map((source) => scopeKey(source));
+
+  // Collect default checked keys from synced documents in the loaded trees
+  const syncedDocTreeKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const spaceId of Object.keys(loadedSpaceTrees)) {
+      const tree = loadedSpaceTrees[spaceId];
+      if (tree) {
+        keys.push(...collectSyncedDocKeysFromTree(tree, syncedDocumentIds));
+      }
+    }
+    return new Set(keys);
+  }, [loadedSpaceTrees, syncedDocumentIds]);
+
+  // Build syncingKeys based on actual active task's discovered documents
+  const syncingKeys = useMemo(() => {
+    if (!activeSyncTask) {
+      return new Set<string>();
+    }
+    const keys = new Set<string>();
+    if (activeSyncTask.discoveredDocumentIds && activeSyncTask.discoveredDocumentIds.length > 0) {
+      for (const spaceId of Object.keys(loadedSpaceTrees)) {
+        const tree = loadedSpaceTrees[spaceId];
+        if (tree) {
+          const discoveredIds = new Set(activeSyncTask.discoveredDocumentIds);
+          for (const key of collectSyncedDocKeysFromTree(tree, discoveredIds)) {
+            keys.add(key);
+          }
+        }
+      }
+    } else {
+      return new Set(checkedSourceKeys);
+    }
+    return keys;
+  }, [activeSyncTask, loadedSpaceTrees, checkedSourceKeys]);
+
+  // Merge user-checked keys with default synced document keys, minus unchecked
+  const allCheckedKeys = useMemo(() => {
+    const merged = new Set(checkedSourceKeys);
+    for (const key of syncedDocTreeKeys) {
+      if (!uncheckedSyncedDocKeys.has(key)) {
+        merged.add(key);
+      }
+    }
+    return merged;
+  }, [checkedSourceKeys, syncedDocTreeKeys, uncheckedSyncedDocKeys]);
+
+  // Compute unchecked synced document IDs for cleanup
+  const uncheckedSyncedDocumentIds = useMemo(() => {
+    if (uncheckedSyncedDocKeys.size === 0) {
+      return [];
+    }
+    const docIds: string[] = [];
+    for (const spaceId of Object.keys(loadedSpaceTrees)) {
+      const tree = loadedSpaceTrees[spaceId];
+      if (tree) {
+        docIds.push(...collectDocumentIdsByTreeKeys(tree, uncheckedSyncedDocKeys));
+      }
+    }
+    return docIds;
+  }, [loadedSpaceTrees, uncheckedSyncedDocKeys]);
+
   const handleStartSync = async (): Promise<void> => {
     try {
-      const result = await onCreateTask();
+      const result = await onCreateTask(uncheckedSyncedDocumentIds);
       if (result) {
         message.success(`已创建同步任务：${result.task.name}`);
       } else {
@@ -330,16 +449,7 @@ export default function HomePage({
     }
   };
 
-  const checkedSourceKeys = selectedSources.map((source) => scopeKey(source));
-
-  const syncingKeys = useMemo(() => {
-    if (!activeSyncTask) {
-      return new Set<string>();
-    }
-    return new Set(checkedSourceKeys);
-  }, [activeSyncTask, checkedSourceKeys]);
-
-  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources, downloadedDocumentIds, syncingKeys);
+  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources, syncingKeys);
 
   const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
     const node = info.node as ScopeTreeDataNode;
@@ -419,7 +529,7 @@ export default function HomePage({
               checkStrictly
               defaultExpandedKeys={["wiki-root"]}
               selectedKeys={selectedKey(selectedScope)}
-              checkedKeys={{ checked: checkedSourceKeys, halfChecked: [] }}
+              checkedKeys={{ checked: [...allCheckedKeys], halfChecked: [] }}
               treeData={treeData}
               loadData={async (treeNode) => {
                 const node = treeNode as ScopeTreeDataNode;
@@ -437,6 +547,19 @@ export default function HomePage({
                 const changedScope = changedNode.scopeValue;
                 if (!changedScope) {
                   return;
+                }
+                // Track unchecked synced documents
+                const nodeKey = String(changedNode.key);
+                if (syncedDocTreeKeys.has(nodeKey)) {
+                  setUncheckedSyncedDocKeys((prev) => {
+                    const next = new Set(prev);
+                    if (info.checked) {
+                      next.delete(nodeKey);
+                    } else {
+                      next.add(nodeKey);
+                    }
+                    return next;
+                  });
                 }
                 void onToggleSource(changedScope, info.checked).then(({ replacedCrossSpaceSelection }) => {
                   if (replacedCrossSpaceSelection) {

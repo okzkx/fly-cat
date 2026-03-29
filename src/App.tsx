@@ -20,6 +20,7 @@ import {
   initializeTaskEventBridge,
   listKnowledgeBaseNodes,
   logoutUser,
+  removeSyncedDocuments,
   resumeSyncTasks,
   saveAppSettings,
   startSyncTask,
@@ -345,7 +346,14 @@ export default function App(): React.JSX.Element {
                 }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
-                onCreateTask={async () => {
+                onCreateTask={async (uncheckedSyncedDocumentIds: string[]) => {
+                  // Delete unchecked synced documents before creating a new sync task
+                  if (uncheckedSyncedDocumentIds.length > 0 && syncTarget) {
+                    await removeSyncedDocuments(syncTarget, uncheckedSyncedDocumentIds);
+                    // Refresh sync statuses after cleanup
+                    const refreshedStatuses = await getDocumentSyncStatuses(syncTarget);
+                    setDocumentSyncStatuses(refreshedStatuses);
+                  }
                   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
                   if (effectiveSelectedSources.length === 0) {
                     return null;
