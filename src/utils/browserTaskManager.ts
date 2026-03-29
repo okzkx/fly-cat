@@ -377,6 +377,7 @@ export function createSyncTask(selectedSources: SyncScope[], outputPath: string)
       skipped: 0,
       failed: 0
     },
+    discoveredDocumentIds: discoveredDocuments.map((d) => d.documentId).filter((id): id is string => Boolean(id)),
     lifecycleState: "idle",
     errors: [],
     failureSummary: null,
