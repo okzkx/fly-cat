@@ -71,3 +71,10 @@ pub struct ManifestRecord {
 pub struct SyncManifest {
     pub records: Vec<ManifestRecord>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentSyncStatusEntry {
+    pub status: String,
+    pub last_synced_at: String,
+}

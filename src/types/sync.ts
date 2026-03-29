@@ -126,3 +126,8 @@ export interface SyncFailureSummary {
   message: string;
   count: number;
 }
+
+export interface DocumentSyncStatus {
+  status: "synced" | "failed";
+  lastSyncedAt: string;
+}

@@ -8,11 +8,12 @@ import SettingsPage from "@/components/SettingsPage";
 import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
-import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
+import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getEffectiveSelectedSources } from "@/utils/syncSelection";
 import {
   createSyncTask,
   getAppBootstrap,
+  getDocumentSyncStatuses,
   getRuntimeInfo,
   getSyncTasks,
   getSyncedDocumentIds,
@@ -80,6 +81,7 @@ export default function App(): React.JSX.Element {
   const [tasks, setTasks] = useState<SyncTask[]>([]);
   const [connectionValidation, setConnectionValidation] = useState<ConnectionValidation | null>(null);
   const [downloadedDocumentIds, setDownloadedDocumentIds] = useState<Set<string>>(new Set());
+  const [documentSyncStatuses, setDocumentSyncStatuses] = useState<Record<string, DocumentSyncStatus>>({});
 
   useEffect(() => {
     let disposeBridge: (() => void) | undefined;
@@ -157,10 +159,33 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (!syncTarget) {
       setDownloadedDocumentIds(new Set());
+      setDocumentSyncStatuses({});
       return;
     }
     void getSyncedDocumentIds(syncTarget).then(setDownloadedDocumentIds);
+    void getDocumentSyncStatuses(syncTarget).then(setDocumentSyncStatuses);
   }, [syncTarget]);
+
+  useEffect(() => {
+    if (!syncTarget) {
+      return;
+    }
+    const refreshSyncStatuses = (): void => {
+      void getDocumentSyncStatuses(syncTarget).then(setDocumentSyncStatuses);
+    };
+    window.addEventListener(TASK_EVENTS.progress, refreshSyncStatuses);
+    window.addEventListener(TASK_EVENTS.completed, refreshSyncStatuses);
+    window.addEventListener(TASK_EVENTS.failed, refreshSyncStatuses);
+    return () => {
+      window.removeEventListener(TASK_EVENTS.progress, refreshSyncStatuses);
+      window.removeEventListener(TASK_EVENTS.completed, refreshSyncStatuses);
+      window.removeEventListener(TASK_EVENTS.failed, refreshSyncStatuses);
+    };
+  }, [syncTarget]);
+
+  const activeSyncTask = useMemo(() => {
+    return tasks.find((task) => task.status === "syncing" || task.status === "pending") ?? null;
+  }, [tasks]);
 
   const activeTaskSummary = useMemo(() => {
     const runningTask = tasks.find((task) => task.status === "syncing");
@@ -293,6 +318,8 @@ export default function App(): React.JSX.Element {
                 syncRoot={syncTarget}
                 connectionValidation={connectionValidation}
                 downloadedDocumentIds={downloadedDocumentIds}
+                documentSyncStatuses={documentSyncStatuses}
+                activeSyncTask={activeSyncTask}
                 onScopeChange={setSelectedScope}
                 onToggleSource={async (scope, checked) => {
                   let replacedCrossSpaceSelection = false;

@@ -9,7 +9,7 @@ import {
 import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
-import type { KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
+import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
 import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 import { buildScopeFromNode, collectCoveredDescendantKeys } from "@/utils/treeSelection";
@@ -36,6 +36,64 @@ function buildSpaceScope(space: KnowledgeBaseSpace): SyncScope {
     displayPath: space.name,
     pathSegments: []
   };
+}
+
+function getSyncingDocumentIds(
+  task: HomePageProps["activeSyncTask"]
+): Set<string> {
+  if (!task || (task.status !== "syncing" && task.status !== "pending")) {
+    return new Set();
+  }
+  const ids = new Set<string>();
+  for (const source of task.selectedSources ?? []) {
+    if (source.documentId) {
+      ids.add(source.documentId);
+    }
+  }
+  return ids;
+}
+
+function formatSyncTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${month}-${day} ${hours}:${minutes}`;
+  } catch {
+    return "";
+  }
+}
+
+function DocumentSyncStatusTag({
+  documentId,
+  syncStatuses,
+  syncingIds,
+  activeTask
+}: {
+  documentId: string | undefined;
+  syncStatuses: Record<string, DocumentSyncStatus>;
+  syncingIds: Set<string>;
+  activeTask: HomePageProps["activeSyncTask"];
+}): React.JSX.Element | null {
+  if (!documentId) {
+    return null;
+  }
+  const mapped = syncStatuses[documentId];
+  if (mapped) {
+    if (mapped.status === "synced") {
+      const time = formatSyncTime(mapped.lastSyncedAt);
+      return <Tag color="success" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>已同步 {time}</Tag>;
+    }
+    return <Tag color="error" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>同步失败</Tag>;
+  }
+  if (syncingIds.has(documentId)) {
+    const processed = activeTask?.counters.processed ?? 0;
+    const total = activeTask?.counters.total ?? 0;
+    return <Tag color="processing" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>同步中 {processed}/{total}</Tag>;
+  }
+  return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>未同步</Tag>;
 }
 
 function selectedKey(scope: SyncScope | null): string[] {
@@ -141,6 +199,8 @@ export default function HomePage({
   syncRoot,
   connectionValidation,
   downloadedDocumentIds,
+  documentSyncStatuses,
+  activeSyncTask,
   onScopeChange,
   onToggleSource,
   onLoadTreeChildren,
@@ -152,6 +212,7 @@ export default function HomePage({
   const emptyState = getHomePageEmptyState(connectionValidation, spaces.length);
   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
   const selectionSummary = buildSelectionSummary(effectiveSelectedSources, selectedScope);
+  const syncingIds = getSyncingDocumentIds(activeSyncTask);
 
   const handleStartSync = async (): Promise<void> => {
     try {
@@ -299,10 +360,20 @@ export default function HomePage({
                     <CloudSyncOutlined style={{ color: "#722ed1" }} />
                   );
 
+                const showSyncStatus = nodeKind === "document" && Object.keys(documentSyncStatuses).length > 0;
+
                 return (
-                  <Space>
+                  <Space size={4}>
                     {icon}
                     <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
+                    {showSyncStatus && (
+                      <DocumentSyncStatusTag
+                        documentId={scope?.documentId}
+                        syncStatuses={documentSyncStatuses}
+                        syncingIds={syncingIds}
+                        activeTask={activeSyncTask}
+                      />
+                    )}
                   </Space>
                 );
               }}

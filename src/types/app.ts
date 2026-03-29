@@ -1,4 +1,5 @@
 import type {
+  DocumentSyncStatus,
   KnowledgeBaseNode,
   KnowledgeBaseSpace,
   SyncCounters,
@@ -97,6 +98,8 @@ export interface HomePageProps {
   syncRoot: string;
   connectionValidation: ConnectionValidation | null;
   downloadedDocumentIds: Set<string>;
+  documentSyncStatuses: Record<string, DocumentSyncStatus>;
+  activeSyncTask: SyncTask | null;
   onScopeChange: (scope: SyncScope) => void;
   onToggleSource: (
     source: SyncScope,
