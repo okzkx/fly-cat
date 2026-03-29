@@ -7,3 +7,4 @@
 - [2026-03-29 19:20] #5 端口占用问题修复（初步） — 将 vite.config.ts 中 strictPort 从 true 改为 false，当应用被强制关闭后再次启动时，Vite 会自动尝试下一个可用端口。
 - [2026-03-30 00:40] #6 端口占用问题修复（彻底） — 双层防御：启动时自动检测并清理孤儿 Node.js 进程（findPortOwnerPid + isNodeProcess + killOrphanedDevProcesses），仅杀死 node.exe 进程避免误杀；配合 strictPort:false 兜底。全部56项测试通过（含13项新增）。
 - [2026-03-30 01:00] #7 修复编译时的 Rust warning — 消除13个编译警告至零。commands.rs 加 #[cfg(test)] 和 #[allow(dead_code)]，sync.rs 同理，mcp.rs 补充字段注解。cargo check 和 cargo test（29项）均无 warning 通过。
+- [2026-03-30 01:20] #8 知识库文档三态复选框行为优化 — 实现精确三态循环切换：勾选（自身+子文档全选）→ 方块（保持子文档当前状态）→ 取消（全部取消勾选）。全选/全不选时仅两态切换。新增 treeSelection.ts 工具函数和15项单元测试，HomePage.tsx 使用 checkStrictly + 手动 halfChecked 计算。全部21项测试通过。
