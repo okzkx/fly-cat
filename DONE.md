@@ -6,3 +6,4 @@
 - [2026-03-29 22:35] #4 知识库目录三态复选框 — 移除Tree组件checkStrictly属性，启用Ant Design原生父子关联，当部分子节点选中时父节点显示减号（indeterminate）状态。经opencat-task完整流程完成。
 - [2026-03-29 19:20] #5 端口占用问题修复（初步） — 将 vite.config.ts 中 strictPort 从 true 改为 false，当应用被强制关闭后再次启动时，Vite 会自动尝试下一个可用端口。
 - [2026-03-30 00:40] #6 端口占用问题修复（彻底） — 双层防御：启动时自动检测并清理孤儿 Node.js 进程（findPortOwnerPid + isNodeProcess + killOrphanedDevProcesses），仅杀死 node.exe 进程避免误杀；配合 strictPort:false 兜底。全部56项测试通过（含13项新增）。
+- [2026-03-30 01:00] #7 修复编译时的 Rust warning — 消除13个编译警告至零。commands.rs 加 #[cfg(test)] 和 #[allow(dead_code)]，sync.rs 同理，mcp.rs 补充字段注解。cargo check 和 cargo test（29项）均无 warning 通过。
