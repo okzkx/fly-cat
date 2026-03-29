@@ -183,3 +183,15 @@ The system MUST display the newly created sync task in the task list page immedi
 - Then the task list page shows the newly created task immediately
 - And the task status updates to "syncing" via event-driven updates
 
+### Requirement: Discovery Phase Visibility
+
+The application MUST indicate when a sync task is in the document discovery phase, distinct from the active download phase.
+
+#### Scenario: Show discovery status before download
+- **WHEN** a sync task has been created and the backend is discovering documents to synchronize
+- **THEN** the UI displays a discovery-phase status (e.g., "发现文档中...") with an indeterminate progress indicator instead of a percentage-based progress bar
+
+#### Scenario: Transition from discovery to download
+- **WHEN** document discovery completes and the backend begins downloading documents
+- **THEN** the UI transitions from the discovery status to the normal sync progress display showing total document count and per-document progress updates
+

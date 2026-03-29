@@ -2003,7 +2003,17 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 task.counters.failed = 0;
                 task.counters.succeeded = 0;
                 task.progress = ((task.counters.processed as f32 / task.counters.total as f32) * 100.0).round() as u32;
+                task.lifecycle_state = "syncing".into();
                 task.updated_at = now_iso();
+            }
+        }
+
+        // Emit progress event with total count after discovery completes
+        {
+            let state = app.state::<AppState>();
+            let tasks = state.tasks.lock().expect("task state poisoned");
+            if let Some(task) = tasks.iter().find(|task| task.id == task_id) {
+                emit_task_event(&app, "sync-progress", task);
             }
         }
 
@@ -2166,25 +2176,24 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                         }
                     }
 
-                    {
-                        let state = app.state::<AppState>();
-                        let tasks = state.tasks.lock().expect("task state poisoned");
-                        let _ = save_tasks_to_disk(&app, &tasks);
-                    }
-
-                    // Batch save manifest every manifest_batch_size documents
+                    // Save tasks to disk every manifest_batch_size documents
                     if step % (manifest_batch_size as u32) == 0 || step == total_steps {
+                        {
+                            let state = app.state::<AppState>();
+                            let tasks = state.tasks.lock().expect("task state poisoned");
+                            let _ = save_tasks_to_disk(&app, &tasks);
+                        }
                         let manifest_guard = manifest.lock().expect("manifest lock poisoned");
                         let _ = save_manifest(&sync_root, &manifest_guard);
                     }
-                }
 
-                // Emit progress event for the chunk
-                {
-                    let state = app.state::<AppState>();
-                    let tasks = state.tasks.lock().expect("task state poisoned");
-                    if let Some(task) = tasks.iter().find(|task| task.id == task_id) {
-                        emit_task_event(&app, "sync-progress", task);
+                    // Emit progress event per document for real-time UI updates
+                    {
+                        let state = app.state::<AppState>();
+                        let tasks = state.tasks.lock().expect("task state poisoned");
+                        if let Some(task) = tasks.iter().find(|task| task.id == task_id) {
+                            emit_task_event(&app, "sync-progress", task);
+                        }
                     }
                 }
 
@@ -2391,30 +2400,11 @@ pub async fn create_sync_task(
     let selected_sources = validate_selected_sources(&request.selected_sources)?;
     let legacy_scope = legacy_selected_scope(&selected_sources);
 
-    // Discover documents on a blocking thread (makes N HTTP calls)
-    let settings_clone = settings.clone();
-    let session_clone = session.clone();
-    let selected_sources_clone = selected_sources.clone();
-    let discovered_documents = tokio::task::spawn_blocking(move || {
-        match discover_documents_from_sources(&selected_sources_clone, &settings_clone, &session_clone) {
-            Ok(documents) => Ok(documents),
-            Err(error) => {
-                let fixtures = fixture_documents_for_sources(&selected_sources_clone);
-                if fixtures.is_empty() {
-                    Err(error)
-                } else {
-                    Ok(fixtures)
-                }
-            }
-        }
-    })
-    .await
-    .map_err(|err| format!("document discovery panicked: {err}"))??;
-
+    // Return task immediately without document discovery.
+    // Discovery happens in spawn_sync_progress to avoid blocking the UI.
     let resolved_output_path = resolve_sync_root_string(&app, &request.output_path)?;
     fs::create_dir_all(&resolved_output_path).map_err(|err| err.to_string())?;
     with_tasks(&app, state, |tasks| {
-        let total = discovered_documents.len().max(1) as u32;
         let created_at = now_iso();
         let task = SyncTask {
             id: Uuid::new_v4().to_string(),
@@ -2430,13 +2420,13 @@ pub async fn create_sync_task(
             selection_summary: build_selection_summary(
                 &selected_sources,
                 legacy_scope.as_ref(),
-                Some(total),
+                None,
             ),
             output_path: resolved_output_path,
             status: "pending".into(),
             progress: 0,
             counters: SyncCounters {
-                total,
+                total: 0,
                 processed: 0,
                 succeeded: 0,
                 skipped: 0,
@@ -2499,7 +2489,7 @@ pub fn start_sync_task(task_id: String, app: AppHandle, state: State<'_, AppStat
     with_tasks(&app, state, |tasks| {
         if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
             task.status = "syncing".into();
-            task.lifecycle_state = "syncing".into();
+            task.lifecycle_state = "discovering".into();
             task.updated_at = now_iso();
             emit_task_event(&app, "sync-status-changed", task);
         }
