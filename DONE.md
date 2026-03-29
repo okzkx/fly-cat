@@ -14,3 +14,4 @@
 - [2026-03-30 00:28] #12 文档浏览器打开按钮 — 知识库目录每个文档节点后添加"在浏览器打开"按钮（ExportOutlined 图标），点击调用 openDocumentInBrowser 函数打开飞书云文档。按钮仅在文档类型节点显示，点击时阻止事件冒泡。经 opencat-task 完整 worktree 流程完成。
 - [2026-03-30 00:52] #13 文档图片显示修复 — 改用飞书块 API 替代 raw_content API，解析 block_type:28 图片块，提取 image.token 作为 media_id 调用现有 download_image() 方法下载图片，渲染为正确的 Markdown 图片语法。经 opencat-task 完整 worktree 流程完成。
 - [2026-03-30 01:05] #14 归档 openspec changes — 归档 4 个已完成的 change：document-freshness-check、document-freshness-persistence、fix-image-filename-png、workspace-open-button。生成中文归档报告并移动到 archive 目录。
+- [2026-03-30 01:10] #15 清理已合并分支 — 删除 6 个已合并的工作分支：opencat/fix-image-filename-png、opencat/knowledge-doc-open-in-browser、opencat/knowledge-doc-open-in-browser-new、opencat/knowledge-doc-open-in-browser-work、opencat/workspace-open-button、workspace-open-button。worktree 保留在 temp/worktree-master 分支。
