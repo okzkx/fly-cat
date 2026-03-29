@@ -771,6 +771,7 @@ fn find_tree_node_by_token<'a>(nodes: &'a [KnowledgeBaseNode], node_token: &str)
     None
 }
 
+#[cfg(test)]
 fn make_fixture_document(
     space_id: &str,
     space_name: &str,
@@ -941,6 +942,7 @@ fn fixture_space_nodes(space_id: &str, parent_node_token: Option<&str>) -> Vec<K
     }
 }
 
+#[cfg(test)]
 fn fixture_documents_for_scope(scope: &SelectedSyncScope) -> Vec<SyncSourceDocument> {
     match (scope.space_id.as_str(), scope.kind.as_str(), scope.document_id.as_deref(), scope.node_token.as_deref()) {
         ("kb-eng", "space", _, _) => vec![
@@ -979,6 +981,7 @@ fn fixture_documents_for_scope(scope: &SelectedSyncScope) -> Vec<SyncSourceDocum
     }
 }
 
+#[cfg(test)]
 fn fixture_documents_for_sources(selected_sources: &[SelectedSyncScope]) -> Vec<SyncSourceDocument> {
     let mut seen = HashSet::new();
     let mut documents = Vec::new();
@@ -1471,6 +1474,8 @@ fn resolve_connection_check(app: &AppHandle, settings: &AppSettings) -> Connecti
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)] // test infrastructure; not yet called by any #[test]
 fn build_scope_from_node(node: &KnowledgeBaseNode) -> SelectedSyncScope {
     SelectedSyncScope {
         kind: node.kind.clone(),
@@ -1485,6 +1490,8 @@ fn build_scope_from_node(node: &KnowledgeBaseNode) -> SelectedSyncScope {
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)] // test infrastructure; not yet called by any #[test]
 fn build_space_scope(space: &KnowledgeBaseSpace) -> SelectedSyncScope {
     SelectedSyncScope {
         kind: "space".into(),
@@ -1499,6 +1506,8 @@ fn build_space_scope(space: &KnowledgeBaseSpace) -> SelectedSyncScope {
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)] // test infrastructure; not yet called by any #[test]
 fn find_node_by_scope(nodes: &[KnowledgeBaseNode], scope: &SelectedSyncScope) -> Option<KnowledgeBaseNode> {
     let mut stack = nodes.to_vec();
     while let Some(node) = stack.pop() {
@@ -1522,6 +1531,8 @@ fn find_node_by_scope(nodes: &[KnowledgeBaseNode], scope: &SelectedSyncScope) ->
     None
 }
 
+#[cfg(test)]
+#[allow(dead_code)] // test infrastructure; not yet called by any #[test]
 fn collect_fixture_documents(nodes: &[KnowledgeBaseNode], out: &mut Vec<SyncSourceDocument>) {
     for node in nodes {
         if node.kind == "document" {
@@ -1775,6 +1786,8 @@ fn is_document_unchanged(document: &SyncSourceDocument, output_root: &Path, mani
     })
 }
 
+#[cfg(test)]
+#[allow(dead_code)] // test infrastructure; not yet called by any #[test]
 fn should_retry_document(document: &SyncSourceDocument, manifest: &crate::model::SyncManifest) -> bool {
     manifest
         .records
@@ -2401,7 +2414,7 @@ pub async fn create_sync_task(
 ) -> Result<SyncTask, String> {
     let settings: AppSettings = load_json_file(settings_file_path(&app)?)?
         .ok_or_else(|| "请先在设置页保存飞书应用配置".to_string())?;
-    let (session, _) = authorized_config_for_session(&app, &settings)
+    let (_session, _) = authorized_config_for_session(&app, &settings)
         .map_err(|result| result.validation.message)?;
     let selected_sources = validate_selected_sources(&request.selected_sources)?;
     let legacy_scope = legacy_selected_scope(&selected_sources);
