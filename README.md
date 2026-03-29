@@ -100,16 +100,16 @@ npm run typecheck
 
 ### 环境检查: `opencat-check`
 
-在开始 `opencat-work` 前，先运行 `opencat-check`。它负责：
+在开始 `opencat-task` 前，先运行 `opencat-check`。它负责：
 
 - 检查 `git`、`node`、`npm`、`openspec`
 - 必要时补装 OpenSpec CLI
 - 检查仓库依赖是否已安装
 - 确认当前环境是否已经可以继续执行 OpenCat 工作流
 
-### 主工作流: `opencat-work`
+### 主工作流: `opencat-task`
 
-`opencat-work` 是一个带 Git 检查点和可复用 worktree 的 OpenSpec 一体化流程，核心步骤如下：
+`opencat-task` 是一个带 Git 检查点和可复用 worktree 的 OpenSpec 一体化流程，核心步骤如下：
 
 1. 在主工程中完成 `purpose` 阶段，也就是 proposal/change artifacts 的生成与校验。
 2. `purpose` 通过后创建 `opencat/<change-name>` 分支，并提交一次 `purpose commit` 作为阶段记录。
