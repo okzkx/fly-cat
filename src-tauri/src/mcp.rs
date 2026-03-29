@@ -404,6 +404,119 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
     })
 }
 
+/// Parse a Feishu block JSON into a RawBlock enum
+/// Block types: 1=text, 2=heading, 3=bullet list, 4=ordered list, 28=image
+fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
+    let block_type = block.get("block_type").and_then(|v| v.as_i64()).unwrap_or(0);
+
+    match block_type {
+        // Text block (type 1)
+        1 => {
+            let text = extract_text_from_block(block);
+            if text.is_empty() {
+                None
+            } else {
+                Some(RawBlock::Paragraph { text })
+            }
+        }
+        // Heading block (type 2)
+        2 => {
+            let heading = block.get("heading");
+            let level = heading
+                .and_then(|h| h.get("style"))
+                .and_then(|s| s.as_str())
+                .and_then(|s| match s {
+                    "heading1" => Some(1),
+                    "heading2" => Some(2),
+                    "heading3" => Some(3),
+                    "heading4" => Some(4),
+                    "heading5" => Some(5),
+                    "heading6" => Some(6),
+                    _ => Some(1),
+                })
+                .unwrap_or(1);
+
+            let text = heading
+                .and_then(|h| h.get("elements"))
+                .and_then(|e| e.as_array())
+                .map(|elements| extract_text_from_elements(elements))
+                .unwrap_or_default();
+
+            if text.is_empty() {
+                None
+            } else {
+                Some(RawBlock::Heading { level, text })
+            }
+        }
+        // Bullet list (type 3) and ordered list (type 4) - treat as paragraphs
+        3 | 4 => {
+            let text = extract_text_from_block(block);
+            if text.is_empty() {
+                None
+            } else {
+                Some(RawBlock::Paragraph { text })
+            }
+        }
+        // Image block (type 28)
+        28 => {
+            let image = block.get("image");
+            let media_id = image
+                .and_then(|i| i.get("token"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
+
+            match media_id {
+                Some(mid) => Some(RawBlock::Image {
+                    media_id: mid,
+                    alt: String::new(),
+                }),
+                None => Some(RawBlock::Paragraph {
+                    text: "[图片]".to_string(),
+                }),
+            }
+        }
+        // Unknown block types - fallback to paragraph with placeholder
+        _ => {
+            let text = extract_text_from_block(block);
+            if text.is_empty() {
+                None
+            } else {
+                Some(RawBlock::Paragraph { text })
+            }
+        }
+    }
+}
+
+/// Extract text content from a block's text elements
+fn extract_text_from_block(block: &Value) -> String {
+    // Try different block types to find text elements
+    let elements = block
+        .get("text")
+        .and_then(|t| t.get("elements"))
+        .or_else(|| block.get("heading").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("bullet").and_then(|b| b.get("elements")))
+        .or_else(|| block.get("ordered").and_then(|o| o.get("elements")))
+        .and_then(|e| e.as_array());
+
+    match elements {
+        Some(elems) => extract_text_from_elements(elems),
+        None => String::new(),
+    }
+}
+
+/// Extract text from an array of text elements
+fn extract_text_from_elements(elements: &[Value]) -> String {
+    elements
+        .iter()
+        .filter_map(|elem| {
+            elem.get("text_run")
+                .and_then(|tr| tr.get("content"))
+                .and_then(|c| c.as_str())
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
 pub struct FeishuOpenApiClient {
     config: FeishuOpenApiConfig,
     agent: ureq::Agent,
@@ -592,42 +705,77 @@ impl FeishuOpenApiClient {
         let token = self.access_token()?;
         let summary = self.fetch_document_summary(document_id)?;
 
-        let raw_value = call_openapi_json(
-            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/raw_content")))
-                .set("Authorization", &format!("Bearer {token}")),
-            "获取文档原始内容",
-        )?;
-
-        if let Some(error) = extract_openapi_error(&raw_value, "获取文档原始内容") {
-            return Err(error);
-        }
-
-        let raw_text = raw_value
-            .get("data")
-            .and_then(|data| data.get("content"))
-            .and_then(|value| value.as_str())
-            .ok_or_else(|| McpError::InvalidResponse("raw_content missing content".into()))?;
-
-        let blocks = raw_text
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(|line| RawBlock::Paragraph {
-                text: line.to_string(),
-            })
-            .collect::<Vec<_>>();
+        // Use Block API instead of raw_content API to get structured content including images
+        let blocks = self.fetch_document_blocks(document_id, token)?;
 
         Ok(RawDocument {
             document_id: document_id.to_string(),
             space_id: "wiki-openapi".into(),
             title: summary.title,
-            blocks: if blocks.is_empty() {
-                vec![RawBlock::Paragraph {
-                    text: raw_text.to_string(),
-                }]
-            } else {
-                blocks
-            },
+            blocks,
         })
+    }
+
+    /// Fetch document blocks using Feishu Block API
+    /// Returns structured blocks including images with media_id
+    fn fetch_document_blocks(&self, document_id: &str, token: &str) -> Result<Vec<RawBlock>, McpError> {
+        // Get the root block (document itself) which contains children
+        let root_value = call_openapi_json(
+            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/blocks/{document_id}")))
+                .set("Authorization", &format!("Bearer {token}"))
+                .query("page_size", "500"),
+            "获取文档块",
+        )?;
+
+        if let Some(error) = extract_openapi_error(&root_value, "获取文档块") {
+            return Err(error);
+        }
+
+        let block = root_value
+            .get("data")
+            .and_then(|data| data.get("block"))
+            .ok_or_else(|| McpError::InvalidResponse("Block response missing block".into()))?;
+
+        // Get children block IDs
+        let children_ids = block
+            .get("children")
+            .and_then(|children| children.as_array())
+            .map(|arr| arr.iter().filter_map(|id| id.as_str().map(|s| s.to_string())).collect::<Vec<_>>())
+            .unwrap_or_default();
+
+        if children_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Fetch all child blocks
+        let mut blocks = Vec::new();
+        for child_id in children_ids {
+            if let Some(child_block) = self.fetch_single_block(document_id, &child_id, token)? {
+                blocks.push(child_block);
+            }
+        }
+
+        Ok(blocks)
+    }
+
+    /// Fetch a single block by its ID and parse it into RawBlock
+    fn fetch_single_block(&self, document_id: &str, block_id: &str, token: &str) -> Result<Option<RawBlock>, McpError> {
+        let value = call_openapi_json(
+            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/blocks/{block_id}")))
+                .set("Authorization", &format!("Bearer {token}")),
+            "获取子块",
+        )?;
+
+        if let Some(error) = extract_openapi_error(&value, "获取子块") {
+            return Err(error);
+        }
+
+        let block = value
+            .get("data")
+            .and_then(|data| data.get("block"))
+            .ok_or_else(|| McpError::InvalidResponse("Child block response missing block".into()))?;
+
+        Ok(parse_block_from_json(block))
     }
 
     /// Create an export task for a document (server-side rendering).
