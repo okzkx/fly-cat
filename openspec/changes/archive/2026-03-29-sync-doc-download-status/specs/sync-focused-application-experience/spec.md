@@ -16,6 +16,8 @@ The application MUST expose synchronization lifecycle states and progress at doc
 - **WHEN** a sync task is active with individual document-level source selections
 - **THEN** the behavior is unchanged — each selected document shows "同步中" status
 
+## ADDED Requirements
+
 ### Requirement: SyncTask stores discovered document IDs
 
 The `SyncTask` interface MUST include a `discoveredDocumentIds` field that lists all individual document IDs resolved from the task's source selections at task creation time. This enables the frontend to determine per-document syncing status without re-expanding folder/space scopes.
