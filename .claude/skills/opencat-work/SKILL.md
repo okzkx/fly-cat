@@ -75,7 +75,12 @@ metadata:
 
 3. **执行任务**
    - 启动 SubAgent（`general-purpose` 类型）
-   - **重要** **SubAgent** 内部调用 **`/opencat-task` 技能** 完成任务
+   - **重要** **SubAgent** 内部必须调用 **`/opencat-task` 技能** 完成任务
+   - **必须使用 worktree 隔离**：SubAgent 必须按照 opencat-task 的完整流程执行
+     - purpose 阶段在主 worktree
+     - apply/archive 阶段在独立的 git worktree 中
+     - 变更必须合并回主干
+     - worktree 保留不删除
    - SubAgent 完成后自动销毁，上下文完全隔离
 
 4. **归档**
@@ -96,9 +101,12 @@ metadata:
 
 1. **SubAgent 独立执行**: 每个任务由全新 SubAgent 执行，上下文 100% 隔离
 2. **必须使用 opencat-task**: SubAgent 内部通过 `/opencat-task` 技能完成任务
-3. **立即保存**: 每次编辑文件后立即保存，不要批量操作
-4. **任务描述清晰**: 任务应当具体可执行、可验收
-5. **不修改任务内容**: 除非用户明确要求
+3. **必须使用 worktree**: opencat-task 的 apply/archive 阶段必须在独立 worktree 中执行
+4. **变更合并回主干**: 完成后必须将变更合并回 base_branch
+5. **worktree 保留不删除**: 任务完成后保留 worktree 目录供下次使用
+6. **立即保存**: 每次编辑文件后立即保存，不要批量操作
+7. **任务描述清晰**: 任务应当具体可执行、可验收
+8. **不修改任务内容**: 除非用户明确要求
 
 ## 输出格式
 

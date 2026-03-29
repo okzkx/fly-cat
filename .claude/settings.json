@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/71411/Documents/synced-docs/ProjectStorm/美术模块/动画/**)"
+      "Read(//c/Users/71411/Documents/synced-docs/ProjectStorm/美术模块/动画/**)",
+      "Read(//c/Users/71411/.claude/**)",
+      "Edit(~/.claude/skills/ai-skill-generator/**)"
     ]
   }
 }
