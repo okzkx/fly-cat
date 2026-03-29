@@ -550,10 +550,9 @@ export default function HomePage({
             <div data-testid="knowledge-base-tree">
               <Tree
               checkable
-              checkStrictly
               defaultExpandedKeys={["wiki-root"]}
               selectedKeys={selectedKey(selectedScope)}
-              checkedKeys={{ checked: [...allCheckedKeys], halfChecked: [] }}
+              checkedKeys={{ checked: Array.from(allCheckedKeys), halfChecked: [] }}
               treeData={treeData}
               loadData={async (treeNode) => {
                 const node = treeNode as ScopeTreeDataNode;
