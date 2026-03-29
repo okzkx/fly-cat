@@ -4,8 +4,8 @@ use crate::mcp::{
 };
 use crate::model::SyncSourceDocument;
 use crate::render::markdown_output_path;
-use crate::storage::load_manifest;
-use crate::sync::{sync_document_to_disk, SyncPipelineError};
+use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
+use crate::sync::{sync_document_content, SyncPipelineError};
 use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -2032,107 +2032,191 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
         }
 
         let total_steps = queued_documents.len() as u32;
-        for (index, document) in queued_documents.iter().enumerate() {
-            let step = (index + 1) as u32;
-            std::thread::sleep(std::time::Duration::from_millis(400));
-            let mcp_server_name = configured_mcp_server_name(settings.as_ref());
-            let image_dir_name = configured_image_dir_name(settings.as_ref());
-            let state = app.state::<AppState>();
-            let mut maybe_emit = None;
-            {
-                let mut tasks = state.tasks.lock().expect("task state poisoned");
-                if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
-                    let sync_root = PathBuf::from(&task.output_path);
-                    let app_settings: Option<AppSettings> =
-                        load_json_file(settings_file_path(&app).expect("settings path"))
-                            .expect("settings json should load");
-                    let fetch_result = if let Some(discovery_error) = discovery_error.as_ref() {
-                        Err(discovery_error.clone())
-                    } else {
-                        match app_settings.as_ref() {
-                            Some(settings) => match authorized_config_for_session(&app, settings) {
-                                Ok((session, openapi_config)) => {
-                                    let _ = save_user_session(&app, &session);
-                                    sync_document_to_disk(
-                                        document,
-                                        &sync_root,
-                                        &image_dir_name,
-                                        &mcp_server_name,
-                                        Some(&openapi_config),
-                                    )
-                                    .map_err(classify_pipeline_failure)
-                                }
-                                Err(result) => Err(SyncRunError {
-                                    document_id: String::new(),
-                                    title: String::new(),
-                                    category: "auth".into(),
-                                    message: result.validation.message,
-                                }),
-                            },
-                            None => Err(SyncRunError {
-                                document_id: String::new(),
-                                title: String::new(),
-                                category: "auth".into(),
-                                message: "请先完成飞书配置并重新登录。".into(),
-                            }),
+        let concurrency: usize = 4;
+        let manifest_batch_size: usize = 10;
+
+        // Pre-resolve auth config once for the entire batch
+        let auth_config: Result<(String, Option<FeishuOpenApiConfig>), String> = {
+            if let Some(discovery_error) = discovery_error.as_ref() {
+                Err(discovery_error.message.clone())
+            } else {
+                match settings.as_ref() {
+                    Some(s) => match authorized_config_for_session(&app, s) {
+                        Ok((session, openapi_config)) => {
+                            let _ = save_user_session(&app, &session);
+                            Ok((configured_mcp_server_name(settings.as_ref()), Some(openapi_config)))
                         }
-                    };
-                    task.counters.processed = task.counters.skipped + step;
-                    task.progress = ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
-                    if let Err(mut error) = fetch_result {
-                        task.counters.failed = task.counters.failed.saturating_add(1);
-                        error.document_id = document.document_id.clone();
-                        error.title = document.title.clone();
-                        task.errors.push(error);
-                    }
-                    task.counters.succeeded =
-                        task.counters.processed.saturating_sub(task.counters.skipped + task.counters.failed);
-                    task.failure_summary = build_failure_summary(&task.errors);
-                    task.updated_at = now_iso();
-                    maybe_emit = Some(task.clone());
+                        Err(result) => Err(result.validation.message),
+                    },
+                    None => Err("请先完成飞书配置并重新登录。".into()),
                 }
             }
+        };
 
-            if let Some(task) = maybe_emit {
-                {
+        let (mcp_server_name, openapi_config) = match auth_config {
+            Ok(config) => config,
+            Err(msg) => {
+                let state = app.state::<AppState>();
+                let mut tasks = state.tasks.lock().expect("task state poisoned");
+                if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
+                    task.counters.failed = task.counters.total;
+                    task.counters.processed = task.counters.total;
+                    task.progress = 100;
+                    task.errors.push(SyncRunError {
+                        document_id: String::new(),
+                        title: String::new(),
+                        category: "auth".into(),
+                        message: msg,
+                    });
+                    task.failure_summary = build_failure_summary(&task.errors);
+                    task.status = "partial-failed".into();
+                    task.lifecycle_state = "partial-failed".into();
+                    task.updated_at = now_iso();
+                    let task_clone = task.clone();
+                    drop(tasks);
                     let state = app.state::<AppState>();
                     let tasks = state.tasks.lock().expect("task state poisoned");
                     let _ = save_tasks_to_disk(&app, &tasks);
+                    emit_task_event(&app, "sync-task-failed", &task_clone);
                 }
-                emit_task_event(&app, "sync-progress", &task);
-                if step == total_steps {
-                    let state = app.state::<AppState>();
-                    let mut finished_task = None;
+                let state = app.state::<AppState>();
+                let mut running = state.running_task_ids.lock().expect("task state poisoned");
+                running.remove(&task_id);
+                return;
+            }
+        };
+        let image_dir_name = configured_image_dir_name(settings.as_ref());
+
+        // Load manifest once for batch updates
+        let sync_root = {
+            let state = app.state::<AppState>();
+            let tasks = state.tasks.lock().expect("task state poisoned");
+            tasks
+                .iter()
+                .find(|task| task.id == task_id)
+                .map(|task| PathBuf::from(&task.output_path))
+                .unwrap_or_default()
+        };
+        let manifest = std::sync::Mutex::new(load_manifest(&sync_root).unwrap_or_default());
+        let mut processed_count: u32 = 0;
+
+        std::thread::scope(|s| {
+            for chunk in queued_documents.chunks(concurrency) {
+                let handles: Vec<_> = chunk
+                    .iter()
+                    .map(|document| {
+                        let mcp_name = mcp_server_name.clone();
+                        let img_dir = image_dir_name.clone();
+                        let sync_root = sync_root.clone();
+                        let oa_config = openapi_config.clone();
+                        let manifest = &manifest;
+                        s.spawn(move || {
+                            let manifest_guard = manifest.lock().expect("manifest lock poisoned");
+                            sync_document_content(
+                                document,
+                                &sync_root,
+                                &img_dir,
+                                &mcp_name,
+                                oa_config.as_ref(),
+                                &manifest_guard,
+                            )
+                        })
+                    })
+                    .collect();
+
+                for (i, handle) in handles.into_iter().enumerate() {
+                    let document = &chunk[i];
+                    let step = processed_count + (i as u32) + 1;
+                    let result = handle.join().expect("document processing thread panicked");
+
                     {
+                        let state = app.state::<AppState>();
                         let mut tasks = state.tasks.lock().expect("task state poisoned");
                         if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
-                            if !task.errors.is_empty() {
-                                task.status = "partial-failed".into();
-                                task.lifecycle_state = "partial-failed".into();
-                            } else {
-                                task.status = "completed".into();
-                                task.lifecycle_state = "completed".into();
+                            task.counters.processed = task.counters.skipped + step;
+                            task.progress = ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
+                            match result {
+                                Ok((_write_result, record)) => {
+                                    let mut manifest_guard = manifest.lock().expect("manifest lock poisoned");
+                                    upsert_manifest_record(&mut manifest_guard, record);
+                                }
+                                Err(error) => {
+                                    task.counters.failed = task.counters.failed.saturating_add(1);
+                                    let mut run_err = classify_pipeline_failure(error);
+                                    run_err.document_id = document.document_id.clone();
+                                    run_err.title = document.title.clone();
+                                    task.errors.push(run_err);
+                                }
                             }
+                            task.counters.succeeded =
+                                task.counters.processed.saturating_sub(task.counters.skipped + task.counters.failed);
                             task.failure_summary = build_failure_summary(&task.errors);
                             task.updated_at = now_iso();
-                            finished_task = Some(task.clone());
                         }
                     }
-                    if let Some(task) = finished_task {
-                        {
-                            let state = app.state::<AppState>();
-                            let tasks = state.tasks.lock().expect("task state poisoned");
-                            let _ = save_tasks_to_disk(&app, &tasks);
-                        }
-                        let event_name = if task.errors.is_empty() {
-                            "sync-task-completed"
-                        } else {
-                            "sync-task-failed"
-                        };
-                        emit_task_event(&app, event_name, &task);
+
+                    {
+                        let state = app.state::<AppState>();
+                        let tasks = state.tasks.lock().expect("task state poisoned");
+                        let _ = save_tasks_to_disk(&app, &tasks);
+                    }
+
+                    // Batch save manifest every manifest_batch_size documents
+                    if step % (manifest_batch_size as u32) == 0 || step == total_steps {
+                        let manifest_guard = manifest.lock().expect("manifest lock poisoned");
+                        let _ = save_manifest(&sync_root, &manifest_guard);
                     }
                 }
+
+                // Emit progress event for the chunk
+                {
+                    let state = app.state::<AppState>();
+                    let tasks = state.tasks.lock().expect("task state poisoned");
+                    if let Some(task) = tasks.iter().find(|task| task.id == task_id) {
+                        emit_task_event(&app, "sync-progress", task);
+                    }
+                }
+
+                processed_count += chunk.len() as u32;
             }
+        });
+
+        // Final manifest save
+        {
+            let manifest_guard = manifest.lock().expect("manifest lock poisoned");
+            let _ = save_manifest(&sync_root, &manifest_guard);
+        }
+
+        // Mark task as completed
+        let state = app.state::<AppState>();
+        let mut finished_task = None;
+        {
+            let mut tasks = state.tasks.lock().expect("task state poisoned");
+            if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
+                if !task.errors.is_empty() {
+                    task.status = "partial-failed".into();
+                    task.lifecycle_state = "partial-failed".into();
+                } else {
+                    task.status = "completed".into();
+                    task.lifecycle_state = "completed".into();
+                }
+                task.failure_summary = build_failure_summary(&task.errors);
+                task.updated_at = now_iso();
+                finished_task = Some(task.clone());
+            }
+        }
+        if let Some(task) = finished_task {
+            {
+                let state = app.state::<AppState>();
+                let tasks = state.tasks.lock().expect("task state poisoned");
+                let _ = save_tasks_to_disk(&app, &tasks);
+            }
+            let event_name = if task.errors.is_empty() {
+                "sync-task-completed"
+            } else {
+                "sync-task-failed"
+            };
+            emit_task_event(&app, event_name, &task);
         }
 
         let state = app.state::<AppState>();
