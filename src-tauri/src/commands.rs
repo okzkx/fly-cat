@@ -2686,6 +2686,32 @@ pub async fn check_document_freshness(
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn load_freshness_metadata(
+    sync_root: String,
+) -> Result<std::collections::HashMap<String, crate::model::DocumentFreshnessResult>, String> {
+    let path = std::path::Path::new(&sync_root);
+    crate::storage::load_all_freshness_metadata(path)
+}
+
+#[tauri::command]
+pub async fn save_freshness_metadata(
+    sync_root: String,
+    metadata: std::collections::HashMap<String, crate::model::DocumentFreshnessResult>,
+) -> Result<(), String> {
+    let path = std::path::Path::new(&sync_root);
+    crate::storage::save_freshness_metadata(path, &metadata)
+}
+
+#[tauri::command]
+pub async fn clear_freshness_metadata(
+    sync_root: String,
+    document_ids: Vec<String>,
+) -> Result<(), String> {
+    let path = std::path::Path::new(&sync_root);
+    crate::storage::clear_freshness_metadata(path, &document_ids)
+}
+
 /// Remove empty directories bottom-up within the sync root.
 fn clean_empty_dirs(sync_root: &Path) {
     fn is_empty_dir(p: &Path) -> bool {

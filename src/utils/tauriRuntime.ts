@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AppBootstrap, AppSettings, ConnectionCheckResult, SyncTask, UserInfo } from "@/types/app";
-import type { KnowledgeBaseNode, SyncScope } from "@/types/sync";
+import type { DocumentFreshnessResult, KnowledgeBaseNode, SyncScope } from "@/types/sync";
 import {
   TASK_EVENTS,
   createSyncTask as createBrowserSyncTask,
@@ -271,6 +271,56 @@ export async function removeSyncedDocuments(
   }
   return invoke<number>("remove_synced_documents", {
     request: { syncRoot, documentIds }
+  });
+}
+
+export async function checkDocumentFreshness(
+  documentIds: string[],
+  syncRoot: string
+): Promise<Record<string, DocumentFreshnessResult>> {
+  if (!isTauriRuntime()) {
+    return {};
+  }
+  return invoke<Record<string, DocumentFreshnessResult>>("check_document_freshness", {
+    documentIds,
+    syncRoot
+  });
+}
+
+export async function loadFreshnessMetadata(
+  syncRoot: string
+): Promise<Record<string, DocumentFreshnessResult>> {
+  if (!isTauriRuntime()) {
+    return {};
+  }
+  return invoke<Record<string, DocumentFreshnessResult>>("load_freshness_metadata", {
+    syncRoot
+  });
+}
+
+export async function saveFreshnessMetadata(
+  syncRoot: string,
+  metadata: Record<string, DocumentFreshnessResult>
+): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  await invoke("save_freshness_metadata", {
+    syncRoot,
+    metadata
+  });
+}
+
+export async function clearFreshnessMetadata(
+  syncRoot: string,
+  documentIds: string[]
+): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  await invoke("clear_freshness_metadata", {
+    syncRoot,
+    documentIds
   });
 }
 

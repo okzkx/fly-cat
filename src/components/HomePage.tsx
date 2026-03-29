@@ -1,19 +1,22 @@
 import {
+  CheckCircleOutlined,
   CloudSyncOutlined,
+  ExclamationCircleOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
   SyncOutlined,
   TableOutlined
 } from "@ant-design/icons";
-import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { Alert, App, Button, Card, Empty, Space, Tag, Tooltip, Tree, Typography } from "antd";
+import { useEffect, useMemo, useState } from "react";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
-import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
+import type { DocumentFreshnessResult, DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
 import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 import { buildScopeFromNode, collectCoveredDescendantKeys, computeCascadedCheckedKeys, computeTriState } from "@/utils/treeSelection";
+import { checkDocumentFreshness, loadFreshnessMetadata, saveFreshnessMetadata } from "@/utils/tauriRuntime";
 
 const { Text } = Typography;
 
@@ -155,6 +158,54 @@ function DocumentSyncStatusTag({
     return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>等待同步</Tag>;
   }
   return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>未同步</Tag>;
+}
+
+function FreshnessIndicator({
+  documentId,
+  syncStatus,
+  freshnessMap
+}: {
+  documentId: string | undefined;
+  syncStatus: DocumentSyncStatus | undefined;
+  freshnessMap: Record<string, DocumentFreshnessResult>;
+}): React.JSX.Element | null {
+  if (!documentId || !syncStatus || syncStatus.status !== "synced") {
+    return null;
+  }
+
+  const freshness = freshnessMap[documentId];
+  if (!freshness) {
+    return null;
+  }
+
+  switch (freshness.status) {
+    case "current":
+      return (
+        <Tooltip title="文档已是最新版本">
+          <CheckCircleOutlined style={{ color: "#52c41a", marginLeft: 4, fontSize: 12 }} />
+        </Tooltip>
+      );
+    case "updated":
+      return (
+        <Tooltip title={`有更新: 远程版本 ${freshness.remoteVersion}`}>
+          <ExclamationCircleOutlined style={{ color: "#faad14", marginLeft: 4, fontSize: 12 }} />
+        </Tooltip>
+      );
+    case "new":
+      return (
+        <Tooltip title="远程新增文档">
+          <SyncOutlined style={{ color: "#1677ff", marginLeft: 4, fontSize: 12 }} />
+        </Tooltip>
+      );
+    case "error":
+      return (
+        <Tooltip title={`检查失败: ${freshness.error || "未知错误"}`}>
+          <ExclamationCircleOutlined style={{ color: "#ff4d4f", marginLeft: 4, fontSize: 12 }} />
+        </Tooltip>
+      );
+    default:
+      return null;
+  }
 }
 
 function NodeSyncStatusTag({
@@ -438,6 +489,55 @@ export default function HomePage({
   const syncingIds = getSyncingDocumentIds(activeSyncTask);
 
   const [uncheckedSyncedDocKeys, setUncheckedSyncedDocKeys] = useState<Set<string>>(new Set());
+  const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
+
+  // Load freshness metadata when sync root changes
+  useEffect(() => {
+    if (!syncRoot) {
+      setFreshnessMap({});
+      return;
+    }
+
+    const loadFreshness = async () => {
+      try {
+        const metadata = await loadFreshnessMetadata(syncRoot);
+        setFreshnessMap(metadata);
+      } catch (error) {
+        console.error("Failed to load freshness metadata:", error);
+      }
+    };
+
+    loadFreshness();
+  }, [syncRoot]);
+
+  // Check freshness for synced documents when they change
+  useEffect(() => {
+    const syncedIds = Object.keys(documentSyncStatuses).filter(
+      (id) => documentSyncStatuses[id]?.status === "synced"
+    );
+
+    if (syncedIds.length === 0 || !syncRoot) {
+      return;
+    }
+
+    // Debounce the freshness check to avoid too frequent API calls
+    const timeoutId = setTimeout(() => {
+      const checkFreshness = async () => {
+        try {
+          const result = await checkDocumentFreshness(syncedIds, syncRoot);
+          setFreshnessMap(result);
+          // Save to persistence
+          await saveFreshnessMetadata(syncRoot, result);
+        } catch (error) {
+          console.error("Failed to check document freshness:", error);
+        }
+      };
+
+      checkFreshness();
+    }, 2000);
+
+    return () => clearTimeout(timeoutId);
+  }, [syncRoot, documentSyncStatuses]);
 
   // Collect document IDs that are already synced successfully
   const syncedDocumentIds = useMemo(() => {
@@ -746,6 +846,11 @@ export default function HomePage({
                       syncStatuses={documentSyncStatuses}
                       syncingIds={syncingIds}
                       activeTask={activeSyncTask}
+                    />
+                    <FreshnessIndicator
+                      documentId={treeNode.scopeValue?.documentId}
+                      syncStatus={documentSyncStatuses[treeNode.scopeValue?.documentId || ""]}
+                      freshnessMap={freshnessMap}
                     />
                   </Space>
                 );
