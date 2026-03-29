@@ -16,7 +16,7 @@ import type { DocumentFreshnessResult, DocumentSyncStatus, KnowledgeBaseNode, Kn
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
 import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 import { buildScopeFromNode, collectCoveredDescendantKeys, computeCascadedCheckedKeys, computeTriState } from "@/utils/treeSelection";
-import { checkDocumentFreshness, loadFreshnessMetadata, saveFreshnessMetadata } from "@/utils/tauriRuntime";
+import { checkDocumentFreshness, loadFreshnessMetadata, openWorkspaceFolder, saveFreshnessMetadata } from "@/utils/tauriRuntime";
 
 const { Text } = Typography;
 
@@ -641,6 +641,28 @@ export default function HomePage({
     }
   };
 
+  const handleOpenWorkspace = async (): Promise<void> => {
+    if (!syncRoot) {
+      message.warning("未设置同步目录");
+      return;
+    }
+    try {
+      const result = await openWorkspaceFolder(syncRoot);
+      if (!result.success) {
+        if (result.error?.includes("not found") || result.error?.includes("不存在")) {
+          message.error("目录不存在，请先执行同步任务");
+        } else if (result.error?.includes("permission") || result.error?.includes("权限")) {
+          message.error("无法访问该目录，请检查权限");
+        } else {
+          message.error(result.error || "无法打开目录");
+        }
+      }
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      message.error(messageText || "打开目录失败");
+    }
+  };
+
   const handleTriStateToggle = (node: ScopeTreeDataNode): void => {
     if (!node.scopeValue || node.disableCheckbox) {
       return;
@@ -753,6 +775,14 @@ export default function HomePage({
               <Space>
                 <FolderOpenOutlined />
                 <Text>实际写入目录：{syncRoot}</Text>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<FolderOpenOutlined />}
+                  onClick={() => void handleOpenWorkspace()}
+                >
+                  打开
+                </Button>
               </Space>
               <Space wrap>
                 <FolderOpenOutlined />
