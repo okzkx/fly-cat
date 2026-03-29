@@ -16,3 +16,4 @@
 - [2026-03-30 01:05] #14 归档 openspec changes — 归档 4 个已完成的 change：document-freshness-check、document-freshness-persistence、fix-image-filename-png、workspace-open-button。生成中文归档报告并移动到 archive 目录。
 - [2026-03-30 01:10] #15 清理已合并分支 — 删除 6 个已合并的工作分支：opencat/fix-image-filename-png、opencat/knowledge-doc-open-in-browser、opencat/knowledge-doc-open-in-browser-new、opencat/knowledge-doc-open-in-browser-work、opencat/workspace-open-button、workspace-open-button。worktree 保留在 temp/worktree-master 分支。
 - [2026-03-30 03:05] #16 修复 opener 权限错误 — 在 src-tauri/capabilities/default.json 中添加 "opener:allow-open-path" 权限，解决点击"打开工作区"按钮报错问题。
+- [2026-03-30 03:15] #17 文档浏览器打开按钮 — 在 HomePage 树形节点中添加"在浏览器打开"按钮（ExportOutlined 图标），仅文档类型节点显示，点击调用 openDocumentInBrowser 打开飞书云文档。
