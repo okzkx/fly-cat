@@ -2,7 +2,7 @@ use crate::mcp::{
     fetch_openapi_with_retry, fetch_with_retry, FeishuOpenApiClient, FeishuOpenApiConfig,
     FixtureMcpClient, McpError, RawBlock, RetryPolicy,
 };
-use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord, SyncSourceDocument};
+use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord, SyncManifest, SyncSourceDocument};
 use crate::render::{markdown_output_path, render_markdown, source_signature, stable_hash};
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
 use chrono::Utc;
@@ -132,13 +132,16 @@ fn storage_error(err: String) -> SyncPipelineError {
     }
 }
 
-pub fn sync_document_to_disk(
+/// Fetch, render, and write a document to disk without updating the manifest.
+/// Returns the write result for the caller to batch-update the manifest later.
+pub fn sync_document_content(
     source_document: &SyncSourceDocument,
     sync_root: &Path,
     image_dir_name: &str,
     mcp_server_name: &str,
     openapi_config: Option<&FeishuOpenApiConfig>,
-) -> Result<SyncWriteResult, SyncPipelineError> {
+    manifest: &SyncManifest,
+) -> Result<(SyncWriteResult, ManifestRecord), SyncPipelineError> {
     let canonical =
         fetch_canonical_document(&source_document.document_id, mcp_server_name, openapi_config)
             .map_err(classify_fetch_error)?;
@@ -156,7 +159,6 @@ pub fn sync_document_to_disk(
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent).map_err(filesystem_error)?;
     }
-    let mut manifest = load_manifest(sync_root).map_err(storage_error)?;
     if let Some(previous_output_path) = manifest
         .records
         .iter()
@@ -187,34 +189,45 @@ pub fn sync_document_to_disk(
 
     let content_hash = stable_hash(rendered.markdown.as_bytes());
     let source_signature = source_signature(&canonical);
-    upsert_manifest_record(
-        &mut manifest,
-        ManifestRecord {
-            document_id: source_document.document_id.clone(),
-            space_id: source_document.space_id.clone(),
-            space_name: source_document.space_name.clone(),
-            node_token: source_document.node_token.clone(),
-            title: source_document.title.clone(),
-            version: source_document.version.clone(),
-            update_time: source_document.update_time.clone(),
-            source_path: source_document.source_path.clone(),
-            path_segments: source_document.path_segments.clone(),
-            output_path: output_path_string.clone(),
-            content_hash: content_hash.clone(),
-            source_signature: source_signature.clone(),
-            status: "success".into(),
-            image_assets: written_assets.clone(),
-            last_synced_at: now_iso(),
-        },
-    );
-    save_manifest(sync_root, &manifest).map_err(storage_error)?;
+    let record = ManifestRecord {
+        document_id: source_document.document_id.clone(),
+        space_id: source_document.space_id.clone(),
+        space_name: source_document.space_name.clone(),
+        node_token: source_document.node_token.clone(),
+        title: source_document.title.clone(),
+        version: source_document.version.clone(),
+        update_time: source_document.update_time.clone(),
+        source_path: source_document.source_path.clone(),
+        path_segments: source_document.path_segments.clone(),
+        output_path: output_path_string.clone(),
+        content_hash: content_hash.clone(),
+        source_signature: source_signature.clone(),
+        status: "success".into(),
+        image_assets: written_assets.clone(),
+        last_synced_at: now_iso(),
+    };
 
-    Ok(SyncWriteResult {
+    Ok((SyncWriteResult {
         output_path: output_path_string,
         image_assets: written_assets,
         content_hash,
         source_signature,
-    })
+    }, record))
+}
+
+pub fn sync_document_to_disk(
+    source_document: &SyncSourceDocument,
+    sync_root: &Path,
+    image_dir_name: &str,
+    mcp_server_name: &str,
+    openapi_config: Option<&FeishuOpenApiConfig>,
+) -> Result<SyncWriteResult, SyncPipelineError> {
+    let manifest = load_manifest(sync_root).unwrap_or_default();
+    let (result, record) = sync_document_content(source_document, sync_root, image_dir_name, mcp_server_name, openapi_config, &manifest)?;
+    let mut manifest = manifest;
+    upsert_manifest_record(&mut manifest, record);
+    save_manifest(sync_root, &manifest).map_err(storage_error)?;
+    Ok(result)
 }
 
 #[cfg(test)]
