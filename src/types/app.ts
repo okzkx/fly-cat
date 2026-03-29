@@ -96,6 +96,7 @@ export interface HomePageProps {
   loadedSpaceTrees: Record<string, KnowledgeBaseNode[]>;
   syncRoot: string;
   connectionValidation: ConnectionValidation | null;
+  downloadedDocumentIds: Set<string>;
   onScopeChange: (scope: SyncScope) => void;
   onToggleSource: (
     source: SyncScope,

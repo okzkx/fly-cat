@@ -242,4 +242,12 @@ export async function deleteSyncTask(taskId: string): Promise<void> {
   await invoke("delete_sync_task", { taskId });
 }
 
+export async function getSyncedDocumentIds(syncRoot: string): Promise<Set<string>> {
+  if (!isTauriRuntime()) {
+    return new Set();
+  }
+  const ids = await invoke<string[]>("get_synced_document_ids", { syncRoot });
+  return new Set(ids);
+}
+
 export { TASK_EVENTS };
