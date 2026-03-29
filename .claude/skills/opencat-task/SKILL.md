@@ -42,7 +42,7 @@ Use it when the user wants:
 - do not duplicate prerequisite checks here
 - do not invent bootstrap logic here
 
-## Git Defaults
+## Git Defaults **必须使用 worktree 功能完成任务**
 
 Follow these repository practices:
 - Keep the main worktree on `<base_branch>` for purpose work, trunk refresh, and final merge.
@@ -339,7 +339,7 @@ On completion, summarize:
 
 ## Guardrails
 
-- **IMPORTANT: Never delete linked worktree directories** - They are meant to be kept for reuse. After merge, only switch worktree back to `<base_branch>` and delete the work branch. The worktree directory itself must remain.
+- **IMPORTANT: worktree 内的任务做完后，确保所有的变更都从分支合并到了主干 并且 Never delete linked worktree directories** - They are meant to be kept for reuse. After merge, only switch worktree back to `<base_branch>` and delete the work branch. The worktree directory itself must remain.
 - Invoke the existing OpenSpec skills directly (`openspec-propose`, `openspec-apply-change`, `openspec-archive-change`) instead of inventing a parallel workflow or trying to replicate their behavior
 - `opencat-check` must be run manually before this skill; do not invoke it from within the workflow
 - Always read CLI-provided context files before implementation
