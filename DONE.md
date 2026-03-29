@@ -11,3 +11,5 @@
 - [2026-03-30 01:50] #9 文档新鲜度检查（元数据记录） — Rust 后端新增 DocumentFreshnessResult 模型和 check_document_freshness 命令，对比 manifest 中的版本/更新时间与飞书 API 返回值，返回 current/updated/new/error 四种状态。前端新增 TypeScript 类型定义。cargo check 和 cargo test（29项）均通过。
 - [2026-03-29 22:40] #10 文档新鲜度持久化存储与前端显示 — SQLite 数据库(.freshness-metadata.db)存储新鲜度元数据； 新增 load_freshness_metadata/save_freshness_metadata/clear_freshness_metadata 命令; 前端 HomePage 在已同步文档后显示新鲜度状态图标(绿色对勾/黄色感叹号/蓝色同步/红色错误)。 经 opencat-task 完整 worktree 流程完成。
 - [2026-03-29 23:47] #11 工作区打开按钮 — HomePage 顶部工具栏新增"打开工作区"按钮（FolderOutlined 图标），点击后通过 Tauri Command 打开本地工作区目录。新增 open_workspace_folder Rust 命令，使用 opener crate 跨平台打开文件夹。经 opencat-task 完整 worktree 流程完成。
+- [2026-03-30 00:28] #12 文档浏览器打开按钮 — 知识库目录每个文档节点后添加"在浏览器打开"按钮（ExportOutlined 图标），点击调用 openDocumentInBrowser 函数打开飞书云文档。按钮仅在文档类型节点显示，点击时阻止事件冒泡。经 opencat-task 完整 worktree 流程完成。
+- [2026-03-30 00:52] #13 文档图片显示修复 — 改用飞书块 API 替代 raw_content API，解析 block_type:28 图片块，提取 image.token 作为 media_id 调用现有 download_image() 方法下载图片，渲染为正确的 Markdown 图片语法。经 opencat-task 完整 worktree 流程完成。
