@@ -2,6 +2,7 @@ import {
   CheckCircleOutlined,
   CloudSyncOutlined,
   ExclamationCircleOutlined,
+  ExportOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
@@ -16,7 +17,7 @@ import type { DocumentFreshnessResult, DocumentSyncStatus, KnowledgeBaseNode, Kn
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
 import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 import { buildScopeFromNode, collectCoveredDescendantKeys, computeCascadedCheckedKeys, computeTriState } from "@/utils/treeSelection";
-import { checkDocumentFreshness, loadFreshnessMetadata, openWorkspaceFolder, saveFreshnessMetadata } from "@/utils/tauriRuntime";
+import { checkDocumentFreshness, loadFreshnessMetadata, openDocumentInBrowser, openWorkspaceFolder, saveFreshnessMetadata } from "@/utils/tauriRuntime";
 
 const { Text } = Typography;
 
@@ -882,6 +883,19 @@ export default function HomePage({
                       syncStatus={documentSyncStatuses[treeNode.scopeValue?.documentId || ""]}
                       freshnessMap={freshnessMap}
                     />
+                    {treeNode.nodeKind === "document" && treeNode.nodeToken && (
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ExportOutlined style={{ fontSize: 12 }} />}
+                        title="在浏览器打开"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openDocumentInBrowser(treeNode.nodeToken!, "document");
+                        }}
+                        style={{ padding: "0 4px" }}
+                      />
+                    )}
                   </Space>
                 );
               }}

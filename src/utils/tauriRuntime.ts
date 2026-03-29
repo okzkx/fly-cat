@@ -343,4 +343,44 @@ export async function openWorkspaceFolder(path: string): Promise<{ success: bool
   }
 }
 
+/**
+ * Open a document in the browser.
+ * Uses the Tauri opener plugin to open the URL.
+ * @param nodeToken The document token
+ * @param kind The node kind (document, bitable, etc.)
+ */
+export async function openDocumentInBrowser(
+  nodeToken: string,
+  kind: "document" | "bitable" | "folder"
+): Promise<{ success: boolean; error?: string }> {
+  if (!nodeToken) {
+    return { success: false, error: "无效的文档标识" };
+  }
+
+  // Build the Feishu document URL based on node kind
+  let url: string;
+  if (kind === "bitable") {
+    url = `https://feishu.cn/base/${nodeToken}`;
+  } else if (kind === "document") {
+    url = `https://feishu.cn/docx/${nodeToken}`;
+  } else {
+    // Folders don't have a direct URL
+    return { success: false, error: "文件夹不支持在浏览器中打开" };
+  }
+
+  if (!isTauriRuntime()) {
+    // In browser mode, just open in a new tab
+    window.open(url, "_blank");
+    return { success: true };
+  }
+
+  try {
+    await openPath(url);
+    return { success: true };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    return { success: false, error: errorMessage };
+  }
+}
+
 export { TASK_EVENTS };
