@@ -7,6 +7,7 @@ import {
   TableOutlined
 } from "@ant-design/icons";
 import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
+import { useMemo } from "react";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
@@ -200,25 +201,26 @@ function selectedKey(scope: SyncScope | null): string[] {
   return [scopeKey(scope)];
 }
 
-function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, downloadedIds: Set<string>): ScopeTreeDataNode[] {
+function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, downloadedIds: Set<string>, syncingKeys: Set<string>): ScopeTreeDataNode[] {
   return nodes.map((node) => {
     const scopeValue = buildScopeFromNode(node) ?? undefined;
     const isDisabledNode = scopeValue ? disabledKeys.has(scopeKey(scopeValue)) : false;
     const isAlreadyDownloaded = node.documentId ? downloadedIds.has(node.documentId) : false;
+    const isSyncing = scopeValue ? syncingKeys.has(scopeKey(scopeValue)) : false;
 
     return {
       title: node.title,
       key: node.key,
       isLeaf: !node.isExpandable,
       selectable: node.kind !== "bitable",
-      disableCheckbox: node.kind === "bitable" || isDisabledNode || isAlreadyDownloaded,
+      disableCheckbox: node.kind === "bitable" || isDisabledNode || isAlreadyDownloaded || isSyncing,
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
       scopeValue,
-      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys, downloadedIds) : undefined
+      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys, downloadedIds, syncingKeys) : undefined
     };
   });
 }
@@ -227,7 +229,8 @@ function buildTreeData(
   spaces: HomePageProps["spaces"],
   loadedSpaceTrees: HomePageProps["loadedSpaceTrees"],
   selectedSources: SyncScope[],
-  downloadedDocumentIds: Set<string>
+  downloadedDocumentIds: Set<string>,
+  syncingKeys: Set<string>
 ): ScopeTreeDataNode[] {
   return [
     {
@@ -246,7 +249,8 @@ function buildTreeData(
           ? buildTreeNodes(
               loadedSpaceTrees[space.id],
               new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedSources)),
-              downloadedDocumentIds
+              downloadedDocumentIds,
+              syncingKeys
             )
           : undefined
       }))
@@ -325,7 +329,16 @@ export default function HomePage({
     }
   };
 
-  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources, downloadedDocumentIds);
+  const checkedSourceKeys = selectedSources.map((source) => scopeKey(source));
+
+  const syncingKeys = useMemo(() => {
+    if (!activeSyncTask) {
+      return new Set<string>();
+    }
+    return new Set(checkedSourceKeys);
+  }, [activeSyncTask, checkedSourceKeys]);
+
+  const treeData = buildTreeData(spaces, loadedSpaceTrees, selectedSources, downloadedDocumentIds, syncingKeys);
 
   const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
     const node = info.node as ScopeTreeDataNode;
@@ -333,8 +346,6 @@ export default function HomePage({
       onScopeChange(node.scopeValue);
     }
   };
-
-  const checkedSourceKeys = selectedSources.map((source) => scopeKey(source));
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
