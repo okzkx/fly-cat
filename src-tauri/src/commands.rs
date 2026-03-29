@@ -2613,6 +2613,79 @@ pub fn remove_synced_documents(
     Ok(deleted_count)
 }
 
+#[tauri::command]
+pub async fn check_document_freshness(
+    app: AppHandle,
+    document_ids: Vec<String>,
+    sync_root: String,
+) -> Result<std::collections::HashMap<String, crate::model::DocumentFreshnessResult>, String> {
+    if document_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let settings: AppSettings = load_json_file(settings_file_path(&app)?)?
+        .ok_or_else(|| "请先在设置页保存飞书应用配置".to_string())?;
+    let (_, config) = authorized_config_for_session(&app, &settings)
+        .map_err(|result| result.validation.message)?;
+
+    let client = FeishuOpenApiClient::new(config);
+    let manifest = crate::storage::load_manifest(std::path::Path::new(&sync_root)).unwrap_or_default();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let mut freshness_map = std::collections::HashMap::new();
+
+        for document_id in &document_ids {
+            let local_record = manifest.records.iter().find(|r| r.document_id == *document_id);
+
+            match client.fetch_document_summary(document_id) {
+                Ok(summary) => {
+                    let (status, local_version, remote_version, local_update_time, remote_update_time) =
+                        if let Some(record) = local_record {
+                            if record.version == summary.version && record.update_time == summary.update_time {
+                                ("current".to_string(), record.version.clone(), summary.version, record.update_time.clone(), summary.update_time)
+                            } else {
+                                ("updated".to_string(), record.version.clone(), summary.version, record.update_time.clone(), summary.update_time)
+                            }
+                        } else {
+                            ("new".to_string(), String::new(), summary.version, String::new(), summary.update_time)
+                        };
+
+                    freshness_map.insert(
+                        document_id.clone(),
+                        crate::model::DocumentFreshnessResult {
+                            status,
+                            local_version,
+                            remote_version,
+                            local_update_time,
+                            remote_update_time,
+                            error: None,
+                        },
+                    );
+                }
+                Err(err) => {
+                    freshness_map.insert(
+                        document_id.clone(),
+                        crate::model::DocumentFreshnessResult {
+                            status: "error".to_string(),
+                            local_version: local_record.map(|r| r.version.clone()).unwrap_or_default(),
+                            remote_version: String::new(),
+                            local_update_time: local_record.map(|r| r.update_time.clone()).unwrap_or_default(),
+                            remote_update_time: String::new(),
+                            error: Some(err.to_string()),
+                        },
+                    );
+                }
+            }
+        }
+
+        freshness_map
+    })
+    .await
+    .map_err(|err| format!("freshness check panicked: {err}"))?;
+
+    Ok(result)
+}
+
 /// Remove empty directories bottom-up within the sync root.
 fn clean_empty_dirs(sync_root: &Path) {
     fn is_empty_dir(p: &Path) -> bool {

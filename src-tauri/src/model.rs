@@ -78,3 +78,14 @@ pub struct DocumentSyncStatusEntry {
     pub status: String,
     pub last_synced_at: String,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentFreshnessResult {
+    pub status: String,
+    pub local_version: String,
+    pub remote_version: String,
+    pub local_update_time: String,
+    pub remote_update_time: String,
+    pub error: Option<String>,
+}

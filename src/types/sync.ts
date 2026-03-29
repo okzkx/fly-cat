@@ -131,3 +131,12 @@ export interface DocumentSyncStatus {
   status: "synced" | "failed";
   lastSyncedAt: string;
 }
+
+export interface DocumentFreshnessResult {
+  status: "current" | "updated" | "new" | "error";
+  localVersion: string;
+  remoteVersion: string;
+  localUpdateTime: string;
+  remoteUpdateTime: string;
+  error?: string;
+}
