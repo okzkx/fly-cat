@@ -1,30 +1,4 @@
-# knowledge-tree-display Specification
-
-## Purpose
-TBD - created by archiving change remove-chinese-labels. Update Purpose after archive.
-## Requirements
-### Requirement: Tree node labels
-Tree nodes MUST display the node title alongside a type icon only. The system SHALL NOT render additional text labels (such as Chinese type tags) for the node type.
-
-#### Scenario: Space node rendering
-- **WHEN** a space node is rendered in the knowledge tree
-- **THEN** it shows a cloud icon and the space title, with no "整库" tag
-
-#### Scenario: Folder node rendering
-- **WHEN** a folder node is rendered in the knowledge tree
-- **THEN** it shows a folder icon and the folder title, with no "目录" tag
-
-#### Scenario: Document node rendering
-- **WHEN** a document node is rendered in the knowledge tree
-- **THEN** it shows a file icon and the document title, with no "文档" tag
-
-#### Scenario: Document with descendants
-- **WHEN** a document node with `includesDescendants` is rendered in the knowledge tree
-- **THEN** it shows a file icon and the document title, with no "含子文档" tag
-
-#### Scenario: Bitable node rendering
-- **WHEN** a bitable node is rendered in the knowledge tree
-- **THEN** it shows a table icon and the bitable title, with no "多维表格" tag
+## MODIFIED Requirements
 
 ### Requirement: Metadata display on non-document tree nodes
 The system SHALL display sync metadata status tags on ALL tree node types (space, folder, document, bitable), not only document nodes. When a sync task is active and documents have been discovered, individual document nodes that are in the discovered set but not yet synced MUST display "等待同步" to distinguish them from documents outside the current sync scope. Aggregate tags on parent nodes (folder, space) MUST reflect the overall sync progress including discovered-but-unsynced documents.
@@ -72,4 +46,3 @@ The system SHALL display sync metadata status tags on ALL tree node types (space
 #### Scenario: Folder node all children waiting to sync
 - **WHEN** a sync task is active with discovery completed but no descendant documents of a folder node have been synced yet
 - **THEN** the folder node shows a tag "同步中 0/Y" reflecting that 0 of Y discovered documents have been processed
-

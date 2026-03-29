@@ -152,9 +152,7 @@ function DocumentSyncStatusTag({
     return <Tag color="error" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>同步失败</Tag>;
   }
   if (syncingIds.has(documentId)) {
-    const processed = activeTask?.counters.processed ?? 0;
-    const total = activeTask?.counters.total ?? 0;
-    return <Tag color="processing" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>同步中 {processed}/{total}</Tag>;
+    return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>等待同步</Tag>;
   }
   return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>未同步</Tag>;
 }
