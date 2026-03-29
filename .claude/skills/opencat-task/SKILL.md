@@ -1,312 +1,242 @@
 ---
 name: opencat-task
-description: Run a staged OpenSpec workflow with checkpoint commits and reusable linked worktree copies: finish the purpose/proposal stage in the main worktree, create a branch and record the purpose commit, select or create a `-worktree` sibling copy for apply, rebase onto the latest trunk before archive, commit after apply and archive, merge back, delete the branch, and keep the worktree copies for reuse. Use when the user wants end-to-end OpenSpec work with safer git checkpoints and reusable worktree isolation, including automatic fallback to another worktree copy when one is already occupied. Prerequisite: run `opencat-check` manually before invoking this skill.
+description: OpenSpec 分阶段工作流执行器。完成 purpose → apply → archive 全流程，**必须使用 worktree 隔离**、**核心约束：worktree 保留不删除**、**变更必须合并回主干**。适用于端到端的 OpenSpec 变更执行。
 license: MIT
-compatibility: Requires `opencat-check` to have been run manually to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
+compatibility: 需要先手动运行 `opencat-check` 检查环境
 metadata:
   author: opencat
-  version: "1.5"
+  version: "2.0"
   derivedFrom: "openspec-all-in-one"
 ---
 
-Run an OpenSpec change from purpose to archive with staged git checkpoints and reusable linked worktree copies.
+# OpenCat Task - OpenSpec 分阶段工作流
 
-This skill wraps `openspec-all-in-one` with:
-- a purpose record commit
-- an apply checkpoint commit
-- an archive commit
-- reusable linked worktree copies that are kept for the next run
-
-Use it when the user wants:
-- end-to-end OpenSpec execution with git checkpoints
-- proposal work done before branching into a worktree
-- reusable implementation worktree copies instead of disposable worktrees
-- automatic merge-back after archive
-- automatic creation of another worktree copy when the shared one is occupied
+端到端执行 OpenSpec 变更：从提案到归档，带 Git 检查点和可复用 worktree 隔离。
 
 ---
 
-**Input**: A change name, or a natural-language request describing what to build or fix.
-
-## Terminology
-
-- `purpose stage`: the proposal stage that creates or updates change artifacts before implementation.
-- `trunk`: the base branch the user started from, usually `main` or `master`.
-
-## Dependency
+## 输入
 
-`opencat-check` must be run **manually** before invoking this skill.
+- 变更名称（kebab-case）
+- 或自然语言描述（自动生成变更名称）
 
-`opencat-task` does **not** run environment checks itself:
-- do not invoke `opencat-check` from this skill
-- do not duplicate prerequisite checks here
-- do not invent bootstrap logic here
+---
 
-## Git Defaults **必须使用 worktree 功能完成任务**
+## 核心概念
 
-Follow these repository practices:
-- Keep the main worktree on `<base_branch>` for purpose work, trunk refresh, and final merge.
-- Create one temporary work branch per change, such as `opencat/<change-name>`.
-- Name reusable linked worktree copies with a `-worktree` suffix.
-- Prefer the primary sibling path `../<repo-name>-worktree`.
-- If the primary path is occupied, create another sibling copy that still ends with `-worktree`, such as `../<repo-name>-2-worktree`, `../<repo-name>-3-worktree`, and so on.
-- Reuse an existing linked worktree copy only when it is on `<base_branch>` and clean enough for safe reuse.
-- If an existing linked worktree copy is not on `<base_branch>`, treat it as occupied by another AI run and create the next available `-worktree` copy instead of reusing it.
-- Use the linked worktree only from the apply stage onward.
-- Keep linked worktree directories after the workflow completes so they can be reused next time.
-- Before deleting `<work_branch>`, switch the linked worktree off that branch, typically back to `<base_branch>`.
-- Use an explicit merge commit for final integration: `git merge --no-ff "<work_branch>"`.
-- If `git rebase` or `git merge` reports conflicts, the AI must resolve them directly and continue the workflow unless the repository state is technically unrecoverable.
-- Never rewrite `<base_branch>` history and never push unless the user explicitly asks.
+| 术语 | 说明 |
+|------|------|
+| `purpose stage` | 提案阶段，创建变更文档（proposal、design、specs、tasks） |
+| `apply stage` | 实现阶段，按 tasks.md 执行代码修改 |
+| `archive stage` | 归档阶段，生成变更报告并归档 |
+| `trunk` | 基础分支，通常是 `main` 或 `master` |
+| `worktree` | Git 工作树副本，用于隔离实现工作 |
 
-## Git Checkpoint Commits
+---
 
-Create up to three commits in this workflow:
-1. `purpose commit`: records the purpose/proposal artifacts after purpose validation passes.
-2. `apply commit`: records implementation work after apply validation passes.
-3. `archive commit`: records archive results after the Chinese archive report is generated.
+## 工作流程
 
-Before each commit:
-- inspect `git status`, relevant `git diff`, and recent `git log`
-- stage only files relevant to the current checkpoint
-- do not stage build outputs, caches, secrets, or unrelated local work
+### 阶段概览
 
-Commit message rules:
-- all three commits **must** start with a stage prefix: `[propose]`, `[apply]`, or `[archive]` respectively
-- `purpose commit`: message format `[propose] <change-name>: <concise description of the purpose/proposal artifacts>`
-- `apply commit`: message format `[apply] <change-name>: <concise description of the completed implementation work>`
-- `archive commit`: message format `[archive] <change-name>: <Chinese summary title from change-report.zh-CN.md>`
-- for the archive commit, use the report's Chinese summary as the source of truth for both title and message body
-- keep the archive title concise and summary-like, reflecting the main outcome of the archived change
-- keep the archive body aligned with the report's key points, such as motivation, scope, spec impact, and task completion, when those sections exist
-- when running in Windows PowerShell, do **not** use bash heredoc syntax such as `$(cat <<'EOF' ...)`; instead use a PowerShell here-string variable and pass it to `git commit -m $message`, or run separate `-m` arguments
-- avoid chaining git commands with `&&` in Windows PowerShell; run them as separate commands or guard with `$LASTEXITCODE`
-- run `git status` after each commit to confirm success
+```
+purpose → validate → commit → worktree → apply → validate → commit
+    → rebase → archive → commit → merge → cleanup
+```
 
-## Workflow
+### 详细步骤
 
-1. **Classify the request**
+#### 1. 分类请求
 
-   Decide whether the request is `simple` or `complex`.
+**简单变更**（满足多数条件）：
+- 小修复、小功能、文档/配置修改
+- 单一明确目标
+- 模块影响有限
 
-   Treat as `simple` when most of these are true:
-   - small fix, small feature, or scoped documentation/config change
-   - single clear objective
-   - limited module impact
-   - no meaningful architecture tradeoff
+**复杂变更**（满足任一条件）：
+- 跨模块工作
+- 涉及设计权衡
+- 范围模糊
 
-   Treat as `complex` when any of these are true:
-   - cross-cutting or multi-module work
-   - design tradeoffs are likely
-   - scope is ambiguous
-   - the work may reasonably split into multiple changes
+> 不确定时归类为「复杂」
 
-   If unsure, classify it as `complex`.
+#### 2. 准备 Git 计划（主 worktree）
 
-2. **Select or derive the change**
+```bash
+# 记录当前分支作为 base_branch
+# 检查 git status --short
+# 检查 git worktree list --porcelain
+```
 
-   - if the user provided a concrete change name, use it
-   - otherwise derive a kebab-case change name from the request
-   - if the request may refer to an existing active change, verify before creating a new one
+派生：
+- `work_branch`: 临时分支名，如 `opencat/<change-name>`
+- `worktree_path`: 可复用的 sibling worktree 路径
 
-3. **Prepare the git plan from the main worktree**
+#### 3. Purpose 阶段（主 worktree）
 
-   From the main worktree:
-   - capture the current branch as `<base_branch>`
-   - inspect `git status --short`
-   - inspect `git worktree list --porcelain`
+**在主 worktree 中**调用 `openspec-propose` skill。
 
-   Then derive:
-   - `work_branch`: a temporary branch name such as `opencat/<change-name>`
-   - `worktree_base_path`: the primary reusable sibling path `../<repo-name>-worktree`
-   - `worktree_path`: the selected reusable sibling path for this run
+> ⚠️ 此时不要创建 worktree
 
-   Guardrails:
-   - if `HEAD` is detached, pause unless the user explicitly wants that as the base
-   - if unrelated dirty changes in the main worktree would make purpose, commits, rebase, or merge unsafe, pause
-   - if `work_branch` already exists and does not match the intended change, pause
-   - if an existing candidate worktree is on `<base_branch>` but dirty, blocked, or otherwise unsafe to reuse, skip it and keep scanning for another candidate or create the next `-worktree` copy
-   - pause only if no existing candidate can be reused and a new `-worktree` copy cannot be created safely
+#### 4. 验证 Purpose
 
-4. **Run the purpose stage in the main worktree**
+```bash
+openspec validate --change "<name>"
+```
 
-   Do **not** create a worktree yet and do **not** move to the linked worktree yet.
+失败则修复后重试。
 
-   Invoke the `openspec-propose` skill directly with the change name or request description as arguments.
+#### 5. 创建 Purpose 提交
 
-5. **Validate after purpose**
+验证通过后：
+- 创建并切换到 `<work_branch>`
+- 暂存 purpose 相关文件
+- 提交：`[propose] <change-name>: <描述>`
+- 切回 `<base_branch>`
 
-   In the main worktree, run:
+#### 6. 准备 Worktree
 
-   ```bash
-   openspec validate --change "<name>"
-   ```
+查找可复用的 worktree（按优先级）：
+1. `../<repo-name>-worktree`
+2. `../<repo-name>-worktree-2`
+3. `../<repo-name>-worktree-3`
+4. ...
 
-   If validation fails:
-   - fix straightforward issues and re-run validation
-   - if the fix is unclear or risky, pause and report the blocker
+复用条件：
+- 路径存在 ✓
+- 在 `<base_branch>` 上 ✓
+- 工作区干净 ✓
 
-6. **Create the branch and record the purpose commit**
+如果被占用（在别的分支上），则创建下一个。
 
-   After purpose validation passes:
-   - create and switch to `<work_branch>` from the current main-worktree state
-   - stage only purpose artifacts relevant to the change
-   - create the `purpose commit`
-   - switch the main worktree back to `<base_branch>` after the commit so trunk remains available there
+在 worktree 中切换到 `<work_branch>`。
 
-   Pause if:
-   - the purpose commit would mix in unrelated changes
-   - the branch cannot be created safely
+#### 7. Apply 阶段（Worktree）
 
-7. **Prepare or reuse the linked worktree for apply**
+**在 worktree 中**调用 `openspec-apply-change` skill。
 
-   The apply stage is the first point where the linked worktree is used.
+#### 8. 验证 Apply
 
-   - inspect reusable sibling paths in this order: `../<repo-name>-worktree`, then `../<repo-name>-2-worktree`, `../<repo-name>-3-worktree`, and so on
-   - if a candidate path does not exist, create a linked worktree there from `<base_branch>` and use it
-   - if a candidate path already exists and is on `<base_branch>` and clean, reuse it
-   - if a candidate path already exists but is detached and clean, reuse it (detached is normal after a previous merge + branch delete)
-   - if a candidate path already exists and is on a different named branch (not detached), treat it as occupied by another AI run and continue to the next candidate instead of blocking
-   - if a candidate path already exists on `<base_branch>` but is dirty or otherwise unsafe, continue to the next candidate or create a new one
-   - in the linked worktree, switch to `<work_branch>`
-   - verify `git worktree list` reflects the expected branch/path before continuing
+```bash
+openspec validate --change "<name>"
+```
 
-8. **Run implementation in the linked worktree**
+#### 9. 创建 Apply 提交
 
-   Invoke the `openspec-apply-change` skill directly with the change name as arguments.
+```bash
+git add <相关文件>
+git commit -m "[apply] <change-name>: <描述>"
+```
 
-9. **Validate after apply**
+#### 10. 刷新主干并 Rebase
 
-   In the linked worktree, run again:
+```bash
+# 主 worktree 中
+git fetch
+git pull --ff-only  # 刷新 trunk
 
-   ```bash
-   openspec validate --change "<name>"
-   ```
+# worktree 中
+git rebase <base_branch>
+```
 
-   If validation fails:
-   - repair obvious issues and re-run
-   - do not continue to the apply commit or archive while validation is meaningfully broken unless the user explicitly approves
+有冲突则**自行解决**，除非仓库状态无法恢复。
 
-10. **Create the apply commit**
+#### 11. Archive 阶段（Worktree）
 
-    After apply validation passes:
-    - stage only implementation files relevant to the change
-    - create the `apply commit`
+调用 `openspec-archive-change` skill。
 
-11. **Refresh trunk and rebase before archive**
+生成中文报告 `change-report.zh-CN.md`，包含：
+- 基本信息
+- 变更动机
+- 变更范围
+- 规格影响
+- 任务完成情况
 
-    Before archive, move the work branch onto the latest trunk state.
+#### 12. 创建 Archive 提交
 
-    - in the main worktree, refresh `<base_branch>` to the latest available trunk state
-    - if `<base_branch>` tracks a remote branch, prefer `git fetch` plus a safe fast-forward update such as `git pull --ff-only`
-    - if the trunk refresh cannot complete safely, pause
-    - in the linked worktree, rebase `<work_branch>` onto the refreshed `<base_branch>`
+```bash
+git add <archive 相关文件>
+git commit -m "[archive] <change-name>: <中文标题>"
+```
 
-    If rebase reports conflicts:
-    - inspect each conflicted file and resolve the conflict directly as the default behavior
-    - preserve the change intent from `<work_branch>` while keeping valid non-overlapping updates from refreshed trunk
-    - continue the rebase and validate again when needed after resolving conflicts
-    - do not ask the user to resolve ordinary or ambiguous code conflicts for you; the AI should finish the conflict resolution itself
-    - pause only if the repository state is technically unrecoverable, such as corrupted git metadata or missing conflict inputs that prevent completing the rebase
+#### 13. 合并回主干（主 Worktree）
 
-12. **Run archive in the linked worktree**
+```bash
+git checkout <base_branch>
+git merge --no-ff "<work_branch>"
+```
 
-    Invoke the `openspec-archive-change` skill directly with the change name as arguments.
+有冲突则**自行解决**。
 
-    After the archive skill completes:
-    - generate a Chinese Markdown report at `openspec/changes/archive/YYYY-MM-DD-<name>/change-report.zh-CN.md`
-    - build the report from archived artifacts already present in that directory, especially `proposal.md`, `design.md`, `specs/**/*.md`, and `tasks.md`
-    - keep the report concise and user-facing; include at least:
-      - basic info (change name, schema, archive path)
-      - change motivation summary
-      - change scope summary
-      - spec impact summary
-      - task completion summary
-    - if `design.md` is missing, omit the design section instead of failing the workflow
-    - if the normal archive move fails because the change directory is access-denied or otherwise locked, use a safe fallback:
-      1. copy the full change directory into the intended archive target
-      2. verify key files such as `.openspec.yaml` and `tasks.md` exist in the archive copy
-      3. remove the original source directory only after verification succeeds
-      4. report clearly that archive completed via copy+delete fallback
-    - when archive succeeds via either normal move or fallback, ensure the Chinese report is written into the final archived directory before moving to the archive commit
+#### 14. 清理
 
-13. **Create the archive commit**
+- **确保 worktree 内的所有变更都已提交**
+- worktree 切回 `<base_branch>`
+- 删除 `<work_branch>` 分支
+- **保留 worktree 目录供下次使用**
 
-    After archive and report generation succeed:
-    - stage only archive-related files relevant to the change
-    - create the `archive commit`
+#### 15. 验证清理
 
-14. **Merge back from the main worktree**
+- 确认分支已删除
+- 确认 worktree 在 base 分支且干净
+- 确认无孤立归档目录
+- 确认 worktree 目录还保留
 
-    After the linked worktree workflow succeeds:
-    - return to the original main worktree
-    - ensure you are on `<base_branch>`
-    - inspect `git status --short`
-    - if unrelated local changes on the base branch would be mixed into the merge, pause
+---
 
-    Merge the completed branch back with:
+## Git 提交规范
 
-    ```bash
-    git merge --no-ff "<work_branch>"
-    ```
+### 三个检查点提交
 
-    If merge reports conflicts:
-    - inspect each conflicted file and resolve the conflict directly as the default behavior
-    - preserve the archived change intent from `<work_branch>` while keeping valid non-overlapping updates already present on `<base_branch>`
-    - run the relevant validation needed to confirm the merged result is still correct
-    - stage the resolved files and complete the merge commit
-    - do not hand ordinary or ambiguous code conflicts back to the user; the AI should finish the merge conflict resolution itself
-    - pause only if the repository state is technically unrecoverable, such as corrupted git metadata or missing conflict inputs that prevent completing the merge
+| 提交 | 格式 |
+|------|------|
+| Purpose | `[propose] <name>: <描述>` |
+| Apply | `[apply] <name>: <描述>` |
+| Archive | `[archive] <name>: <中文标题>` |
 
-    If merge cannot complete cleanly for reasons other than ordinary file conflicts:
-    - pause and report the blocking state
+### 提交前检查
 
-15. **Keep the worktree and delete the branch**
+- 检查 `git status`、`git diff`、`git log`
+- 只暂存相关文件
+- 不提交构建产物、缓存、密钥
 
-    After a successful merge:
-    - in the linked worktree, switch back to `<base_branch>` and ensure it is clean
-    - from the main worktree, delete `<work_branch>`
-    - keep `worktree_path` in place for the next `opencat-task` run
-    - keep any other existing `-worktree` sibling copies in place for future reuse
-    - do **not** remove linked worktree directories unless the user explicitly asks
+---
 
-16. **Verify cleanup**
+## Worktree 规范
 
-    After cleanup steps, verify the workflow completed cleanly:
-    - confirm `<work_branch>` no longer exists: `git branch --list "<work_branch>"` should return empty
-    - confirm linked worktree is on `<base_branch>`: `git -C "<worktree_path>" branch --show-current` should return `<base_branch>`
-    - confirm linked worktree is clean: `git -C "<worktree_path>" status --short` should return empty
-    - confirm no orphaned archive directories with placeholder dates exist: `openspec/changes/archive/YYYY-MM-DD-*` should not exist
-    - report any anomalies in the completion summary
+### 命名约定
 
-    If verification fails:
-    - attempt to fix the anomaly if safe (e.g., delete orphan branch, switch worktree to base branch, remove placeholder archive directories)
-    - if the anomaly cannot be safely fixed, include it as a "remaining issue" in the completion summary
+- 主 worktree: 项目根目录
+- 可复用 worktree: `../<repo-name>-worktree`
+- 备用 worktree: `../<repo-name>-worktree-2`、`../<repo-name>-worktree-3` ...
 
-## Default Behavior
+### 生命周期
 
-- When the user explicitly invokes `opencat-task`, run the whole workflow continuously through `purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup -> verify`.
-- Keep the `simple|complex` classification for risk awareness, progress reporting, and decision quality, but do **not** use complexity alone as a reason to pause.
-- Pause only when a listed pause condition or a repository safety rule requires user confirmation.
+```
+创建/复用 → apply → rebase → archive → 切回 base → 保留
+```
 
-## Pause Conditions
+> ⚠️ **绝不删除 worktree 目录**，它们设计为可复用
 
-Pause and ask the user when:
-- the request is too ambiguous to propose safely
-- purpose, design, or implementation reveals a decision that materially changes scope or behavior
-- implementation uncovers a design change that should update artifacts first
-- validation cannot be repaired confidently
-- the purpose, apply, or archive commit would mix in unrelated changes
-- trunk refresh cannot complete safely
-- every discovered `-worktree` candidate is unsafe to reuse and a new one cannot be created safely
-- the base branch is detached or otherwise unclear
-- the target branch name collides with existing state
-- deleting the branch would fail because the linked worktree is still attached to it
-- a git safety rule requires explicit user confirmation before continuing
+---
 
-## Output Format
+## 暂停条件
 
-During execution, keep progress updates compact and structured like:
+遇到以下情况暂停并询问用户：
+
+- 请求太模糊无法安全提案
+- 发现影响范围或行为的重大决策
+- 验证无法自信修复
+- 提交会混入无关更改
+- 主干刷新无法安全完成
+- 所有 worktree 候选都不安全
+- 基础分支 detached 或不明确
+- 分支名与现有状态冲突
+
+---
+
+## 输出格式
+
+### 执行中
 
 ```text
 ## OpenCat Work
@@ -315,43 +245,61 @@ During execution, keep progress updates compact and structured like:
 **Complexity:** simple|complex
 **Base:** <base-branch>
 **Worktree Branch:** <work-branch>
-**Stage:** purpose|validate|purpose-commit|worktree|apply|validate|apply-commit|rebase|archive|archive-commit|merge|cleanup|verify
+**Stage:** purpose|apply|archive|...
 
-<short progress note>
+<进度说明>
 ```
 
-On completion, summarize:
-- change name
-- base branch
-- worktree branch
-- whether purpose commit succeeded
-- whether apply commit succeeded
-- whether archive commit succeeded
-- whether validation passed
-- whether archive completed
-- whether `change-report.zh-CN.md` was generated
-- whether merge succeeded
-- whether the branch was deleted
-- whether cleanup verification passed
-- which `worktree_path` was used
-- whether the linked worktree copy was kept for reuse
-- any remaining issues
+### 完成后
 
-## Guardrails
+- 变更名称
+- 基础分支
+- 工作分支
+- 各阶段提交是否成功
+- 验证是否通过
+- 归档是否完成
+- 中文报告是否生成
+- 合并是否成功
+- 分支是否删除
+- 清理验证是否通过
+- 使用的 worktree 路径
+- 剩余问题（如有）
 
-- **IMPORTANT: worktree 内的任务做完后，确保所有的变更都从分支合并到了主干 并且 Never delete linked worktree directories** - They are meant to be kept for reuse. After merge, only switch worktree back to `<base_branch>` and delete the work branch. The worktree directory itself must remain.
-- Invoke the existing OpenSpec skills directly (`openspec-propose`, `openspec-apply-change`, `openspec-archive-change`) instead of inventing a parallel workflow or trying to replicate their behavior
-- `opencat-check` must be run manually before this skill; do not invoke it from within the workflow
-- Always read CLI-provided context files before implementation
-- Prefer reusable linked worktree copies outside the repo root rather than disposable per-change worktrees
-- Use `-worktree` suffix naming for reusable worktree copies and create the next numbered copy when an existing one is occupied
-- Keep purpose work in the main worktree until the purpose checkpoint commit exists
-- Do all apply, rebase, and archive work in the linked worktree
-- Refresh trunk before archive so archive happens on top of the latest available base
-- Prefer an explicit `git merge --no-ff` for final integration so branch history and checkpoint commits remain visible
-- Resolve `git rebase` and `git merge` conflicts directly as the default behavior and complete the conflict-handling flow without delegating it back to the user unless the git state is technically unrecoverable
-- Never auto-rewrite `<base_branch>` history and never push unless the user explicitly asks
-- If the repo contains unrelated dirty changes, avoid mixing them into checkpoint commits, rebase, or merge
-- When archive move fails due to filesystem locking, prefer verified copy+delete fallback over repeated blind retries
-- Do not modify OpenSpec CLI/source code just to support report generation; generate the archive report as part of the skill-driven workflow
-- In Windows PowerShell environments, prefer PowerShell-native command composition over bash-specific syntax so git inspection and commit steps do not fail on shell parsing
+---
+
+## 护栏规则
+
+| 规则 | 说明 |
+|------|------|
+| worktree 保留 | 合并后只删除分支，保留 worktree 目录 |
+| 调用现有技能 | 直接调用 `openspec-propose/apply/archive` |
+| 冲突自解 | 默认自行解决 rebase/merge 冲突 |
+| 不重写历史 | 不修改 `<base_branch>` 历史 |
+| 不自动推送 | 除非用户明确要求 |
+
+---
+
+## 成功/失败条件
+
+### 成功 (SUCCESS)
+
+- ✅ 三个检查点提交全部创建
+- ✅ 验证全部通过
+- ✅ 变更合并到主干
+- ✅ worktree 目录保留
+- ✅ 中文归档报告生成
+
+### 失败 (FAILURE)
+
+- ❌ worktree 目录被删除 → 记录严重违规，继续执行
+- ❌ 未合并到主干直接推送 → 记录警告，继续执行
+- ❌ 混入无关更改到提交 → 记录警告，继续执行
+- ❌ 分支未删除造成残留 → 记录残留，继续执行
+
+---
+
+## Windows PowerShell 注意事项
+
+- 不使用 bash heredoc `$(cat <<'EOF' ...)`
+- 使用 PowerShell here-string 或多个 `-m` 参数
+- 不用 `&&` 链接命令，用分步或 `$LASTEXITCODE`
