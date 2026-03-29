@@ -1,5 +1,5 @@
 ---
-name: opencat-work
+name: opencat-task
 description: Run a staged OpenSpec workflow with checkpoint commits and reusable linked worktree copies: finish the purpose/proposal stage in the main worktree, create a branch and record the purpose commit, select or create a `-worktree` sibling copy for apply, rebase onto the latest trunk before archive, commit after apply and archive, merge back, delete the branch, and keep the worktree copies for reuse. Use when the user wants end-to-end OpenSpec work with safer git checkpoints and reusable worktree isolation, including automatic fallback to another worktree copy when one is already occupied. Prerequisite: run `opencat-check` manually before invoking this skill.
 license: MIT
 compatibility: Requires `opencat-check` to have been run manually to satisfy git, node/npm, OpenSpec CLI, and repository dependencies.
@@ -37,7 +37,7 @@ Use it when the user wants:
 
 `opencat-check` must be run **manually** before invoking this skill.
 
-`opencat-work` does **not** run environment checks itself:
+`opencat-task` does **not** run environment checks itself:
 - do not invoke `opencat-check` from this skill
 - do not duplicate prerequisite checks here
 - do not invent bootstrap logic here
@@ -266,7 +266,7 @@ Commit message rules:
     After a successful merge:
     - in the linked worktree, switch back to `<base_branch>` and ensure it is clean
     - from the main worktree, delete `<work_branch>`
-    - keep `worktree_path` in place for the next `opencat-work` run
+    - keep `worktree_path` in place for the next `opencat-task` run
     - keep any other existing `-worktree` sibling copies in place for future reuse
     - do **not** remove linked worktree directories unless the user explicitly asks
 
@@ -285,7 +285,7 @@ Commit message rules:
 
 ## Default Behavior
 
-- When the user explicitly invokes `opencat-work`, run the whole workflow continuously through `purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup -> verify`.
+- When the user explicitly invokes `opencat-task`, run the whole workflow continuously through `purpose -> validate -> purpose-commit -> worktree -> apply -> validate -> apply-commit -> rebase -> archive -> archive-commit -> merge -> cleanup -> verify`.
 - Keep the `simple|complex` classification for risk awareness, progress reporting, and decision quality, but do **not** use complexity alone as a reason to pause.
 - Pause only when a listed pause condition or a repository safety rule requires user confirmation.
 

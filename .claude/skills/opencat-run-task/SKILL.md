@@ -1,8 +1,8 @@
 ---
 name: opencat-run-task
-description: OpenCat 任务列表连续执行器。按 TODO.md 中的优先级顺序执行任务，通过 SubAgent + opencat-work 逐个执行、验收、归档，全程无需人工干预。Use when the user wants to run through a TODO.md task list automatically.
+description: OpenCat 任务列表连续执行器。按 TODO.md 中的优先级顺序执行任务，通过 SubAgent + opencat-task 逐个执行、验收、归档，全程无需人工干预。Use when the user wants to run through a TODO.md task list automatically.
 license: MIT
-compatibility: Requires opencat-work skill to be available in the project.
+compatibility: Requires opencat-task skill to be available in the project.
 metadata:
   author: opencat
   version: "1.2"
@@ -11,7 +11,7 @@ metadata:
 
 # /opencat-run-task - 任务列表连续执行器
 
-执行 `TODO.md` 中的任务，按优先级 P1 > P2 > P3 顺序，通过 SubAgent 调用 `opencat-work` 逐个完成。
+执行 `TODO.md` 中的任务，按优先级 P1 > P2 > P3 顺序，通过 SubAgent 调用 `opencat-task` 逐个完成。
 
 ## 文件格式
 
@@ -75,7 +75,7 @@ metadata:
 
 3. **执行任务**
    - 启动 SubAgent（`general-purpose` 类型）
-   - SubAgent 内部调用 `/opencat-work` 完成任务
+   - SubAgent 内部调用 `/opencat-task` 完成任务
    - SubAgent 完成后自动销毁，上下文完全隔离
 
 4. **归档**
@@ -95,7 +95,7 @@ metadata:
 ## 核心规则
 
 1. **SubAgent 独立执行**: 每个任务由全新 SubAgent 执行，上下文 100% 隔离
-2. **必须使用 opencat-work**: SubAgent 内部通过 `/opencat-work` 完成任务
+2. **必须使用 opencat-task**: SubAgent 内部通过 `/opencat-task` 完成任务
 3. **立即保存**: 每次编辑文件后立即保存，不要批量操作
 4. **任务描述清晰**: 任务应当具体可执行、可验收
 5. **不修改任务内容**: 除非用户明确要求

@@ -1,6 +1,6 @@
 ---
 name: opencat-check
-description: Verify and bootstrap the local OpenCat/OpenSpec toolchain: check git, node, npm, OpenSpec CLI, and repository dependencies, then install or bootstrap what is missing. Use before `opencat-work`, when OpenSpec tooling fails to start, or when the user asks for environment checking, installation, or prerequisite repair.
+description: Verify and bootstrap the local OpenCat/OpenSpec toolchain: check git, node, npm, OpenSpec CLI, and repository dependencies, then install or bootstrap what is missing. Use before `opencat-task`, when OpenSpec tooling fails to start, or when the user asks for environment checking, installation, or prerequisite repair.
 license: MIT
 compatibility: Requires shell access and permission to install missing tools when needed.
 metadata:
@@ -11,7 +11,7 @@ metadata:
 Run environment checks and safe bootstrap steps before OpenCat workflows.
 
 Use it when the user wants:
-- prerequisite checking before `opencat-work`
+- prerequisite checking before `opencat-task`
 - missing tool installation for OpenSpec workflows
 - environment repair for git, node/npm, or OpenSpec CLI
 
@@ -59,13 +59,13 @@ Use it when the user wants:
    Report:
    - which tools were already available
    - which tools or dependencies were installed during this run
-   - whether the environment is ready for `opencat-work`
+   - whether the environment is ready for `opencat-task`
    - any blockers that still require user action
 
 ## Guardrails
 
 - Prefer the repository's existing package manager instead of inventing a new one
 - Install only what is needed to satisfy the workflow
-- Do not continue into `opencat-work` while prerequisites are still missing
+- Do not continue into `opencat-task` while prerequisites are still missing
 - If installation requires elevated privileges, network approval, or an OS-specific choice the agent cannot complete safely, pause and ask the user
 - Verify every install immediately after it completes
