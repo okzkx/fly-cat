@@ -45,6 +45,9 @@ function getSyncingDocumentIds(
   if (!task || (task.status !== "syncing" && task.status !== "pending")) {
     return new Set();
   }
+  if (task.discoveredDocumentIds && task.discoveredDocumentIds.length > 0) {
+    return new Set(task.discoveredDocumentIds);
+  }
   const ids = new Set<string>();
   for (const source of task.selectedSources ?? []) {
     if (source.documentId) {

@@ -61,6 +61,7 @@ export interface SyncTask {
   status: SyncTaskStatus;
   progress: number;
   counters: SyncCounters;
+  discoveredDocumentIds?: string[];
   lifecycleState: SyncLifecycleState;
   errors: SyncRunError[];
   failureSummary?: SyncFailureSummary | null;

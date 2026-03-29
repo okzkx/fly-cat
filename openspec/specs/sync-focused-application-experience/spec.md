@@ -47,31 +47,20 @@ The application MUST present synchronization as a primary workflow distinct from
 - **THEN** the UI renders it as a non-directory leaf node without folder-style expansion affordances
 
 ### Requirement: Sync Lifecycle Status Visibility
-The application MUST expose synchronization lifecycle states and progress at document and run levels, and MUST display trustworthy task timestamps, selected source context, and output-location context in task history.
+The application MUST expose synchronization lifecycle states and progress at document and tree-node level. When a sync task is active, individual document nodes within the task's discovered scope MUST display "同步中" status regardless of whether the original selection was a leaf document, a directory subtree, or a whole space.
 
-#### Scenario: Show active sync progress
-- **WHEN** a sync run is in progress
-- **THEN** the UI displays current lifecycle state, processed count, and pending count
+#### Scenario: Folder-level selection shows syncing status on descendant documents
+- **WHEN** a sync task is active with a folder-level or space-level source selection
+- **THEN** each discovered document node under that selection displays a "同步中" status tag in the knowledge tree
+- **AND** the status transitions from "未同步" to "同步中" immediately when the task becomes active
 
-#### Scenario: Show completion summary
-- **WHEN** a sync run completes
-- **THEN** the UI displays counts of succeeded, skipped, and failed documents with quick access to failures
+#### Scenario: Pending task also shows syncing status
+- **WHEN** a sync task is in "pending" status (created but not yet started)
+- **THEN** all discovered document nodes under the task's scope display "同步中" status in the knowledge tree
 
-#### Scenario: Task list remains a dedicated page
-- **WHEN** the user wants to inspect current or historical sync runs
-- **THEN** the application shows a dedicated task-list style page rather than only inline status summaries on the home page
-
-#### Scenario: Task timestamps are user-readable
-- **WHEN** a task is listed in task history
-- **THEN** the task creation or update time renders as a valid user-readable date/time rather than an invalid or debug-only timestamp string
-
-#### Scenario: Task history shows output destination context
-- **WHEN** a user inspects a sync task in the task list
-- **THEN** the task view shows the resolved output directory for that task rather than only an ambiguous relative path string
-
-#### Scenario: Task history shows selected source scope
-- **WHEN** a user inspects a sync task in the task list
-- **THEN** the task view shows whether the run targeted a whole knowledge base, a directory subtree, a single leaf document, a single document subtree, or a mixed directory-and-document source set, including the selected knowledge base and a trustworthy summary of the selected root paths and effective document count
+#### Scenario: Individual document selection unchanged
+- **WHEN** a sync task is active with individual document-level source selections
+- **THEN** the behavior is unchanged — each selected document shows "同步中" status
 
 ### Requirement: User-Facing Branding Consistency
 The application MUST use consistent FlyCat / 飞猫助手 branding across user-visible page titles and task-oriented views, while preserving sync-specific wording where it describes workflow behavior rather than product identity.
@@ -219,4 +208,20 @@ The application MUST disable checkbox interaction for all currently checked sour
 #### Scenario: Already-downloaded nodes stay disabled
 - **WHEN** a document has already been downloaded (present in downloadedDocumentIds)
 - **THEN** its checkbox remains disabled regardless of sync task state
+
+### Requirement: SyncTask stores discovered document IDs
+
+The `SyncTask` interface MUST include a `discoveredDocumentIds` field that lists all individual document IDs resolved from the task's source selections at task creation time. This enables the frontend to determine per-document syncing status without re-expanding folder/space scopes.
+
+#### Scenario: Folder selection resolves to document IDs
+- **WHEN** a sync task is created with a folder-level source selection
+- **THEN** the task's `discoveredDocumentIds` contains all document IDs discovered under that folder
+
+#### Scenario: Space selection resolves to document IDs
+- **WHEN** a sync task is created with a space-level source selection
+- **THEN** the task's `discoveredDocumentIds` contains all document IDs discovered under that space
+
+#### Scenario: Single document selection preserves its ID
+- **WHEN** a sync task is created with an individual document selection
+- **THEN** the task's `discoveredDocumentIds` contains that document's ID
 
