@@ -2319,7 +2319,7 @@ pub fn validate_feishu_connection(app: AppHandle) -> Result<ConnectionCheckResul
 }
 
 #[tauri::command]
-pub fn list_space_source_tree(
+pub async fn list_space_source_tree(
     app: AppHandle,
     space_id: String,
     parent_node_token: Option<String>,
@@ -2333,17 +2333,23 @@ pub fn list_space_source_tree(
     let (session, _) = authorized_config_for_session(&app, &settings)
         .map_err(|result| result.validation.message)?;
 
-    match list_space_source_tree_from_openapi(&space_id, parent_node_token.as_deref(), &settings, &session) {
-        Ok(nodes) => Ok(nodes),
-        Err(error) => {
-            let fixtures = fixture_space_nodes(&space_id, parent_node_token.as_deref());
-            if fixtures.is_empty() {
-                Err(error)
-            } else {
-                Ok(fixtures)
+    let space_id = space_id.clone();
+    let parent_node_token = parent_node_token.clone();
+    tokio::task::spawn_blocking(move || {
+        match list_space_source_tree_from_openapi(&space_id, parent_node_token.as_deref(), &settings, &session) {
+            Ok(nodes) => Ok(nodes),
+            Err(error) => {
+                let fixtures = fixture_space_nodes(&space_id, parent_node_token.as_deref());
+                if fixtures.is_empty() {
+                    Err(error)
+                } else {
+                    Ok(fixtures)
+                }
             }
         }
-    }
+    })
+    .await
+    .map_err(|err| format!("tree loading panicked: {err}"))?
 }
 
 #[tauri::command]
@@ -2361,7 +2367,7 @@ pub fn list_sync_tasks(app: AppHandle, state: State<'_, AppState>) -> Result<Vec
 }
 
 #[tauri::command]
-pub fn create_sync_task(
+pub async fn create_sync_task(
     app: AppHandle,
     request: CreateSyncTaskRequest,
     state: State<'_, AppState>,
@@ -2372,16 +2378,27 @@ pub fn create_sync_task(
         .map_err(|result| result.validation.message)?;
     let selected_sources = validate_selected_sources(&request.selected_sources)?;
     let legacy_scope = legacy_selected_scope(&selected_sources);
-    let discovered_documents = match discover_documents_from_sources(&selected_sources, &settings, &session) {
-        Ok(documents) => documents,
-        Err(error) => {
-            let fixtures = fixture_documents_for_sources(&selected_sources);
-            if fixtures.is_empty() {
-                return Err(error);
+
+    // Discover documents on a blocking thread (makes N HTTP calls)
+    let settings_clone = settings.clone();
+    let session_clone = session.clone();
+    let selected_sources_clone = selected_sources.clone();
+    let discovered_documents = tokio::task::spawn_blocking(move || {
+        match discover_documents_from_sources(&selected_sources_clone, &settings_clone, &session_clone) {
+            Ok(documents) => Ok(documents),
+            Err(error) => {
+                let fixtures = fixture_documents_for_sources(&selected_sources_clone);
+                if fixtures.is_empty() {
+                    Err(error)
+                } else {
+                    Ok(fixtures)
+                }
             }
-            fixtures
         }
-    };
+    })
+    .await
+    .map_err(|err| format!("document discovery panicked: {err}"))??;
+
     let resolved_output_path = resolve_sync_root_string(&app, &request.output_path)?;
     fs::create_dir_all(&resolved_output_path).map_err(|err| err.to_string())?;
     with_tasks(&app, state, |tasks| {
