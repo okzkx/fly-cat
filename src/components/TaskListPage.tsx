@@ -215,6 +215,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
           }
           return (
             <Space direction="vertical" size={2}>
+              <Text>{`已处理 ${record.counters.processed} / 共 ${record.counters.total}`}</Text>
               <Text>{`${record.counters.succeeded} 成功 / ${record.counters.skipped} 跳过 / ${record.counters.failed} 失败`}</Text>
               {record.failureSummary && (
                 <Text type="secondary">{record.failureSummary.message}</Text>

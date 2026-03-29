@@ -2045,10 +2045,9 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
         }
 
         let total_steps = queued_documents.len() as u32;
-        let concurrency: usize = 8;
         let manifest_batch_size: usize = 10;
 
-        // Pre-resolve auth config once for the entire batch
+        // Pre-resolve auth config once for the entire sync run
         let auth_config: Result<(String, Option<FeishuOpenApiConfig>), String> = {
             if let Some(discovery_error) = discovery_error.as_ref() {
                 Err(discovery_error.message.clone())
@@ -2110,101 +2109,87 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 .map(|task| PathBuf::from(&task.output_path))
                 .unwrap_or_default()
         };
-        let manifest = std::sync::Mutex::new(load_manifest(&sync_root).unwrap_or_default());
-        let mut processed_count: u32 = 0;
+        let mut manifest = load_manifest(&sync_root).unwrap_or_default();
 
-        std::thread::scope(|s| {
-            for chunk in queued_documents.chunks(concurrency) {
-                let handles: Vec<_> = chunk
-                    .iter()
-                    .map(|document| {
-                        let mcp_name = mcp_server_name.clone();
-                        let img_dir = image_dir_name.clone();
-                        let sync_root = sync_root.clone();
-                        let oa_config = openapi_config.clone();
-                        let manifest = &manifest;
-                        s.spawn(move || {
-                            let manifest_guard = manifest.lock().expect("manifest lock poisoned");
-                            // Try export task API first (fast path)
-                            if let Some(ref config) = oa_config {
-                                match sync_document_via_export(document, &sync_root, config, &manifest_guard) {
-                                    Ok(record) => return Ok::<_, SyncPipelineError>(record),
-                                    Err(_) => {} // Fallback below
-                                }
-                            }
+        for (step, document) in queued_documents.iter().enumerate() {
+            let step = (step + 1) as u32;
+            let result = {
+                // Try export task API first (fast path)
+                if let Some(ref config) = openapi_config {
+                    match sync_document_via_export(document, &sync_root, config, &manifest) {
+                        Ok(record) => Ok(record),
+                        Err(_) => {
                             // Fallback: raw content + markdown rendering
                             sync_document_content(
                                 document,
                                 &sync_root,
-                                &img_dir,
-                                &mcp_name,
-                                oa_config.as_ref(),
-                                &manifest_guard,
+                                &image_dir_name,
+                                &mcp_server_name,
+                                openapi_config.as_ref(),
+                                &manifest,
                             ).map(|(_, record)| record)
-                        })
-                    })
-                    .collect();
-
-                for (i, handle) in handles.into_iter().enumerate() {
-                    let document = &chunk[i];
-                    let step = processed_count + (i as u32) + 1;
-                    let result = handle.join().expect("document processing thread panicked");
-
-                    {
-                        let state = app.state::<AppState>();
-                        let mut tasks = state.tasks.lock().expect("task state poisoned");
-                        if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
-                            task.counters.processed = task.counters.skipped + step;
-                            task.progress = ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
-                            match result {
-                                Ok(record) => {
-                                    let mut manifest_guard = manifest.lock().expect("manifest lock poisoned");
-                                    upsert_manifest_record(&mut manifest_guard, record);
-                                }
-                                Err(error) => {
-                                    task.counters.failed = task.counters.failed.saturating_add(1);
-                                    let mut run_err = classify_pipeline_failure(error);
-                                    run_err.document_id = document.document_id.clone();
-                                    run_err.title = document.title.clone();
-                                    task.errors.push(run_err);
-                                }
-                            }
-                            task.counters.succeeded =
-                                task.counters.processed.saturating_sub(task.counters.skipped + task.counters.failed);
-                            task.failure_summary = build_failure_summary(&task.errors);
-                            task.updated_at = now_iso();
                         }
                     }
-
-                    // Save tasks to disk every manifest_batch_size documents
-                    if step % (manifest_batch_size as u32) == 0 || step == total_steps {
-                        {
-                            let state = app.state::<AppState>();
-                            let tasks = state.tasks.lock().expect("task state poisoned");
-                            let _ = save_tasks_to_disk(&app, &tasks);
-                        }
-                        let manifest_guard = manifest.lock().expect("manifest lock poisoned");
-                        let _ = save_manifest(&sync_root, &manifest_guard);
-                    }
-
-                    // Emit progress event per document for real-time UI updates
-                    {
-                        let state = app.state::<AppState>();
-                        let tasks = state.tasks.lock().expect("task state poisoned");
-                        if let Some(task) = tasks.iter().find(|task| task.id == task_id) {
-                            emit_task_event(&app, "sync-progress", task);
-                        }
-                    }
+                } else {
+                    sync_document_content(
+                        document,
+                        &sync_root,
+                        &image_dir_name,
+                        &mcp_server_name,
+                        openapi_config.as_ref(),
+                        &manifest,
+                    ).map(|(_, record)| record)
                 }
+            };
 
-                processed_count += chunk.len() as u32;
+            {
+                let state = app.state::<AppState>();
+                let mut tasks = state.tasks.lock().expect("task state poisoned");
+                if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
+                    task.counters.processed = task.counters.skipped + step;
+                    task.progress = ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
+                    match result {
+                        Ok(record) => {
+                            upsert_manifest_record(&mut manifest, record);
+                        }
+                        Err(error) => {
+                            task.counters.failed = task.counters.failed.saturating_add(1);
+                            let mut run_err = classify_pipeline_failure(error);
+                            run_err.document_id = document.document_id.clone();
+                            run_err.title = document.title.clone();
+                            task.errors.push(run_err);
+                        }
+                    }
+                    task.counters.succeeded =
+                        task.counters.processed.saturating_sub(task.counters.skipped + task.counters.failed);
+                    task.failure_summary = build_failure_summary(&task.errors);
+                    task.updated_at = now_iso();
+                }
             }
-        });
+
+            // Save tasks and manifest to disk periodically
+            if step % (manifest_batch_size as u32) == 0 || step == total_steps {
+                {
+                    let state = app.state::<AppState>();
+                    let tasks = state.tasks.lock().expect("task state poisoned");
+                    let _ = save_tasks_to_disk(&app, &tasks);
+                }
+                let _ = save_manifest(&sync_root, &manifest);
+            }
+
+            // Emit progress event per document for real-time UI updates
+            {
+                let state = app.state::<AppState>();
+                let tasks = state.tasks.lock().expect("task state poisoned");
+                if let Some(task) = tasks.iter().find(|task| task.id == task_id) {
+                    emit_task_event(&app, "sync-progress", task);
+                }
+            }
+        }
 
         // Final manifest save
         {
-            let manifest_guard = manifest.lock().expect("manifest lock poisoned");
-            let _ = save_manifest(&sync_root, &manifest_guard);
+            let _ = save_manifest(&sync_root, &manifest);
         }
 
         // Mark task as completed
