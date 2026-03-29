@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: Reference App Shell Parity
-The application MUST preserve the overall desktop shell structure of `F:\okzkx\feishu_docs_export` unless a synchronization-specific behavior requires a deliberate deviation.
+The application MUST preserve the overall desktop shell structure of `./feishu_docs_export` unless a synchronization-specific behavior requires a deliberate deviation.
 
 #### Scenario: Reuse top-level shell pattern
 - **WHEN** the application renders its top-level layout

@@ -1,11 +1,11 @@
 ## Why
 
-Current Feishu document tooling is export-oriented and optimized for one-time Word downloads, which does not fit a continuous knowledge base synchronization workflow. A dedicated sync app is needed now to keep local Markdown mirrors of Feishu knowledge base documents up to date for engineering collaboration, search, and versioned content workflows, while still preserving the mature product shell, interaction rhythm, desktop runtime, and code organization proven in `F:\okzkx\feishu_docs_export`.
+Current Feishu document tooling is export-oriented and optimized for one-time Word downloads, which does not fit a continuous knowledge base synchronization workflow. A dedicated sync app is needed now to keep local Markdown mirrors of Feishu knowledge base documents up to date for engineering collaboration, search, and versioned content workflows, while still preserving the mature product shell, interaction rhythm, desktop runtime, and code organization proven in `./feishu_docs_export`.
 
 ## What Changes
 
-- Build a new Feishu document sync application from scratch, reusing architectural ideas from `F:\okzkx\feishu_docs_export` but shifting from export behavior to stateful synchronization behavior.
-- Keep the overall product presentation, Tauri desktop application shell, page routing rhythm, Rust backend split, and major code organization closely aligned with `F:\okzkx\feishu_docs_export`, unless a sync-specific requirement forces divergence.
+- Build a new Feishu document sync application from scratch, reusing architectural ideas from `./feishu_docs_export` but shifting from export behavior to stateful synchronization behavior.
+- Keep the overall product presentation, Tauri desktop application shell, page routing rhythm, Rust backend split, and major code organization closely aligned with `./feishu_docs_export`, unless a sync-specific requirement forces divergence.
 - Scope supported source content to Feishu knowledge base documents only; non-knowledge-base content is out of scope.
 - Replace Word export pipelines with MCP-driven Feishu API content retrieval and Markdown generation pipelines.
 - Implement the application as a real Tauri desktop project with `src-tauri`, Rust commands/events, plugin configuration, and `npm run tauri dev` workflow rather than a web-only prototype.

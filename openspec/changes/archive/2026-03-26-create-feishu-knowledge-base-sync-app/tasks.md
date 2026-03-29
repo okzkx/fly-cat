@@ -1,6 +1,6 @@
 ## 1. Tauri Foundation
 
-- [x] 1.1 Rebuild the project into a real Tauri desktop structure by adding `src-tauri`, Tauri scripts, and config files aligned with `F:\okzkx\feishu_docs_export`.
+- [x] 1.1 Rebuild the project into a real Tauri desktop structure by adding `src-tauri`, Tauri scripts, and config files aligned with `./feishu_docs_export`.
 - [x] 1.2 Port the reference project's essential frontend and Tauri plugin dependencies (`@tauri-apps/api`, CLI, dialog/fs/http/opener/shell/oauth/sql plugins where needed) and make `npm run tauri dev` the primary development entrypoint.
 - [x] 1.3 Define the frontend/backend contract for sync commands and events so long-running sync work no longer depends on browser-only mocks or localStorage-only runtime behavior.
 
