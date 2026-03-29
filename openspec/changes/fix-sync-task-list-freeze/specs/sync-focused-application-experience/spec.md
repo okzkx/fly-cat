@@ -1,8 +1,8 @@
 # Delta: sync-focused-application-experience
 
-## MODIFIED Requirements
+## ADDED Requirements
 
-### Requirement: Task list displays immediately after sync start
+### Requirement: Task List Displays Immediately After Sync Start
 
 The system MUST display the newly created sync task in the task list page immediately when the user navigates to it after clicking "开始同步", without freezing or appearing empty.
 
