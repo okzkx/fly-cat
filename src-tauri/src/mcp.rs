@@ -65,6 +65,7 @@ pub struct ExportTaskResult {
 }
 
 const FEISHU_TOKEN_ENDPOINT: &str = "https://passport.feishu.cn/suite/passport/oauth/token";
+const FEISHU_CHILD_BLOCK_RATE_LIMIT_CODE: &str = "99991400";
 
 fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
     let code = value
@@ -81,6 +82,36 @@ fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
     Some(McpError::Transport(format!(
         "{context}失败(code={code}): {msg}"
     )))
+}
+
+fn is_feishu_frequency_limit_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains(FEISHU_CHILD_BLOCK_RATE_LIMIT_CODE)
+        || normalized.contains("frequency limit")
+}
+
+fn retry_on_feishu_frequency_limit<T, F>(
+    retry_policy: &RetryPolicy,
+    mut operation: F,
+) -> Result<T, McpError>
+where
+    F: FnMut() -> Result<T, McpError>,
+{
+    let attempts = retry_policy.max_attempts.max(1);
+
+    for attempt in 0..attempts {
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(McpError::Transport(message))
+                if is_feishu_frequency_limit_message(&message) && attempt + 1 < attempts =>
+            {
+                thread::sleep(Duration::from_millis(retry_policy.backoff_ms));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!("retry loop must return success or error")
 }
 
 fn status_error_from_response(response: ureq::Response, context: &str) -> McpError {
@@ -862,6 +893,11 @@ impl FeishuOpenApiClient {
         document_id: &str,
         token: &str,
     ) -> Result<Vec<RawBlock>, McpError> {
+        let child_block_retry_policy = RetryPolicy {
+            max_attempts: 4,
+            backoff_ms: 250,
+        };
+
         // Get the root block (document itself) which contains children
         let root_value = call_openapi_json(
             self.agent
@@ -890,8 +926,11 @@ impl FeishuOpenApiClient {
 
         let mut blocks = Vec::new();
         let mut visited = HashSet::new();
-        let mut fetch_block =
-            |block_id: &str| self.fetch_single_block_json(document_id, block_id, token);
+        let mut fetch_block = |block_id: &str| {
+            retry_on_feishu_frequency_limit(&child_block_retry_policy, || {
+                self.fetch_single_block_json(document_id, block_id, token)
+            })
+        };
         flatten_block_tree(&children_ids, &mut fetch_block, &mut visited, &mut blocks)?;
 
         Ok(blocks)
@@ -1188,6 +1227,34 @@ mod tests {
 
         assert!(error.to_string().contains("docx:document"));
         assert!(error.to_string().contains("Access denied"));
+    }
+
+    #[test]
+    fn retries_frequency_limited_child_block_fetches() {
+        let retry_policy = RetryPolicy {
+            max_attempts: 3,
+            backoff_ms: 0,
+        };
+        let mut attempts = 0;
+
+        let result = retry_on_feishu_frequency_limit(&retry_policy, || {
+            attempts += 1;
+            if attempts < 3 {
+                return Err(McpError::Transport(
+                    "获取子块失败(code=99991400): request trigger frequency limit".into(),
+                ));
+            }
+
+            Ok(json!({
+                "block_type": 1,
+                "text": {
+                    "elements": [{ "text_run": { "content": "重试成功" } }]
+                }
+            }))
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(attempts, 3);
     }
 
     #[test]
