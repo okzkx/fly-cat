@@ -126,16 +126,20 @@ The application MUST execute tree-loading and sync-task-creation Tauri commands 
 - **WHEN** the frontend calls `get_app_bootstrap` (at application start, after settings save, or after authorization)
 - **THEN** the bootstrap command executes its network calls on a background thread and the window remains responsive
 
-### Requirement: Opener Permission for Opening Local Paths
-The application MUST have the `opener:allow-open-path` permission configured to allow the frontend to open local folders in the system file manager.
+### Requirement: Backend-Owned Workspace Folder Opener
+The application MUST open the effective sync root through a backend-owned Tauri command rather than relying solely on the frontend local-path opener path, so absolute user directories can be opened reliably in the system file manager.
 
-#### Scenario: Open workspace button works correctly
-- **WHEN** user clicks the "Open Workspace" button in the UI
-- **THEN** the system opens the specified folder in the system file manager without permission error
+#### Scenario: Open workspace folder through backend command
+- **WHEN** the user clicks the "打开" action beside the effective sync root in the HomePage
+- **THEN** the frontend invokes a Tauri backend command that opens the requested local folder in the system file manager
 
-#### Scenario: Permission configuration includes opener open-path
-- **WHEN** the Tauri application starts
-- **THEN** the capabilities configuration includes `opener:allow-open-path` permission
+#### Scenario: Absolute user directory can be opened
+- **WHEN** the effective sync root resolves to an absolute directory such as a path under the user's Documents folder
+- **THEN** the backend opener flow succeeds without returning `Not allowed to open path ...`
+
+#### Scenario: Backend opener failure reaches the frontend
+- **WHEN** the backend cannot open the requested folder path
+- **THEN** the command returns an error that the frontend can translate into the existing user-facing directory-open failure messages
 
 ### Requirement: Open Feishu documents in system browser
 The application MUST open Feishu document and bitable links in the system's default browser from the desktop knowledge-tree UI, and MUST return actionable failure details when the browser launch cannot be completed.
