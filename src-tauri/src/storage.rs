@@ -1,5 +1,5 @@
 use crate::model::{DocumentFreshnessResult, ManifestRecord, SyncManifest};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::{
     collections::HashMap,
     fs,
@@ -41,7 +41,9 @@ pub fn upsert_manifest_record(manifest: &mut SyncManifest, record: ManifestRecor
 
 pub fn remove_manifest_records(manifest: &mut SyncManifest, document_ids: &[String]) {
     let id_set: std::collections::HashSet<&str> = document_ids.iter().map(|s| s.as_str()).collect();
-    manifest.records.retain(|r| !id_set.contains(r.document_id.as_str()));
+    manifest
+        .records
+        .retain(|r| !id_set.contains(r.document_id.as_str()));
 }
 
 // === Freshness Metadata Storage ===
@@ -63,7 +65,8 @@ fn init_freshness_db(conn: &Connection) -> Result<(), String> {
             error_message TEXT
         )",
         [],
-    ).map_err(|e| format!("Failed to create freshness_metadata table: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to create freshness_metadata table: {}", e))?;
     Ok(())
 }
 
@@ -181,7 +184,10 @@ pub fn clear_freshness_metadata(sync_root: &Path, document_ids: &[String]) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        env,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn saves_and_loads_manifest() {
