@@ -1,12 +1,12 @@
 ---
 name: package-opencat-plugins
-overview: 把现有 3 个 OpenCat 技能整理成一个 GitHub 可分发仓库，优先落地 Claude Code plugin，并补一层 Cursor 兼容 skills 包装；OpenSpec 依赖继续作为外部前置条件。
+overview: 把现有 4 个 OpenCat 技能整理成一个 GitHub 可分发仓库，优先落地 Claude Code plugin，并补一层 Cursor 兼容 skills 包装；OpenSpec 依赖继续作为外部前置条件。
 todos:
   - id: benchmark-reference-plugins
     content: 对照本机已安装的 Claude 官方插件，确定最小可发布目录结构与 manifest 字段
     status: pending
   - id: normalize-public-skills
-    content: 整理 3 个 opencat 技能为公开发布版文案，补齐 WHAT/WHEN/依赖/适用边界
+    content: 整理 4 个 opencat 技能为公开发布版文案，补齐 WHAT/WHEN/依赖/适用边界
     status: pending
   - id: choose-canonical-layout
     content: 以 Claude plugin 结构作为仓库主结构，并定义 Cursor 兼容映射方案
@@ -27,7 +27,7 @@ isProject: false
 
 ## 目标
 
-把现有 3 个技能从项目内私有目录整理成一个可公开发布的 GitHub 仓库，并提供两个清晰入口：
+把现有 4 个技能从项目内私有目录整理成一个可公开发布的 GitHub 仓库，并提供两个清晰入口：
 
 - `Claude Code`：作为 namespaced plugin 安装，这是第一优先级
 - `Cursor`：作为兼容 skills 包安装，不额外引入 MCP 或 marketplace 复杂度
@@ -35,10 +35,11 @@ isProject: false
 现有技能源文件：
 
 - `[f:/okzkx/feishu_docs_sync/.claude/skills/opencat-check/SKILL.md](f:/okzkx/feishu_docs_sync/.claude/skills/opencat-check/SKILL.md)`
+- `[f:/okzkx/feishu_docs_sync/.claude/skills/opencat-cleanup/SKILL.md](f:/okzkx/feishu_docs_sync/.claude/skills/opencat-cleanup/SKILL.md)`
 - `[f:/okzkx/feishu_docs_sync/.claude/skills/opencat-task/SKILL.md](f:/okzkx/feishu_docs_sync/.claude/skills/opencat-task/SKILL.md)`
 - `[f:/okzkx/feishu_docs_sync/.claude/skills/opencat-work/SKILL.md](f:/okzkx/feishu_docs_sync/.claude/skills/opencat-work/SKILL.md)`
 
-需要在仓库和技能说明里明确：`opencat-task` / `opencat-work` 依赖外部 OpenSpec 技能，不随首个发布包一起分发。
+需要在仓库和技能说明里明确：`opencat-task` / `opencat-work` / `opencat-cleanup` 会衔接外部 OpenSpec 技能，但 OpenSpec 依赖本身不随首个发布包一起分发。
 
 ```302:306:f:/okzkx/feishu_docs_sync/.claude/skills/opencat-task/SKILL.md
 ## Windows PowerShell 注意事项
@@ -81,6 +82,7 @@ cursorCompat --> githubRepo
 
 - `.claude-plugin/plugin.json`
 - `skills/opencat-check/SKILL.md`
+- `skills/opencat-cleanup/SKILL.md`
 - `skills/opencat-task/SKILL.md`
 - `skills/opencat-work/SKILL.md`
 - `.cursor/skills/` 或 `.agents/skills/`：Cursor 兼容层
@@ -100,6 +102,10 @@ opencat-workflows/
 │   │   ├── SKILL.md
 │   │   └── references/
 │   │       └── prerequisites.md
+│   ├── opencat-cleanup/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   │       └── cleanup-decision-tree.md
 │   ├── opencat-task/
 │   │   ├── SKILL.md
 │   │   └── references/
@@ -112,6 +118,8 @@ opencat-workflows/
 ├── .cursor/
 │   └── skills/
 │       ├── opencat-check/
+│       │   └── SKILL.md
+│       ├── opencat-cleanup/
 │       │   └── SKILL.md
 │       ├── opencat-task/
 │       │   └── SKILL.md
@@ -141,7 +149,7 @@ opencat-workflows/
 - GitHub 仓库名：`opencat-workflows`
 - Claude Code plugin name：`opencat-workflows`
 - Claude Code 技能调用形式：`/opencat-workflows:opencat-check`
-- Cursor 技能名：`opencat-check`、`opencat-task`、`opencat-work`
+- Cursor 技能名：`opencat-check`、`opencat-cleanup`、`opencat-task`、`opencat-work`
 - 首个版本号：`0.1.0`
 
 命名原则：
@@ -175,7 +183,7 @@ opencat-workflows/
 - 第一版建议有：`version`、`description`、`author`、`license`
 - 仓库公开后补上：`homepage`、`repository`、`keywords`
 
-## 三个技能的改造清单
+## 四个技能的改造清单
 
 ### `opencat-check`
 
@@ -194,6 +202,24 @@ opencat-workflows/
 发布后预期定位：
 
 - 最适合作为安装后第一个显式调用的技能
+
+### `opencat-cleanup`
+
+保留内容：
+
+- “先清 OpenSpec，再清 Git 残留”的顺序
+- worktree 保留、最终切回 `master` 的护栏
+- 遇到未合并提交时转交 `opencat-task` 继续执行，而不是直接删除
+
+需要改写：
+
+- 把当前仓库默认 `master` 的表述改成“默认主干约定 + 自动识别真实 trunk”
+- 明确这是“OpenCat 工作流收尾技能”，适用于清理残留状态，不是通用 Git 清理器
+- 把与 `openspec-apply-change` / `openspec-archive-change` 的衔接写成外部 prerequisite
+
+发布后预期定位：
+
+- 作为 `opencat-task` 之后的运维型配套技能，用于恢复仓库到可复用状态
 
 ### `opencat-task`
 
@@ -261,7 +287,7 @@ README 不能只讲安装，必须直接回答用户最关心的 6 个问题：
 1. 检查 `plugin.json` 可被 Claude Code 验证通过
 2. 用 `claude --plugin-dir <repo>` 加载本地插件
 3. 在 Claude 中确认能看到 namespaced skills
-4. 在 Cursor 中确认能看到 3 个 skills
+4. 在 Cursor 中确认能看到 4 个 skills
 5. 抽查 `README` 中每个安装命令与实际路径一致
 
 如果第一版时间有限，验证优先级按下面排序：
@@ -278,12 +304,12 @@ README 不能只讲安装，必须直接回答用户最关心的 6 个问题：
 
 - 建好仓库树
 - 写出 `plugin.json`
-- 迁入 3 个技能原稿
+- 迁入 4 个技能原稿
 - Claude Code 可本地加载
 
 ### Milestone 2: 技能可公开理解
 
-- 补齐 3 个技能的公开版描述
+- 补齐 4 个技能的公开版描述
 - 加入依赖说明和 references
 - README 初版完成
 
@@ -310,7 +336,7 @@ README 不能只讲安装，必须直接回答用户最关心的 6 个问题：
 
 ### Phase 2: 技能公共化整理
 
-- 把 3 个技能文案做一次“公开发布版整理”。
+- 把 4 个技能文案做一次“公开发布版整理”。
 - 统一 frontmatter 字段、命名风格、触发描述和依赖说明。
 - 把只适用于当前仓库的细节拆成“默认约定”或“前置条件”，而不是硬编码成公共插件行为。
 
@@ -323,7 +349,7 @@ README 不能只讲安装，必须直接回答用户最关心的 6 个问题：
 
 交付结果：
 
-- 3 个公开版技能文案
+- 4 个公开版技能文案
 - 一份依赖与适用边界说明
 - 一份 `TODO.md` / `DONE.md` 格式说明
 
@@ -367,7 +393,7 @@ README 不能只讲安装，必须直接回答用户最关心的 6 个问题：
 
 - Claude Code 能用 `claude --plugin-dir <repo>` 识别插件
 - Claude Code 能看到 namespaced skills
-- Cursor 能识别 `opencat-check`、`opencat-task`、`opencat-work`
+- Cursor 能识别 `opencat-check`、`opencat-cleanup`、`opencat-task`、`opencat-work`
 - README 中的命令、路径、命名空间与实际目录一致
 - 不依赖当前私有仓库路径也能理解技能用途
 - OpenSpec 缺失时，文档和技能说明能明确提示前置条件
@@ -385,7 +411,7 @@ README 不能只讲安装，必须直接回答用户最关心的 6 个问题：
 
 - 一个公开 GitHub 仓库骨架
 - 一个 `plugin.json` 初稿
-- 3 个整理后的公开版技能
+- 4 个整理后的公开版技能
 - 一个 Cursor 兼容方案（目录或脚本）
 - 一套技能级 `references/` 文档
 - 一份面向用户的安装与排障 README
@@ -394,7 +420,7 @@ README 不能只讲安装，必须直接回答用户最关心的 6 个问题：
 
 - 仓库 clone 后，Claude Code 可直接按 plugin 方式加载
 - Cursor 至少有一条清晰可行的安装路径
-- 3 个技能都能被发现，并具备公开可读的描述与依赖说明
+- 4 个技能都能被发现，并具备公开可读的描述与依赖说明
 - README 明确写出 OpenSpec 依赖、安装步骤和排障方式
 - `skills/` 与 `.cursor/skills/` 的关系清晰，维护方式明确
 - 不再依赖当前私有仓库路径、私有目录名或当前项目上下文才能理解或使用技能
