@@ -1,7 +1,7 @@
 # TODO
 
 ## P1 >
-- > 修复：知识库内文档点击在网页中打开显示你访问的页面不存在
+- > 修复：图片下载看不到的问题，比如 C:\Users\zengkaixiang\Documents\synced-docs\ProjectStorm\美术模块\动画\死锁动画.md
 
 ## P2 >
 
