@@ -1,6 +1,6 @@
 ---
 name: opencat-cleanup
-description: 清理 `opencat-task` 执行后的残留状态：识别未合并提交、已合并分支残留和未回到 `master` 的保留 worktree。Use when the repository contains retained OpenCat worktrees, leftover `opencat/*` branches, unfinished task flows, or when a worktree should be restored to `master` for reuse.
+description: 清理 `opencat-task` 执行后的残留状态：先检查 OpenSpec active changes 是否都已实现并归档，再识别未合并提交、已合并分支残留和未回到 `master` 的保留 worktree。Use when the repository contains retained OpenCat worktrees, leftover `opencat/*` branches, unfinished OpenSpec changes, unfinished task flows, or when a worktree should be restored to `master` for reuse.
 license: MIT
 compatibility: Requires a git repository that uses the OpenCat worktree workflow from `opencat-task`.
 metadata:
@@ -13,6 +13,7 @@ metadata:
 
 清理 `opencat-task` 执行后的残留，目标是：
 
+- OpenSpec 中未归档的 change 先实现并归档
 - 未合并的任务继续执行，而不是半途废弃
 - 已合并的工作分支残留被清掉
 - 保留的 worktree 最终回到 `master`，供下一次任务复用
@@ -23,6 +24,7 @@ metadata:
 
 当出现以下任一情况时使用本技能：
 
+- `openspec/changes/` 下仍有 active change 尚未归档
 - 仓库里存在 `opencat/*` 工作分支或保留 worktree
 - 某个 worktree 还停在功能分支上，没有切回 `master`
 - 看起来有一次 `opencat-task` 执行到一半中断了
@@ -58,6 +60,10 @@ metadata:
    - 无论是继续旧任务，还是准备 merge 回 `master`，都先把工作分支 rebase 到最新 `master`。
    - 若 rebase 或 merge 产生冲突，AI 默认自行解决并继续，不因常规冲突暂停。
 
+6. **先清 OpenSpec，再清 Git 残留**
+   - 在删除分支、切回 worktree 或判定仓库“已清理”之前，必须先检查 `openspec` 中是否还有 active change 未归档。
+   - 只要还有未完成或未归档的 change，就先继续实现并归档，不要先做表面上的 Git 清扫。
+
 ---
 
 ## 扫描步骤
@@ -66,17 +72,22 @@ metadata:
    - 默认使用 `master`
    - 若仓库实际主干不是 `master`，先识别真实 trunk，再按真实 trunk 执行；但本仓库默认目标应恢复到 `master`
 
-2. 收集仓库状态
+2. 检查 OpenSpec active changes
+   - 运行 `openspec list --json`，确认是否还有未归档的 active changes
+   - 对每个 active change 运行 `openspec status --change "<name>" --json`
+   - 检查对应 `tasks.md` 是否仍有未完成任务
+
+3. 收集 Git 仓库状态
    - 检查 `git status --short`
    - 检查 `git branch --all`
    - 检查 `git worktree list --porcelain`
 
-3. 识别候选残留
+4. 识别候选残留
    - 分支名匹配 `opencat/*`
    - 保留 worktree 当前不在 `master`
    - worktree 对应分支存在未被清理的 OpenCat 提交
 
-4. 对每个候选分支判断：
+5. 对每个候选分支判断：
    - 是否有仅存在于该分支、尚未进入 `master` 的提交
    - 是否已经完整合并到 `master`
    - worktree 是否干净
@@ -84,6 +95,25 @@ metadata:
 ---
 
 ## 判断规则
+
+### 情况 0：存在未归档的 OpenSpec change
+
+满足以下任一条件即可视为“OpenSpec 尚未收尾完成”：
+
+- `openspec list --json` 仍返回 active changes
+- `openspec status --change "<name>" --json` 显示未完成状态
+- 该 change 的 `tasks.md` 里仍有 `- [ ]`
+
+处理方式：
+
+1. 优先识别该 change 是否对应某个未完成的 `opencat/*` 分支 / 保留 worktree
+2. 若对应到未完成的 OpenCat 流程：
+   - 使用 `\opencat-task` 继续该次任务
+   - 让它完成实现、archive、merge 和 cleanup
+3. 若没有明确对应的 OpenCat 流程：
+   - 使用 `openspec-apply-change` 继续实现该 change
+   - 任务完成后，使用 `openspec-archive-change` 归档
+4. 只要还有 active change 未归档，就不要进入“删除残留分支”步骤
 
 ### 情况 A：存在未合并提交
 
@@ -145,14 +175,43 @@ metadata:
 
 ## 推荐执行顺序
 
-1. 扫描所有 worktree 与 `opencat/*` 分支
-2. 找出不在 `master` 的 worktree
-3. 对其当前分支判断是否已合并
-4. 若未合并，立即转为“继续任务”模式，调用 `\opencat-task`
-5. 若已合并，执行清理：
+1. 先扫描 OpenSpec active changes
+2. 若存在未归档 change，先继续实现并归档
+3. 再扫描所有 worktree 与 `opencat/*` 分支
+4. 找出不在 `master` 的 worktree
+5. 对其当前分支判断是否已合并
+6. 若未合并，立即转为“继续任务”模式，调用 `\opencat-task`
+7. 若已合并，执行清理：
    - 切回 `master`
    - 删除残留分支
-6. 复查所有保留 worktree，确保都回到 `master`
+8. 复查所有保留 worktree，确保都回到 `master`
+
+---
+
+## 与 `\opencat-task` 的衔接方式
+
+当判定为“存在未归档 OpenSpec change”，或“存在未合并提交”时，不要自己发明一个简化流程去硬收尾，而是：
+
+1. 先识别 active change 与工作分支 / worktree 的对应关系
+2. 若能可靠映射到中断中的 OpenCat 流程，优先交给 `\opencat-task`
+3. 若不能可靠映射，但 change 明确存在且尚未完成，则改走 OpenSpec 原生流程：
+   - `openspec-apply-change`
+   - `openspec-archive-change`
+4. 只有在 change 已归档后，才继续清理 Git 残留
+
+---
+
+## 与 OpenSpec 技能的衔接方式
+
+当 active change 没有明显对应到某个未完成的 OpenCat 分支时：
+
+1. 使用 `openspec-apply-change` 按 tasks 顺序继续实现
+2. 每完成任务立即更新 `tasks.md`
+3. 确认任务全部完成后，再使用 `openspec-archive-change`
+4. archive 完成后，确认该 change 已不再出现在 active changes 中
+5. 然后再回到本技能，继续处理分支 / worktree 清理
+
+若 `openspec-archive-change` 因 incomplete tasks 发出警告，不要绕过实现步骤直接清理 Git 残留。
 
 ---
 
@@ -185,6 +244,7 @@ metadata:
 
 对整个仓库，应尽量满足：
 
+- `openspec` 中不存在 active 且未归档的 change
 - 不存在已合并但未删除的 `opencat/*` 分支
 - 不存在“明明已完成却仍停在功能分支”的保留 worktree
 - 不存在被误删的未合并任务
@@ -196,6 +256,7 @@ metadata:
 遇到以下情况暂停并询问用户：
 
 - worktree 中有未提交改动，且无法确认是否属于当前 OpenCat 任务
+- 存在 active change，但无法判断应继续 `\opencat-task` 还是走 OpenSpec 原生流程
 - 无法判断某个分支是否已合并
 - 分支上的提交看起来不是 OpenCat 任务产物
 - `master` 不是实际主干，且仓库策略不明确
@@ -211,9 +272,10 @@ metadata:
 ## OpenCat Cleanup
 
 **Base:** master
+**Active Changes:** <count>
 **Target Worktree:** <path>
 **Current Branch:** <branch>
-**Decision:** continue-task | cleanup-merged | switch-to-master
+**Decision:** continue-change | continue-task | cleanup-merged | switch-to-master
 
 <进度说明>
 ```
@@ -221,6 +283,7 @@ metadata:
 ### 完成后
 
 - 扫描到的 worktree / 分支数量
+- 发现并处理的 active OpenSpec changes
 - 继续执行的未合并任务
 - 已清理的已合并分支
 - 已恢复到 `master` 的 worktree
@@ -233,6 +296,7 @@ metadata:
 | 规则 | 说明 |
 |------|------|
 | 未合并先续做 | 有未合并提交时，必须继续 `\opencat-task`，不能直接删 |
+| OpenSpec 先收尾 | active change 未归档时，先实现并 archive，再清 Git 残留 |
 | 已合并再清理 | 仅当确认已合并进 `master` 后，才删除残留分支 |
 | 开发前和合并前先 rebase | 工作分支开始开发前、merge 回 `master` 前，都先 rebase 到最新 `master` |
 | 冲突自解 | rebase / merge 冲突默认由 AI 自行解决并继续 |
@@ -246,6 +310,7 @@ metadata:
 
 ### 成功
 
+- ✅ OpenSpec 中未归档的 active changes 已实现并归档
 - ✅ 未合并的 OpenCat 提交没有被误删，而是转交 `\opencat-task` 继续执行
 - ✅ 已合并的 `opencat/*` 残留分支被删除
 - ✅ 保留 worktree 没有删除，且都回到 `master`
@@ -253,6 +318,7 @@ metadata:
 
 ### 失败
 
+- ❌ 还有 active change 未归档，却先做了表面分支清理
 - ❌ 将未合并分支误判为已合并并删除
 - ❌ 为了“删提交”而改写 `master` 历史
 - ❌ 清理后 worktree 仍停留在功能分支
