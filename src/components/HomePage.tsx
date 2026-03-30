@@ -684,11 +684,16 @@ export default function HomePage({
   };
 
   const handleOpenInBrowser = async (
-    nodeToken: string,
+    nodeToken: string | undefined,
+    documentId: string | undefined,
     kind: "document" | "bitable"
   ): Promise<void> => {
     try {
-      const result = await openDocumentInBrowser(nodeToken, kind);
+      const result = await openDocumentInBrowser({
+        kind,
+        nodeToken,
+        documentId
+      });
       if (!result.success) {
         message.error(result.error || "无法在浏览器中打开当前内容");
       }
@@ -926,7 +931,8 @@ export default function HomePage({
                         onClick={(e) => {
                           e.stopPropagation();
                           void handleOpenInBrowser(
-                            treeNode.nodeToken!,
+                            treeNode.nodeToken,
+                            treeNode.scopeValue?.documentId,
                             treeNode.nodeKind === "bitable" ? "bitable" : "document"
                           );
                         }}
