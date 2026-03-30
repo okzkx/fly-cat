@@ -2,7 +2,9 @@ use crate::mcp::{
     fetch_openapi_with_retry, fetch_with_retry, FeishuOpenApiClient, FeishuOpenApiConfig,
     FixtureMcpClient, McpError, RawBlock, RetryPolicy,
 };
-use crate::model::{CanonicalBlock, CanonicalDocument, ManifestRecord, SyncManifest, SyncSourceDocument};
+use crate::model::{
+    CanonicalBlock, CanonicalDocument, ManifestRecord, SyncManifest, SyncSourceDocument,
+};
 use crate::render::{markdown_output_path, render_markdown, source_signature, stable_hash};
 #[cfg(test)]
 use crate::storage::{load_manifest, save_manifest, upsert_manifest_record};
@@ -88,15 +90,25 @@ pub fn default_extension(obj_type: &str) -> &'static str {
     }
 }
 
-pub fn expected_output_path(sync_root: &Path, source_document: &SyncSourceDocument) -> std::path::PathBuf {
-    match source_document.obj_type.trim().to_ascii_lowercase().as_str() {
+pub fn expected_output_path(
+    sync_root: &Path,
+    source_document: &SyncSourceDocument,
+) -> std::path::PathBuf {
+    match source_document
+        .obj_type
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "sheet" | "bitable" => {
             let extension = default_extension(&source_document.obj_type);
             let file_name = format!("{}.{}", source_document.title, extension);
             if source_document.path_segments.is_empty() {
                 sync_root.join(&file_name)
             } else {
-                sync_root.join(source_document.path_segments.join("/")).join(&file_name)
+                sync_root
+                    .join(source_document.path_segments.join("/"))
+                    .join(&file_name)
             }
         }
         _ => markdown_output_path(sync_root, source_document),
@@ -111,7 +123,11 @@ pub fn sync_document_via_export(
     openapi_config: &FeishuOpenApiConfig,
     manifest: &SyncManifest,
 ) -> Result<ManifestRecord, SyncPipelineError> {
-    let obj_type = if source_document.obj_type.is_empty() { "docx" } else { &source_document.obj_type };
+    let obj_type = if source_document.obj_type.is_empty() {
+        "docx"
+    } else {
+        &source_document.obj_type
+    };
     let extension = default_extension(obj_type);
     let client = FeishuOpenApiClient::new(openapi_config.clone());
 
@@ -261,17 +277,22 @@ pub fn sync_document_content(
     openapi_config: Option<&FeishuOpenApiConfig>,
     manifest: &SyncManifest,
 ) -> Result<(SyncWriteResult, ManifestRecord), SyncPipelineError> {
-    let canonical =
-        fetch_canonical_document(&source_document.document_id, mcp_server_name, openapi_config)
-            .map_err(classify_fetch_error)?;
+    let canonical = fetch_canonical_document(
+        &source_document.document_id,
+        mcp_server_name,
+        openapi_config,
+    )
+    .map_err(classify_fetch_error)?;
     let output_path = markdown_output_path(sync_root, source_document);
     let markdown_dir = output_path.parent().unwrap_or(sync_root);
     let rendered = if let Some(config) = openapi_config {
         let client = FeishuOpenApiClient::new(config.clone());
-        render_markdown(&canonical, markdown_dir, image_dir_name, &client).map_err(classify_render_error)?
+        render_markdown(&canonical, markdown_dir, sync_root, image_dir_name, &client)
+            .map_err(classify_render_error)?
     } else {
         let client = FixtureMcpClient::new(mcp_server_name.to_string());
-        render_markdown(&canonical, markdown_dir, image_dir_name, &client).map_err(classify_render_error)?
+        render_markdown(&canonical, markdown_dir, sync_root, image_dir_name, &client)
+            .map_err(classify_render_error)?
     };
     let output_path_string = output_path.to_string_lossy().to_string();
 
@@ -293,10 +314,7 @@ pub fn sync_document_content(
 
     let mut written_assets = Vec::new();
     for asset in rendered.image_assets {
-        let asset_path = output_path
-            .parent()
-            .unwrap_or(sync_root)
-            .join(&asset.relative_path);
+        let asset_path = sync_root.join(&asset.relative_path);
         if let Some(parent) = asset_path.parent() {
             fs::create_dir_all(parent).map_err(filesystem_error)?;
         }
@@ -326,12 +344,15 @@ pub fn sync_document_content(
         last_synced_at: now_iso(),
     };
 
-    Ok((SyncWriteResult {
-        output_path: output_path_string,
-        image_assets: written_assets,
-        content_hash,
-        source_signature,
-    }, record))
+    Ok((
+        SyncWriteResult {
+            output_path: output_path_string,
+            image_assets: written_assets,
+            content_hash,
+            source_signature,
+        },
+        record,
+    ))
 }
 
 #[cfg(test)]
@@ -343,7 +364,14 @@ pub fn sync_document_to_disk(
     openapi_config: Option<&FeishuOpenApiConfig>,
 ) -> Result<SyncWriteResult, SyncPipelineError> {
     let manifest = load_manifest(sync_root).unwrap_or_default();
-    let (result, record) = sync_document_content(source_document, sync_root, image_dir_name, mcp_server_name, openapi_config, &manifest)?;
+    let (result, record) = sync_document_content(
+        source_document,
+        sync_root,
+        image_dir_name,
+        mcp_server_name,
+        openapi_config,
+        &manifest,
+    )?;
     let mut manifest = manifest;
     upsert_manifest_record(&mut manifest, record);
     save_manifest(sync_root, &manifest).map_err(storage_error)?;
@@ -354,13 +382,15 @@ pub fn sync_document_to_disk(
 mod tests {
     use super::*;
     use crate::model::CanonicalBlock;
-    use std::{env, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        env,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn maps_raw_document_to_canonical_model() {
-        let document =
-            fetch_canonical_document("doc-eng-api", "user-feishu-mcp", None)
-                .expect("canonical fetch should succeed");
+        let document = fetch_canonical_document("doc-eng-api", "user-feishu-mcp", None)
+            .expect("canonical fetch should succeed");
 
         assert_eq!(document.document_id, "doc-eng-api");
         assert_eq!(document.space_id, "kb-eng");
@@ -395,6 +425,7 @@ mod tests {
 
         assert!(result.output_path.ends_with(".md"));
         assert_eq!(result.image_assets.len(), 1);
+        assert!(result.image_assets[0].starts_with("_assets/"));
     }
 
     #[test]

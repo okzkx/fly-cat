@@ -16,7 +16,8 @@ fn sanitize_path_segment(input: &str) -> String {
     let mut sanitized = String::new();
 
     for ch in input.chars() {
-        let invalid = matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || ch.is_control();
+        let invalid =
+            matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || ch.is_control();
         sanitized.push(if invalid { '_' } else { ch });
     }
 
@@ -35,18 +36,33 @@ pub fn markdown_output_path(sync_root: &Path, document: &SyncSourceDocument) -> 
         &document.space_name
     }));
 
-    for segment in document.path_segments.iter().take(document.path_segments.len().saturating_sub(1)) {
+    for segment in document
+        .path_segments
+        .iter()
+        .take(document.path_segments.len().saturating_sub(1))
+    {
         output = output.join(sanitize_path_segment(segment));
     }
 
     output.join(format!(
         "{}.md",
-        sanitize_path_segment(document.path_segments.last().map(|segment| segment.as_str()).unwrap_or(&document.title))
+        sanitize_path_segment(
+            document
+                .path_segments
+                .last()
+                .map(|segment| segment.as_str())
+                .unwrap_or(&document.title)
+        )
     ))
 }
 
 pub fn source_signature(document: &CanonicalDocument) -> String {
-    format!("{}:{}:{}", document.document_id, document.title, document.blocks.len())
+    format!(
+        "{}:{}:{}",
+        document.document_id,
+        document.title,
+        document.blocks.len()
+    )
 }
 
 pub fn stable_hash(input: &[u8]) -> String {
@@ -61,6 +77,7 @@ pub fn stable_hash(input: &[u8]) -> String {
 pub fn render_markdown(
     document: &CanonicalDocument,
     markdown_dir: &Path,
+    sync_root: &Path,
     image_dir_name: &str,
     image_provider: &impl ImageProvider,
 ) -> Result<RenderedDocument, McpError> {
@@ -83,13 +100,17 @@ pub fn render_markdown(
                     ImageResource::RemoteUrl(url) => {
                         lines.push(format!("![{}]({})", alt, url));
                     }
-                    ImageResource::Binary(bytes) => {
+                    ImageResource::Binary { bytes, extension } => {
                         let hash = stable_hash(&bytes);
-                        let relative_path = format!("{}/{}.png", image_dir_name, hash);
-                        let absolute_path = markdown_dir.join(&relative_path);
-                        let relative_link = pathdiff(markdown_dir, &absolute_path);
+                        let image_dir = image_dir_name.trim_matches(['/', '\\']);
+                        let relative_path = format!("{image_dir}/{hash}{extension}");
+                        let absolute_path = sync_root.join(&relative_path);
+                        let relative_link = relative_path_from(markdown_dir, &absolute_path);
                         lines.push(format!("![{}]({})", alt, relative_link));
-                        image_assets.push(ImageAsset { relative_path, bytes });
+                        image_assets.push(ImageAsset {
+                            relative_path,
+                            bytes,
+                        });
                     }
                 }
                 lines.push(String::new());
@@ -107,11 +128,36 @@ pub fn render_markdown(
     })
 }
 
-fn pathdiff(base: &Path, target: &Path) -> String {
-    target
-        .strip_prefix(base)
-        .map(|path| path.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| target.to_string_lossy().replace('\\', "/"))
+fn relative_path_from(base: &Path, target: &Path) -> String {
+    let base_components = base.components().collect::<Vec<_>>();
+    let target_components = target.components().collect::<Vec<_>>();
+
+    let mut common = 0usize;
+    while common < base_components.len()
+        && common < target_components.len()
+        && base_components[common] == target_components[common]
+    {
+        common += 1;
+    }
+
+    if common == 0 {
+        return target.to_string_lossy().replace('\\', "/");
+    }
+
+    let mut relative = PathBuf::new();
+    for _ in common..base_components.len() {
+        relative.push("..");
+    }
+    for component in &target_components[common..] {
+        relative.push(component.as_os_str());
+    }
+
+    let rendered = relative.to_string_lossy().replace('\\', "/");
+    if rendered.is_empty() {
+        ".".into()
+    } else {
+        rendered
+    }
 }
 
 #[cfg(test)]
@@ -162,13 +208,14 @@ mod tests {
         let rendered = render_markdown(
             &document,
             Path::new("synced-docs/研发知识库/研发规范"),
+            Path::new("synced-docs"),
             "_assets",
             &FixtureMcpClient::new("user-feishu-mcp".into()),
         )
         .expect("render should succeed");
 
         assert!(rendered.markdown.contains("## 概览"));
-        assert!(rendered.markdown.contains("_assets/"));
+        assert!(rendered.markdown.contains("../_assets/"));
         assert_eq!(rendered.image_assets.len(), 1);
     }
 }

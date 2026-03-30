@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::{fmt, io::Read, thread, time::Duration};
+use std::{collections::HashSet, fmt, io::Read, path::Path, thread, time::Duration};
 
 #[derive(Clone)]
 pub struct McpClientConfig {
@@ -34,7 +34,7 @@ pub enum RawBlock {
 #[derive(Clone, Debug)]
 pub enum ImageResource {
     RemoteUrl(String),
-    Binary(Vec<u8>),
+    Binary { bytes: Vec<u8>, extension: String },
 }
 
 #[derive(Clone, Debug)]
@@ -67,7 +67,10 @@ pub struct ExportTaskResult {
 const FEISHU_TOKEN_ENDPOINT: &str = "https://passport.feishu.cn/suite/passport/oauth/token";
 
 fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
-    let code = value.get("code").and_then(|value| value.as_i64()).unwrap_or(0);
+    let code = value
+        .get("code")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
     if code == 0 {
         return None;
     }
@@ -75,7 +78,9 @@ fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
         .get("msg")
         .and_then(|value| value.as_str())
         .unwrap_or("unknown error");
-    Some(McpError::Transport(format!("{context}失败(code={code}): {msg}")))
+    Some(McpError::Transport(format!(
+        "{context}失败(code={code}): {msg}"
+    )))
 }
 
 fn status_error_from_response(response: ureq::Response, context: &str) -> McpError {
@@ -95,7 +100,9 @@ fn status_error_from_response(response: ureq::Response, context: &str) -> McpErr
 fn call_openapi_json(request: ureq::Request, context: &str) -> Result<Value, McpError> {
     let response = match request.call() {
         Ok(response) => response,
-        Err(ureq::Error::Status(_, response)) => return Err(status_error_from_response(response, context)),
+        Err(ureq::Error::Status(_, response)) => {
+            return Err(status_error_from_response(response, context))
+        }
         Err(err) => return Err(McpError::Transport(format!("{context}请求失败: {err}"))),
     };
 
@@ -110,7 +117,9 @@ fn extract_oauth_error(value: &Value, context: &str) -> Option<McpError> {
             .get("error_description")
             .and_then(|value| value.as_str())
             .unwrap_or("unknown oauth error");
-        return Some(McpError::Transport(format!("{context}失败: {error}: {description}")));
+        return Some(McpError::Transport(format!(
+            "{context}失败: {error}: {description}"
+        )));
     }
 
     extract_openapi_error(value, context)
@@ -186,7 +195,10 @@ fn parse_token_info(value: Value, context: &str) -> Result<FeishuOAuthTokenInfo,
             .and_then(|value| value.as_str())
             .unwrap_or("Bearer")
             .to_string(),
-        expires_in: value.get("expires_in").and_then(|value| value.as_i64()).unwrap_or(0),
+        expires_in: value
+            .get("expires_in")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0),
         refresh_expires_in: value
             .get("refresh_expires_in")
             .and_then(|value| value.as_i64())
@@ -243,19 +255,24 @@ pub fn refresh_user_access_token(
         }))
         .map_err(|err| McpError::Transport(format!("OAuth refresh request failed: {err}")))?;
 
-    let value: Value = response
-        .into_json()
-        .map_err(|err| McpError::InvalidResponse(format!("Invalid OAuth refresh response: {err}")))?;
+    let value: Value = response.into_json().map_err(|err| {
+        McpError::InvalidResponse(format!("Invalid OAuth refresh response: {err}"))
+    })?;
 
     parse_token_info(value, "刷新用户 access_token")
 }
 
-pub fn fetch_user_info(endpoint: &str, access_token: &str) -> Result<FeishuAuthorizedUser, McpError> {
-    let endpoint = format!("{}/{}", endpoint.trim_end_matches('/'), "authen/v1/user_info");
+pub fn fetch_user_info(
+    endpoint: &str,
+    access_token: &str,
+) -> Result<FeishuAuthorizedUser, McpError> {
+    let endpoint = format!(
+        "{}/{}",
+        endpoint.trim_end_matches('/'),
+        "authen/v1/user_info"
+    );
     let value = call_openapi_json(
-        ureq::get(&endpoint)
-        .set("Authorization", &format!("Bearer {access_token}"))
-        ,
+        ureq::get(&endpoint).set("Authorization", &format!("Bearer {access_token}")),
         "获取用户信息",
     )?;
 
@@ -379,7 +396,10 @@ impl FixtureMcpClient {
 
     pub fn fetch_image_resource(&self, media_id: &str) -> Result<ImageResource, McpError> {
         match media_id {
-            "img-eng-api" => Ok(ImageResource::Binary(b"fixture-image-bytes".to_vec())),
+            "img-eng-api" => Ok(ImageResource::Binary {
+                bytes: b"fixture-image-bytes".to_vec(),
+                extension: ".png".into(),
+            }),
             "img-ops-remote" => Ok(ImageResource::RemoteUrl(
                 "https://example.feishu.cn/assets/ops-remote.png".into(),
             )),
@@ -409,7 +429,10 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
 /// Parse a Feishu block JSON into a RawBlock enum
 /// Block types: 1=text, 2=heading, 3=bullet list, 4=ordered list, 28=image
 fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
-    let block_type = block.get("block_type").and_then(|v| v.as_i64()).unwrap_or(0);
+    let block_type = block
+        .get("block_type")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
 
     match block_type {
         // Text block (type 1)
@@ -519,6 +542,86 @@ fn extract_text_from_elements(elements: &[Value]) -> String {
         .join("")
 }
 
+fn extract_block_children_ids(block: &Value) -> Vec<String> {
+    block
+        .get("children")
+        .and_then(|children| children.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|id| id.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn flatten_block_tree<F>(
+    child_ids: &[String],
+    fetch_block: &mut F,
+    visited: &mut HashSet<String>,
+    blocks: &mut Vec<RawBlock>,
+) -> Result<(), McpError>
+where
+    F: FnMut(&str) -> Result<Value, McpError>,
+{
+    for child_id in child_ids {
+        if !visited.insert(child_id.clone()) {
+            continue;
+        }
+        let block = fetch_block(child_id)?;
+        if let Some(parsed) = parse_block_from_json(&block) {
+            blocks.push(parsed);
+        }
+        let nested_children = extract_block_children_ids(&block);
+        if !nested_children.is_empty() {
+            flatten_block_tree(&nested_children, fetch_block, visited, blocks)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn extension_from_content_type(content_type: &str) -> Option<String> {
+    let mime = content_type.split(';').next()?.trim().to_ascii_lowercase();
+    let ext = match mime.as_str() {
+        "image/png" => ".png",
+        "image/jpeg" => ".jpg",
+        "image/jpg" => ".jpg",
+        "image/gif" => ".gif",
+        "image/webp" => ".webp",
+        "image/bmp" => ".bmp",
+        "image/svg+xml" => ".svg",
+        _ => return None,
+    };
+    Some(ext.to_string())
+}
+
+fn extension_from_content_disposition(content_disposition: &str) -> Option<String> {
+    let filename = content_disposition
+        .split(';')
+        .map(|part| part.trim())
+        .find_map(|part| {
+            part.strip_prefix("filename*=")
+                .map(|value| value.rsplit('\'').next().unwrap_or(value))
+                .or_else(|| {
+                    part.strip_prefix("filename=")
+                        .map(|value| value.trim_matches('"'))
+                })
+        })?;
+    let clean_filename = filename.split('?').next().unwrap_or(filename);
+    let extension = Path::new(clean_filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.trim().is_empty())?;
+    Some(format!(".{}", extension.to_ascii_lowercase()))
+}
+
+fn infer_media_extension(content_type: Option<&str>, content_disposition: Option<&str>) -> String {
+    content_disposition
+        .and_then(extension_from_content_disposition)
+        .or_else(|| content_type.and_then(extension_from_content_type))
+        .unwrap_or_else(|| ".png".to_string())
+}
+
 pub struct FeishuOpenApiClient {
     config: FeishuOpenApiConfig,
     agent: ureq::Agent,
@@ -533,7 +636,11 @@ impl FeishuOpenApiClient {
     }
 
     fn endpoint(&self, path: &str) -> String {
-        format!("{}/{}", self.config.endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            self.config.endpoint.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
 
     fn access_token(&self) -> Result<&str, McpError> {
@@ -550,7 +657,9 @@ impl FeishuOpenApiClient {
         let mut spaces = Vec::new();
 
         loop {
-            let mut request = self.agent.get(&self.endpoint("/wiki/v2/spaces"))
+            let mut request = self
+                .agent
+                .get(&self.endpoint("/wiki/v2/spaces"))
                 .set("Authorization", &format!("Bearer {token}"))
                 .query("page_size", "50")
                 .query("user_id_type", "user_id");
@@ -601,10 +710,14 @@ impl FeishuOpenApiClient {
         Ok(spaces)
     }
 
-    pub fn fetch_document_summary(&self, document_id: &str) -> Result<FeishuDocumentSummary, McpError> {
+    pub fn fetch_document_summary(
+        &self,
+        document_id: &str,
+    ) -> Result<FeishuDocumentSummary, McpError> {
         let token = self.access_token()?;
         let info_value = call_openapi_json(
-            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
+            self.agent
+                .get(&self.endpoint(&format!("/docx/v1/documents/{document_id}")))
                 .set("Authorization", &format!("Bearer {token}")),
             "获取文档信息",
         )?;
@@ -618,8 +731,8 @@ impl FeishuOpenApiClient {
             .and_then(|data| data.get("document"))
             .ok_or_else(|| McpError::InvalidResponse("Document info missing document".into()))?;
 
-        let title = value_to_string(document.get("title"))
-            .unwrap_or_else(|| document_id.to_string());
+        let title =
+            value_to_string(document.get("title")).unwrap_or_else(|| document_id.to_string());
         let version = value_to_string(document.get("revision_id"))
             .or_else(|| value_to_string(document.get("revision")))
             .or_else(|| value_to_string(document.get("version")))
@@ -639,13 +752,19 @@ impl FeishuOpenApiClient {
         })
     }
 
-    pub fn list_child_nodes(&self, space_id: &str, parent_node_token: Option<&str>) -> Result<Vec<FeishuWikiNode>, McpError> {
+    pub fn list_child_nodes(
+        &self,
+        space_id: &str,
+        parent_node_token: Option<&str>,
+    ) -> Result<Vec<FeishuWikiNode>, McpError> {
         let token = self.access_token()?;
         let mut page_token: Option<String> = None;
         let mut nodes = Vec::new();
 
         loop {
-            let mut request = self.agent.get(&self.endpoint(&format!("/wiki/v2/spaces/{space_id}/nodes")))
+            let mut request = self
+                .agent
+                .get(&self.endpoint(&format!("/wiki/v2/spaces/{space_id}/nodes")))
                 .set("Authorization", &format!("Bearer {token}"))
                 .query("page_size", "50")
                 .query("user_id_type", "user_id");
@@ -659,7 +778,8 @@ impl FeishuOpenApiClient {
 
             let value = call_openapi_json(request, "获取知识空间子节点列表")?;
 
-            if let Some(error) = extract_openapi_error(&value, "获取知识空间子节点列表") {
+            if let Some(error) = extract_openapi_error(&value, "获取知识空间子节点列表")
+            {
                 return Err(error);
             }
 
@@ -690,7 +810,10 @@ impl FeishuOpenApiClient {
                     obj_token: item.get("obj_token")?.as_str()?.to_string(),
                     obj_type: item.get("obj_type")?.as_str()?.to_string(),
                     title,
-                    has_child: item.get("has_child").and_then(|v| v.as_bool()).unwrap_or(false),
+                    has_child: item
+                        .get("has_child")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
                     version,
                     update_time,
                 })
@@ -734,10 +857,17 @@ impl FeishuOpenApiClient {
 
     /// Fetch document blocks using Feishu Block API
     /// Returns structured blocks including images with media_id
-    fn fetch_document_blocks(&self, document_id: &str, token: &str) -> Result<Vec<RawBlock>, McpError> {
+    fn fetch_document_blocks(
+        &self,
+        document_id: &str,
+        token: &str,
+    ) -> Result<Vec<RawBlock>, McpError> {
         // Get the root block (document itself) which contains children
         let root_value = call_openapi_json(
-            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/blocks/{document_id}")))
+            self.agent
+                .get(&self.endpoint(&format!(
+                    "/docx/v1/documents/{document_id}/blocks/{document_id}"
+                )))
                 .set("Authorization", &format!("Bearer {token}"))
                 .query("page_size", "500"),
             "获取文档块",
@@ -752,32 +882,33 @@ impl FeishuOpenApiClient {
             .and_then(|data| data.get("block"))
             .ok_or_else(|| McpError::InvalidResponse("Block response missing block".into()))?;
 
-        // Get children block IDs
-        let children_ids = block
-            .get("children")
-            .and_then(|children| children.as_array())
-            .map(|arr| arr.iter().filter_map(|id| id.as_str().map(|s| s.to_string())).collect::<Vec<_>>())
-            .unwrap_or_default();
+        let children_ids = extract_block_children_ids(block);
 
         if children_ids.is_empty() {
             return Ok(vec![]);
         }
 
-        // Fetch all child blocks
         let mut blocks = Vec::new();
-        for child_id in children_ids {
-            if let Some(child_block) = self.fetch_single_block(document_id, &child_id, token)? {
-                blocks.push(child_block);
-            }
-        }
+        let mut visited = HashSet::new();
+        let mut fetch_block =
+            |block_id: &str| self.fetch_single_block_json(document_id, block_id, token);
+        flatten_block_tree(&children_ids, &mut fetch_block, &mut visited, &mut blocks)?;
 
         Ok(blocks)
     }
 
-    /// Fetch a single block by its ID and parse it into RawBlock
-    fn fetch_single_block(&self, document_id: &str, block_id: &str, token: &str) -> Result<Option<RawBlock>, McpError> {
+    /// Fetch a single block by its ID and return the raw block JSON.
+    fn fetch_single_block_json(
+        &self,
+        document_id: &str,
+        block_id: &str,
+        token: &str,
+    ) -> Result<Value, McpError> {
         let value = call_openapi_json(
-            self.agent.get(&self.endpoint(&format!("/docx/v1/documents/{document_id}/blocks/{block_id}")))
+            self.agent
+                .get(&self.endpoint(&format!(
+                    "/docx/v1/documents/{document_id}/blocks/{block_id}"
+                )))
                 .set("Authorization", &format!("Bearer {token}")),
             "获取子块",
         )?;
@@ -786,12 +917,11 @@ impl FeishuOpenApiClient {
             return Err(error);
         }
 
-        let block = value
+        value
             .get("data")
             .and_then(|data| data.get("block"))
-            .ok_or_else(|| McpError::InvalidResponse("Child block response missing block".into()))?;
-
-        Ok(parse_block_from_json(block))
+            .cloned()
+            .ok_or_else(|| McpError::InvalidResponse("Child block response missing block".into()))
     }
 
     /// Create an export task for a document (server-side rendering).
@@ -802,20 +932,24 @@ impl FeishuOpenApiClient {
         file_type: &str,
     ) -> Result<ExportTaskResponse, McpError> {
         let access = self.access_token()?;
-        let response = match self.agent.post(&self.endpoint("/drive/v1/export_tasks"))
+        let response = match self
+            .agent
+            .post(&self.endpoint("/drive/v1/export_tasks"))
             .set("Authorization", &format!("Bearer {access}"))
             .send_json(json!({
                 "token": token,
                 "file_extension": file_extension,
                 "type": file_type,
-            }))
-        {
+            })) {
             Ok(response) => response,
-            Err(ureq::Error::Status(_, response)) => return Err(status_error_from_response(response, "创建导出任务")),
+            Err(ureq::Error::Status(_, response)) => {
+                return Err(status_error_from_response(response, "创建导出任务"))
+            }
             Err(err) => return Err(McpError::Transport(format!("创建导出任务请求失败: {err}"))),
         };
 
-        let value: Value = response.into_json()
+        let value: Value = response
+            .into_json()
             .map_err(|err| McpError::InvalidResponse(format!("导出任务响应解析失败: {err}")))?;
 
         let ticket = value
@@ -835,7 +969,8 @@ impl FeishuOpenApiClient {
     ) -> Result<Option<ExportTaskResult>, McpError> {
         let access = self.access_token()?;
         let value = call_openapi_json(
-            self.agent.get(&self.endpoint(&format!("/drive/v1/export_tasks/{ticket}")))
+            self.agent
+                .get(&self.endpoint(&format!("/drive/v1/export_tasks/{ticket}")))
                 .query("token", token)
                 .set("Authorization", &format!("Bearer {access}")),
             "查询导出任务状态",
@@ -880,7 +1015,12 @@ impl FeishuOpenApiClient {
         let url = self.endpoint(&format!(
             "/drive/v1/export_tasks/file/{file_token}/download"
         ));
-        let response = match self.agent.get(&url).set("Authorization", &format!("Bearer {access}")).call() {
+        let response = match self
+            .agent
+            .get(&url)
+            .set("Authorization", &format!("Bearer {access}"))
+            .call()
+        {
             Ok(response) => response,
             Err(ureq::Error::Status(_, response)) => {
                 return Err(status_error_from_response(response, "下载导出文件"));
@@ -895,15 +1035,40 @@ impl FeishuOpenApiClient {
             .map_err(|err| McpError::Transport(format!("读取导出文件内容失败: {err}")))?;
         Ok(buf)
     }
+
+    pub fn download_media_file(&self, media_id: &str) -> Result<(Vec<u8>, String), McpError> {
+        let access = self.access_token()?;
+        let url = self.endpoint(&format!("/drive/v1/medias/{media_id}/download"));
+        let response = match self
+            .agent
+            .get(&url)
+            .set("Authorization", &format!("Bearer {access}"))
+            .call()
+        {
+            Ok(response) => response,
+            Err(ureq::Error::Status(_, response)) => {
+                return Err(status_error_from_response(response, "下载图片资源"));
+            }
+            Err(err) => return Err(McpError::Transport(format!("下载图片资源请求失败: {err}"))),
+        };
+
+        let extension = infer_media_extension(
+            response.header("Content-Type"),
+            response.header("Content-Disposition"),
+        );
+        let mut buf = Vec::new();
+        response
+            .into_reader()
+            .read_to_end(&mut buf)
+            .map_err(|err| McpError::Transport(format!("读取图片资源内容失败: {err}")))?;
+        Ok((buf, extension))
+    }
 }
 
 impl ImageProvider for FeishuOpenApiClient {
     fn fetch_image_resource(&self, media_id: &str) -> Result<ImageResource, McpError> {
-        Ok(ImageResource::RemoteUrl(format!(
-            "{}/open-apis/drive/v1/medias/{}",
-            self.config.endpoint.trim_end_matches('/'),
-            media_id
-        )))
+        let (bytes, extension) = self.download_media_file(media_id)?;
+        Ok(ImageResource::Binary { bytes, extension })
     }
 }
 
@@ -956,6 +1121,7 @@ pub fn fetch_openapi_with_retry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn fetches_fixture_document_successfully() {
@@ -1022,5 +1188,69 @@ mod tests {
 
         assert!(error.to_string().contains("docx:document"));
         assert!(error.to_string().contains("Access denied"));
+    }
+
+    #[test]
+    fn flattens_nested_child_blocks_in_depth_first_order() {
+        let blocks_by_id = HashMap::from([
+            (
+                "heading-1".to_string(),
+                json!({
+                    "block_type": 2,
+                    "heading": {
+                        "style": "heading2",
+                        "elements": [{ "text_run": { "content": "章节" } }]
+                    },
+                    "children": ["image-1"]
+                }),
+            ),
+            (
+                "image-1".to_string(),
+                json!({
+                    "block_type": 28,
+                    "image": { "token": "img-nested" }
+                }),
+            ),
+            (
+                "paragraph-1".to_string(),
+                json!({
+                    "block_type": 1,
+                    "text": {
+                        "elements": [{ "text_run": { "content": "尾段" } }]
+                    }
+                }),
+            ),
+        ]);
+
+        let mut fetch_block = |block_id: &str| {
+            blocks_by_id
+                .get(block_id)
+                .cloned()
+                .ok_or_else(|| McpError::InvalidResponse(format!("missing block `{block_id}`")))
+        };
+        let mut visited = HashSet::new();
+        let mut blocks = Vec::new();
+
+        flatten_block_tree(
+            &["heading-1".to_string(), "paragraph-1".to_string()],
+            &mut fetch_block,
+            &mut visited,
+            &mut blocks,
+        )
+        .expect("flatten should succeed");
+
+        assert!(matches!(blocks[0], RawBlock::Heading { .. }));
+        assert!(matches!(blocks[1], RawBlock::Image { .. }));
+        assert!(matches!(blocks[2], RawBlock::Paragraph { .. }));
+    }
+
+    #[test]
+    fn infers_extension_from_media_headers() {
+        let extension = infer_media_extension(
+            Some("image/jpeg"),
+            Some("attachment; filename=\"concept-art.jpeg\""),
+        );
+
+        assert_eq!(extension, ".jpeg");
     }
 }
