@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { AppBootstrap, AppSettings, ConnectionCheckResult, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentFreshnessResult, KnowledgeBaseNode, SyncScope } from "@/types/sync";
 import { buildFeishuBrowserUrl, type BrowserOpenTarget } from "@/utils/feishuBrowserUrl";
@@ -336,7 +336,7 @@ export async function openWorkspaceFolder(path: string): Promise<{ success: bool
     return { success: false, error: "非 Tauri 运行时环境" };
   }
   try {
-    await openPath(path);
+    await invoke("open_workspace_folder", { path });
     return { success: true };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);

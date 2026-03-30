@@ -15,6 +15,7 @@ use std::{
     sync::Mutex,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -2710,6 +2711,21 @@ pub async fn clear_freshness_metadata(
 ) -> Result<(), String> {
     let path = std::path::Path::new(&sync_root);
     crate::storage::clear_freshness_metadata(path, &document_ids)
+}
+
+#[tauri::command]
+pub fn open_workspace_folder(app: AppHandle, path: String) -> Result<(), String> {
+    let workspace_path = PathBuf::from(&path);
+    if !workspace_path.exists() {
+        return Err(format!("path not found: {path}"));
+    }
+    if !workspace_path.is_dir() {
+        return Err(format!("path is not a directory: {path}"));
+    }
+
+    app.opener()
+        .open_path(workspace_path.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|err| format!("failed to open workspace folder: {err}"))
 }
 
 /// Remove empty directories bottom-up within the sync root.
