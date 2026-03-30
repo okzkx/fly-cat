@@ -1,0 +1,12 @@
+---
+description: Be patient with long-running subagents
+alwaysApply: true
+---
+
+# Subagent Patience
+
+- When a subagent has started successfully and is still working, do not treat it as stuck just because it has not produced a new message for a short time.
+- Allow at least 10 minutes of no new subagent response before deciding it may be hung, unless there is explicit evidence of failure.
+- During that 10 minute window, avoid sending premature resume or status-check follow-ups just to force output.
+- Prefer low-frequency polling and patient waiting when the subagent is clearly executing a long-running workflow.
+- Intervene earlier only when there is clear evidence of failure, such as a crashed process, an explicit error, or a user request to interrupt.
