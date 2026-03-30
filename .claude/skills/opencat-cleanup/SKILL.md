@@ -1,6 +1,6 @@
 ---
 name: opencat-cleanup
-description: 清理 `opencat-task` 的残留状态：自动提交未提交变更，优先续做未完成任务，删除已完成任务分支，并把所有保留 worktree 恢复到各自的闲置分支。
+description: 清理 `opencat-task` 残留。**必须**先收尾 OpenSpec active changes、**严禁**误删未合并任务、**必须**让所有保留 worktree 回到闲置分支。开始新任务前或仓库残留时使用。
 license: MIT
 compatibility: Requires a git repository that uses the OpenCat idle-branch/task-branch worktree workflow from `opencat-task`.
 metadata:
@@ -12,6 +12,14 @@ metadata:
 # OpenCat Cleanup
 
 清理 `opencat-task` 执行后的残留，目标是：
+
+## 🚨 核心不可违反规则
+
+1. **必须**先收尾 OpenSpec active changes，再清理 Git 残留；严禁先做表面分支清扫。
+2. **严禁**误删未合并任务分支；只要还有未合并提交，就**必须**优先续做该任务。
+3. **必须**自动提交未提交改动，再继续判断分支 / worktree 去向。
+4. **必须**把所有保留 worktree 恢复到各自的 `idle branch`，严禁让它们停在 `trunk`、detached 或脏状态。
+5. **必须**默认自主决断并继续收敛；最多记录问题，不因常规不确定性暂停询问用户。
 
 - OpenSpec 中未归档的 change 先实现并归档
 - 未合并的任务继续执行，而不是半途废弃

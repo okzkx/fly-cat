@@ -1,6 +1,6 @@
 ---
 name: opencat-work
-description: OpenCat 任务列表连续执行器。按 TODO.md 中的优先级顺序执行任务，但在领取任何新 TODO 之前必须先运行 `opencat-cleanup`，直到所有保留 worktree 都恢复到闲置分支。
+description: OpenCat 任务列表连续执行器。**必须**先运行 `opencat-cleanup`，只有全部保留 worktree 回到闲置分支后才能领取新 TODO；任务执行**必须**通过 `opencat-task` 的 worktree 流程完成。
 license: MIT
 compatibility: Requires `opencat-task` and `opencat-cleanup` skills to be available in the project.
 metadata:
@@ -13,11 +13,19 @@ metadata:
 
 执行 `TODO.md` 中的任务，按优先级 P1 > P2 > P3 顺序，通过 SubAgent 调用 `opencat-task` 技能逐个完成。
 
+## 🚨 核心不可违反规则
+
+1. **必须**先执行 `opencat-cleanup`；只要还有任意保留 worktree 不在 `idle branch` 上，就**严禁**领取新的 TODO 任务。
+2. **必须**通过 `opencat-task` 的标准 worktree 流程执行任务；严禁主 Agent 直接接管实现，破坏隔离。
+3. **必须**串行运行任务 SubAgent；同一时刻只能有一个任务 SubAgent 处于执行中。
+4. **必须**默认自主决断并继续推进；最多记录问题，不因常规不确定性退出、暂停或回头追问用户。
+5. 对“修复”类任务，**必须**重新验证当前现状；严禁仅凭历史 DONE / archive 记录直接跳过。
+
 当用户明确调用 `opencat-work` 或 `/opencat-run-task` 时，默认启用 AI 自主决策：
 
 - 若用户未指定具体任务，优先从当前上下文和 `TODO.md` 中自动选择最合理的任务继续执行
 - 不因常规任务选择而停下来等待确认
-- 若多个候选任务会显著改变范围、行为或风险，且无法安全自主判断，子 Agent 不得发问等待确认，必须直接退出并返回失败原因
+- 若多个候选任务会显著改变范围、行为或风险，且难以判断，子 Agent 不得发问等待确认，必须选择最保守且可继续的方案，记录问题后继续
 - 若任务以“修复”开头，必须重新审视当前代码、行为与仓库状态，不能仅因 `DONE.md`、归档记录或历史实现存在相似项就直接跳过
 
 ## 文件格式

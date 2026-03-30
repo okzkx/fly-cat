@@ -1,6 +1,6 @@
 ---
 name: opencat-task
-description: OpenSpec 分阶段工作流执行器。完成 purpose → apply → archive 全流程，必须在“带同名闲置分支的保留 worktree”里执行任务分支，并在完成后把 worktree 归还到闲置状态。
+description: OpenSpec 分阶段工作流执行器。**必须**使用 worktree 隔离、**必须**合并回主干、**必须**保留 worktree 并归还到闲置分支。用户要端到端执行 OpenSpec 变更时使用。
 license: MIT
 compatibility: 运行前先用 `opencat-check` 检查环境与 worktree 拓扑；若发现残留任务、detached worktree 或脏闲置 worktree，先执行 `opencat-cleanup`
 metadata:
@@ -12,6 +12,14 @@ metadata:
 # OpenCat Task - OpenSpec 分阶段工作流
 
 端到端执行 OpenSpec 变更：从提案到归档，使用“可复用 worktree 槽位 + 闲置分支 / 任务分支”两态模型隔离实现工作。
+
+## 🚨 核心不可违反规则
+
+1. **必须**使用 worktree 隔离执行 apply / archive 阶段，严禁直接在主 worktree 里完成整条任务链。
+2. **必须**把任务变更合并回 `trunk`，严禁停留在未合并任务分支就把流程视为完成。
+3. **必须**保留 worktree 目录，但任务完成后该 worktree 也**必须**回到自己的 `idle branch` 且工作区干净。
+4. **必须**在开发前和合并前都先 rebase 到最新主干；遇到常规冲突时，默认自行解决并继续。
+5. **必须**默认自主决断并继续推进；最多记录问题，不因常规不确定性暂停询问用户。
 
 ---
 

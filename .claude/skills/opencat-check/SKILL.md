@@ -1,6 +1,6 @@
 ---
 name: opencat-check
-description: 检查并补齐本地 OpenCat / OpenSpec 工具链与 OpenCat worktree 拓扑：在运行 `opencat-task` 前，验证 git、node、包管理器、OpenSpec CLI、项目依赖、保留 worktree、闲置分支和任务分支是否就绪。
+description: 检查并补齐 OpenCat / OpenSpec 环境。**严禁**把 detached、挂在 `trunk` 或脏的保留 worktree 当作可复用槽位；拓扑异常**必须**转交 `opencat-cleanup`。运行 `opencat-task` 前使用。
 license: MIT
 compatibility: 需要 shell 权限；当缺少工具或缺失 worktree 槽位元数据时，需要允许安装依赖或创建最小必要的分支 / worktree 元数据。
 metadata:
@@ -9,6 +9,14 @@ metadata:
 ---
 
 在执行 OpenCat 工作流之前，先完成环境检查与安全引导修复。
+
+## 🚨 核心不可违反规则
+
+1. **严禁**把 detached、直接停在 `trunk`、或工作区脏的保留 worktree 当作可复用槽位。
+2. 发现 worktree 拓扑异常时，**必须**转交 `opencat-cleanup`，不要临时发明破坏性修复。
+3. 本技能只允许补齐最小必要元数据；**严禁**吞掉、覆盖或丢弃已有任务工作。
+4. 只要前置条件还没补齐，就**不得**继续进入 `opencat-task`。
+5. **必须**默认自主决断并继续完成剩余检查；最多记录环境限制，不因常规不确定性暂停询问用户。
 
 适用场景：
 - 在运行 `opencat-task` 之前做前置检查
