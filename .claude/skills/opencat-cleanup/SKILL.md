@@ -11,7 +11,7 @@ metadata:
 
 # OpenCat Cleanup
 
-清理 `opencat-task` 执行后的残留，目标是：
+清理 `opencat-task` 执行后的残留。工程收尾、分支清理、归还 `idle branch` 和 retained worktree 收敛都以本技能为唯一权威来源。
 
 ## 🚨 核心不可违反规则
 
@@ -58,37 +58,32 @@ metadata:
 
 ---
 
-## 核心原则
+## 收敛目标与状态机
+
+### 收敛原则
 
 1. **先自动提交，再判断去向**
    - 只要扫描到未提交变更，就先自动提交到当前逻辑分支，再进入后续判断。
    - 自动提交的目标是把 worktree 恢复到“有明确分支承载 + 工作区可继续推进”的状态。
    - 推荐提交信息：`chore(opencat-cleanup): checkpoint <slot-or-branch>`
-
 2. **闲置分支是唯一合法待命状态**
    - 每个保留 worktree slot 都必须有一个一一对应的 `idle branch`，推荐命名为 `opencat/idle/<slot-name>`。
    - worktree 处于闲置状态时，必须在该 `idle branch` 上且工作区干净。
-
 3. **非闲置就视为任务态**
    - 只要某个保留 worktree 不在自己的 `idle branch` 上，它就必须被视为正在执行某个任务。
-   - 这意味着 cleanup 不允许把“仍在任务态的 worktree”误当作可领取新任务的空闲槽位。
-
+   - cleanup 不允许把“仍在任务态的 worktree”误当作可领取新任务的空闲槽位。
 4. **优先续做，不丢任务**
    - 只要发现某个任务分支上还有**未合并到 `trunk`** 的提交，就不要直接删除，必须优先启动子 Agent 使用 `opencat-task` 继续该任务，直到其合并或明确失败。
-
 5. **已合并后只清残留，不改主干历史**
    - 若任务分支上的提交已经合并进 `trunk`，清理的是分支引用和 worktree 状态，不是重写主干历史。
    - 不做 `reset --hard`、`rebase -i`、`push --force` 之类的破坏性历史改写，除非用户明确要求。
-
 6. **先清 OpenSpec，再清 Git 残留**
    - 在删除分支、切回闲置分支或判定仓库“已清理”之前，必须先检查 OpenSpec 中是否还有 active change 未归档。
    - 只要还有未完成或未归档的 change，就先继续实现并归档，不要先做表面上的 Git 清扫。
 
----
+### 状态分类
 
-## 状态定义
-
-对每个保留 worktree slot，都要按以下状态分类：
+对每个保留 worktree slot，都按以下状态分类：
 
 - `idle-ready`: 在自己的 `idle branch` 上，且 `git status --short` 为空
 - `idle-dirty`: 在自己的 `idle branch` 上，但有未提交改动
@@ -97,6 +92,8 @@ metadata:
 - `attached-to-trunk`: 直接停在 `master` / `main`
 - `detached`: detached HEAD
 - `unknown-branch`: 在一个非闲置、非标准任务命名的分支上
+
+### 最终收敛目标
 
 cleanup 的职责就是把所有非 `idle-ready` 状态最终收敛成：
 

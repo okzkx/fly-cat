@@ -47,27 +47,45 @@ metadata:
 
 ---
 
-## 状态机约束
+## 状态机与槽位规则
 
-1. 创建或首次发现一个保留 worktree slot 时，必须同时存在它的同名槽位闲置分支。
-   - 推荐命名：worktree 路径名 `feishu_docs_sync-worktree-2`
+### 命名约定
+
+- 主 worktree: 项目根目录
+- worktree slot: `../<repo-name>-worktree`、`../<repo-name>-worktree-2`、`../<repo-name>-worktree-3` ...
+- slot 对应闲置分支: `opencat/idle/<slot-name>`
+- 任务分支: `opencat/<change-name>`
+
+### 状态机约束
+
+1. 创建或首次发现一个保留 worktree slot 时，必须同时存在它的配对 `idle branch`。
+   - 示例：worktree 路径名 `feishu_docs_sync-worktree-2`
    - 配对闲置分支：`opencat/idle/feishu_docs_sync-worktree-2`
-2. worktree 空闲时，必须满足以下全部条件：
+2. worktree 处于闲置态时，必须同时满足：
    - 当前分支是该 slot 的 `idle branch`
    - 所有任务变更都已经提交并合并回 `trunk`
    - `git status --short` 为空
-3. worktree 领到任务后，必须切换到该任务的 `task branch`；此时它就进入 task state。
+3. worktree 领到任务后，必须切换到该任务的 `task branch`；此时它进入 task state。
 4. 保留 worktree 绝不允许长期处于以下状态：
    - detached HEAD
    - 直接停留在 `trunk`
    - 在 `idle branch` 上但工作区脏
    - 停在无法解释的匿名提交上
-5. 任务结束后的标准收尾是：
+5. 任务结束后的标准收尾不是留在任务分支或主干，而是：
    - merge 回 `trunk`
    - 删除 `task branch`
    - 切回配对的 `idle branch`
    - 让 `idle branch` 对齐最新 `trunk`
    - 确认 worktree 干净
+
+### 生命周期映射
+
+```text
+step 7 领取 slot
+→ step 8 切到 task_branch 承接任务
+→ step 9-16 apply / archive / merge
+→ step 17 调用 opencat-cleanup 归还闲置态
+```
 
 ---
 
@@ -296,27 +314,11 @@ git merge --no-ff "<task_branch>"
 
 ---
 
-## Worktree 规范
+## Worktree 说明
 
-### 命名约定
-
-- 主 worktree: 项目根目录
-- worktree slot: `../<repo-name>-worktree`、`../<repo-name>-worktree-2`、`../<repo-name>-worktree-3` ...
-- slot 对应闲置分支: `opencat/idle/<slot-name>`
-- 任务分支: `opencat/<change-name>`
-
-### 生命周期
-
-```text
-创建 slot+idle_branch
-→ 闲置态（idle_branch, clean）
-→ 切到 task_branch 承接任务
-→ apply / archive / merge
-→ 切回 idle_branch
-→ 再次闲置待命
-```
-
-> 绝不删除 worktree 目录；但也绝不允许保留 worktree 长期停在 detached / trunk / 脏状态。
+- worktree 的命名、状态机和生命周期以 `状态机与槽位规则` 为唯一权威来源。
+- 详细执行动作以步骤 `7` 到 `17` 为准。
+- 绝不删除 worktree 目录；但也绝不允许保留 worktree 长期停在 detached / trunk / 脏状态。
 
 ---
 
