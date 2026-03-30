@@ -155,6 +155,8 @@ pub struct FeishuWikiNode {
     pub obj_type: String,
     pub title: String,
     pub has_child: bool,
+    pub version: String,
+    pub update_time: String,
 }
 
 #[derive(Clone, Debug)]
@@ -670,13 +672,27 @@ impl FeishuOpenApiClient {
                 .ok_or_else(|| McpError::InvalidResponse("Wiki node list missing items".into()))?;
 
             nodes.extend(items.iter().filter_map(|item| {
+                let title = item.get("title")?.as_str()?.to_string();
+                let version = value_to_string(item.get("revision_id"))
+                    .or_else(|| value_to_string(item.get("revision")))
+                    .or_else(|| value_to_string(item.get("version")))
+                    .or_else(|| value_to_string(item.get("obj_edit_time")))
+                    .or_else(|| value_to_string(item.get("update_time")))
+                    .unwrap_or_else(|| title.clone());
+                let update_time = value_to_string(item.get("obj_edit_time"))
+                    .or_else(|| value_to_string(item.get("update_time")))
+                    .or_else(|| value_to_string(item.get("updated_at")))
+                    .or_else(|| value_to_string(item.get("edit_time")))
+                    .unwrap_or_else(|| version.clone());
                 Some(FeishuWikiNode {
                     space_id: item.get("space_id")?.as_str()?.to_string(),
                     node_token: item.get("node_token")?.as_str()?.to_string(),
                     obj_token: item.get("obj_token")?.as_str()?.to_string(),
                     obj_type: item.get("obj_type")?.as_str()?.to_string(),
-                    title: item.get("title")?.as_str()?.to_string(),
+                    title,
                     has_child: item.get("has_child").and_then(|v| v.as_bool()).unwrap_or(false),
+                    version,
+                    update_time,
                 })
             }));
 

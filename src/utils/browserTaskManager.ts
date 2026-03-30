@@ -169,14 +169,11 @@ function findNodeByToken(nodes: KnowledgeBaseNode[], nodeToken: string): Knowled
 function countDocuments(nodes: KnowledgeBaseNode[]): number {
   return nodes.reduce((total, node) => {
     const childTotal = node.children ? countDocuments(node.children) : 0;
-    return total + (node.kind === "document" ? 1 : 0) + childTotal;
+    return total + (node.kind === "document" || node.kind === "bitable" ? 1 : 0) + childTotal;
   }, 0);
 }
 
 function buildNodeScope(node: KnowledgeBaseNode): SyncScope | null {
-  if (node.kind === "bitable") {
-    return null;
-  }
   return {
     kind: node.kind,
     spaceId: node.spaceId,
@@ -193,7 +190,7 @@ function buildNodeScope(node: KnowledgeBaseNode): SyncScope | null {
 function collectDocumentScopes(nodes: KnowledgeBaseNode[]): SyncScope[] {
   const scopes: SyncScope[] = [];
   for (const node of nodes) {
-    if (node.kind === "document") {
+    if (node.kind === "document" || node.kind === "bitable") {
       const scope = buildNodeScope(node);
       if (scope) {
         scopes.push(scope);
@@ -207,7 +204,7 @@ function collectDocumentScopes(nodes: KnowledgeBaseNode[]): SyncScope[] {
 }
 
 function scopesForSelectionSource(source: SyncScope): SyncScope[] {
-  if (source.kind === "document") {
+  if (source.kind === "document" || source.kind === "bitable") {
     if (!source.includesDescendants) {
       return [source];
     }
@@ -258,7 +255,7 @@ function discoverDocumentScopes(selectedSources: SyncScope[]): SyncScope[] {
 }
 
 function countScopeDocuments(scope: SyncScope): number {
-  if (scope.kind === "document" && !scope.includesDescendants) {
+  if ((scope.kind === "document" || scope.kind === "bitable") && !scope.includesDescendants) {
     return 1;
   }
 

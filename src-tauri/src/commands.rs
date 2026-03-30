@@ -3,9 +3,8 @@ use crate::mcp::{
     FeishuOpenApiClient, FeishuOpenApiConfig, FeishuOAuthTokenInfo, McpError,
 };
 use crate::model::SyncSourceDocument;
-use crate::render::markdown_output_path;
 use crate::storage::{load_manifest, remove_manifest_records, save_manifest, upsert_manifest_record};
-use crate::sync::{sync_document_content, sync_document_via_export, SyncPipelineError};
+use crate::sync::{expected_output_path, sync_document_content, sync_document_via_export, SyncPipelineError};
 use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -535,7 +534,7 @@ fn source_covers_descendant(ancestor: &SelectedSyncScope, descendant: &SelectedS
     if ancestor.kind == "space" {
         return descendant.kind != "space";
     }
-    if ancestor.kind == "document" && descendant.kind != "document" {
+    if ancestor.kind == "document" && descendant.kind != "document" && descendant.kind != "bitable" {
         return false;
     }
     ancestor.path_segments.len() < descendant.path_segments.len()
@@ -580,7 +579,7 @@ fn build_selection_summary(
             space_name: scope.space_name.clone(),
             title: scope.title.clone(),
             display_path: scope.display_path.clone(),
-            document_count: u32::from(scope.kind == "document"),
+            document_count: u32::from(scope.kind == "document" || scope.kind == "bitable"),
             preview_paths: vec![scope.display_path.clone()],
             includes_descendants: scope.includes_descendants,
             root_count: 1,
@@ -595,7 +594,8 @@ fn build_selection_summary(
             space_name: source.space_name.clone(),
             title: source.title.clone(),
             display_path: source.display_path.clone(),
-            document_count: effective_document_count.unwrap_or(u32::from(source.kind == "document")),
+            document_count: effective_document_count
+                .unwrap_or(u32::from(source.kind == "document" || source.kind == "bitable")),
             preview_paths: vec![source.display_path.clone()],
             includes_descendants: source.includes_descendants,
             root_count: 1,
@@ -718,7 +718,9 @@ fn validate_selected_sources(selected_sources: &[SelectedSyncScope]) -> Result<V
     }
 
     for source in &normalized {
-        if source.kind == "document" && source.document_id.as_deref().unwrap_or("").trim().is_empty() {
+        if (source.kind == "document" || source.kind == "bitable")
+            && source.document_id.as_deref().unwrap_or("").trim().is_empty()
+        {
             return Err("缺少文档标识，无法创建同步任务。".into());
         }
     }
@@ -964,6 +966,18 @@ fn fixture_documents_for_scope(scope: &SelectedSyncScope) -> Vec<SyncSourceDocum
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-overview", "doc-product-overview", &["方案库", "Product Overview"], "v3", "2026-03-27T11:00:00Z"),
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品方案总览"], "v4", "2026-03-27T11:05:00Z"),
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap-h1", "doc-product-roadmap-h1", &["方案库", "产品方案总览", "2026 H1 路线图"], "v5", "2026-03-27T11:10:00Z"),
+            SyncSourceDocument {
+                obj_type: "bitable".into(),
+                ..make_fixture_document(
+                    "kb-product",
+                    "产品知识库",
+                    "node-bitable-product-demand-pool",
+                    "bitable-product-demand-pool",
+                    &["方案库", "产品方案总览", "需求池"],
+                    "v6",
+                    "2026-03-27T11:15:00Z",
+                )
+            },
         ],
         ("kb-product", "document", Some("doc-product-overview"), _) => vec![
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-overview", "doc-product-overview", &["方案库", "Product Overview"], "v3", "2026-03-27T11:00:00Z"),
@@ -971,10 +985,34 @@ fn fixture_documents_for_scope(scope: &SelectedSyncScope) -> Vec<SyncSourceDocum
         ("kb-product", "document", Some("doc-product-roadmap"), _) if scope.includes_descendants => vec![
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品方案总览"], "v4", "2026-03-27T11:05:00Z"),
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap-h1", "doc-product-roadmap-h1", &["方案库", "产品方案总览", "2026 H1 路线图"], "v5", "2026-03-27T11:10:00Z"),
+            SyncSourceDocument {
+                obj_type: "bitable".into(),
+                ..make_fixture_document(
+                    "kb-product",
+                    "产品知识库",
+                    "node-bitable-product-demand-pool",
+                    "bitable-product-demand-pool",
+                    &["方案库", "产品方案总览", "需求池"],
+                    "v6",
+                    "2026-03-27T11:15:00Z",
+                )
+            },
         ],
         ("kb-product", "document", Some("doc-product-roadmap"), _) => vec![
             make_fixture_document("kb-product", "产品知识库", "node-doc-product-roadmap", "doc-product-roadmap", &["方案库", "产品方案总览"], "v4", "2026-03-27T11:05:00Z"),
         ],
+        ("kb-product", "bitable", Some("bitable-product-demand-pool"), _) => vec![SyncSourceDocument {
+            obj_type: "bitable".into(),
+            ..make_fixture_document(
+                "kb-product",
+                "产品知识库",
+                "node-bitable-product-demand-pool",
+                "bitable-product-demand-pool",
+                &["方案库", "产品方案总览", "需求池"],
+                "v6",
+                "2026-03-27T11:15:00Z",
+            )
+        }],
         ("kb-ops", "space", _, _) | ("kb-ops", "document", Some("doc-ops-playbook"), _) => vec![
             make_fixture_document("kb-ops", "运维知识库", "node-doc-ops-playbook", "doc-ops-playbook", &["运维值班手册"], "v1", "2026-03-27T12:00:00Z"),
         ],
@@ -1514,8 +1552,8 @@ fn find_node_by_scope(nodes: &[KnowledgeBaseNode], scope: &SelectedSyncScope) ->
     while let Some(node) = stack.pop() {
         let matches = match scope.kind.as_str() {
             "folder" => node.kind == "folder" && scope.node_token.as_deref() == Some(node.node_token.as_str()),
-            "document" => {
-                node.kind == "document"
+            "document" | "bitable" => {
+                node.kind == scope.kind
                     && scope.document_id.as_deref() == node.document_id.as_deref()
                     && scope.node_token.as_deref() == Some(node.node_token.as_str())
             }
@@ -1536,7 +1574,7 @@ fn find_node_by_scope(nodes: &[KnowledgeBaseNode], scope: &SelectedSyncScope) ->
 #[allow(dead_code)] // test infrastructure; not yet called by any #[test]
 fn collect_fixture_documents(nodes: &[KnowledgeBaseNode], out: &mut Vec<SyncSourceDocument>) {
     for node in nodes {
-        if node.kind == "document" {
+        if node.kind == "document" || node.kind == "bitable" {
             if let Some(document_id) = node.document_id.as_ref() {
                 out.push(make_fixture_document(
                     &node.space_id,
@@ -1547,6 +1585,13 @@ fn collect_fixture_documents(nodes: &[KnowledgeBaseNode], out: &mut Vec<SyncSour
                     "fixture-version",
                     "fixture-update-time",
                 ));
+                if let Some(last) = out.last_mut() {
+                    last.obj_type = if node.kind == "bitable" {
+                        "bitable".into()
+                    } else {
+                        "docx".into()
+                    };
+                }
             }
         }
         collect_fixture_documents(&node.children, out);
@@ -1601,6 +1646,40 @@ fn resolve_path_segments_for_node(
         .ok_or_else(|| format!("未找到知识库节点：{target_node_token}"))
 }
 
+fn resolve_wiki_node_by_token(
+    client: &FeishuOpenApiClient,
+    space_id: &str,
+    target_node_token: &str,
+) -> Result<crate::mcp::FeishuWikiNode, String> {
+    fn walk(
+        client: &FeishuOpenApiClient,
+        space_id: &str,
+        parent_node_token: Option<&str>,
+        target_node_token: &str,
+    ) -> Result<Option<crate::mcp::FeishuWikiNode>, String> {
+        let nodes = client
+            .list_child_nodes(space_id, parent_node_token)
+            .map_err(|err| err.to_string())?;
+
+        for node in nodes {
+            if node.node_token == target_node_token {
+                return Ok(Some(node));
+            }
+
+            if node.has_child {
+                if let Some(found) = walk(client, space_id, Some(&node.node_token), target_node_token)? {
+                    return Ok(Some(found));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    walk(client, space_id, None, target_node_token)?
+        .ok_or_else(|| format!("未找到知识库节点：{target_node_token}"))
+}
+
 fn build_tree_nodes_from_openapi(
     client: &FeishuOpenApiClient,
     space_id: &str,
@@ -1632,7 +1711,8 @@ fn build_tree_nodes_from_openapi(
             title: node.title.clone(),
             display_path: join_display_path(space_name, &path_segments),
             node_token: node.node_token.clone(),
-            document_id: (node.obj_type == "docx").then_some(node.obj_token.clone()),
+            document_id: matches!(node.obj_type.as_str(), "docx" | "sheet" | "bitable")
+                .then_some(node.obj_token.clone()),
             path_segments,
             has_children: node.has_child,
             is_expandable,
@@ -1701,6 +1781,19 @@ fn discover_documents_from_openapi(
                     path_segments: path_segments.clone(),
                     obj_type: node.obj_type.clone(),
                 });
+            } else if kind == "bitable" {
+                documents.push(SyncSourceDocument {
+                    document_id: node.obj_token.clone(),
+                    space_id: node.space_id.clone(),
+                    space_name: scope.space_name.clone(),
+                    node_token: node.node_token.clone(),
+                    title: node.title.clone(),
+                    version: node.version.clone(),
+                    update_time: node.update_time.clone(),
+                    source_path: join_display_path(&scope.space_name, &path_segments).replace(" / ", "/"),
+                    path_segments: path_segments.clone(),
+                    obj_type: node.obj_type.clone(),
+                });
             }
 
             if is_expandable {
@@ -1750,6 +1843,33 @@ fn discover_documents_from_openapi(
         return Ok(documents);
     }
 
+    if selected_scope.kind == "bitable" {
+        let document_id = selected_scope
+            .document_id
+            .as_deref()
+            .ok_or_else(|| "缺少文档标识，无法创建同步任务。".to_string())?;
+        let node_token = selected_scope.node_token.as_deref().unwrap_or_default();
+        let wiki_node = resolve_wiki_node_by_token(&client, &selected_scope.space_id, node_token)?;
+        let path_segments = if selected_scope.path_segments.is_empty() {
+            resolve_path_segments_for_node(&client, &selected_scope.space_id, node_token)?
+        } else {
+            selected_scope.path_segments.clone()
+        };
+        let source_path = join_display_path(&selected_scope.space_name, &path_segments).replace(" / ", "/");
+        return Ok(vec![SyncSourceDocument {
+            document_id: document_id.to_string(),
+            space_id: selected_scope.space_id.clone(),
+            space_name: selected_scope.space_name.clone(),
+            node_token: node_token.to_string(),
+            title: wiki_node.title,
+            version: wiki_node.version,
+            update_time: wiki_node.update_time,
+            source_path,
+            path_segments,
+            obj_type: wiki_node.obj_type,
+        }]);
+    }
+
     let base_path = if selected_scope.kind == "folder" {
         selected_scope.path_segments.clone()
     } else {
@@ -1776,7 +1896,7 @@ fn discover_documents_from_sources(
 }
 
 fn is_document_unchanged(document: &SyncSourceDocument, output_root: &Path, manifest: &crate::model::SyncManifest) -> bool {
-    let expected_output_path = markdown_output_path(output_root, document).to_string_lossy().to_string();
+    let expected_output_path = expected_output_path(output_root, document).to_string_lossy().to_string();
     manifest.records.iter().any(|record| {
         record.document_id == document.document_id
             && record.status == "success"
@@ -3045,9 +3165,11 @@ mod tests {
             "方案库",
         )]);
 
-        assert_eq!(documents.len(), 3);
+        assert_eq!(documents.len(), 4);
         assert_eq!(documents[0].source_path, "产品知识库/方案库/Product Overview");
         assert_eq!(documents[2].source_path, "产品知识库/方案库/产品方案总览/2026 H1 路线图");
+        assert_eq!(documents[3].source_path, "产品知识库/方案库/产品方案总览/需求池");
+        assert_eq!(documents[3].obj_type, "bitable");
     }
 
     #[test]
@@ -3059,5 +3181,47 @@ mod tests {
         assert_eq!(node_kind_from_obj_type("unknown-leaf", false), "bitable");
         assert_eq!(node_kind_from_obj_type("unknown-folder", true), "folder");
         assert!(!is_expandable_node("bitable", true));
+    }
+
+    #[test]
+    fn unchanged_check_uses_xlsx_output_for_bitable_records() {
+        let document = SyncSourceDocument {
+            document_id: "bitable-product-demand-pool".into(),
+            space_id: "kb-product".into(),
+            space_name: "产品知识库".into(),
+            node_token: "node-bitable-product-demand-pool".into(),
+            title: "需求池".into(),
+            version: "v1".into(),
+            update_time: "u1".into(),
+            path_segments: vec!["方案库".into(), "产品方案总览".into(), "需求池".into()],
+            source_path: "产品知识库/方案库/产品方案总览/需求池".into(),
+            obj_type: "bitable".into(),
+        };
+        let manifest = crate::model::SyncManifest {
+            records: vec![crate::model::ManifestRecord {
+                document_id: document.document_id.clone(),
+                space_id: document.space_id.clone(),
+                space_name: document.space_name.clone(),
+                node_token: document.node_token.clone(),
+                title: document.title.clone(),
+                version: document.version.clone(),
+                update_time: document.update_time.clone(),
+                source_path: document.source_path.clone(),
+                path_segments: document.path_segments.clone(),
+                output_path: crate::sync::expected_output_path(
+                    Path::new("C:/tmp/sync-target"),
+                    &document,
+                )
+                .to_string_lossy()
+                .to_string(),
+                content_hash: "hash".into(),
+                source_signature: "export:xlsx".into(),
+                status: "success".into(),
+                image_assets: vec![],
+                last_synced_at: "2026-03-30T00:00:00Z".into(),
+            }],
+        };
+
+        assert!(is_document_unchanged(&document, Path::new("C:/tmp/sync-target"), &manifest));
     }
 }

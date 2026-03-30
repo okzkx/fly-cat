@@ -59,8 +59,22 @@ function makeFolderScope(nodeToken: string, title: string, overrides: Partial<Sy
   };
 }
 
+function makeBitableScope(documentId: string, title: string, overrides: Partial<SyncScope> = {}): SyncScope {
+  return {
+    kind: "bitable",
+    spaceId: "kb",
+    spaceName: "知识库",
+    title,
+    displayPath: `知识库 / ${title}`,
+    nodeToken: `node-${documentId}`,
+    documentId,
+    pathSegments: [title],
+    ...overrides
+  };
+}
+
 describe("tree selection helpers", () => {
-  it("collects descendant documents recursively while ignoring bitable nodes", () => {
+  it("collects descendant syncable leaves recursively including bitable nodes", () => {
     const nodes: KnowledgeBaseNode[] = [
       makeDocument("parent", "父文档", {
         hasChildren: true,
@@ -102,6 +116,7 @@ describe("tree selection helpers", () => {
     expect(collectDocumentScopes(nodes).map((scope) => scope.documentId)).toEqual([
       "parent",
       "child-a",
+      "sheet",
       "child-b",
       "grandchild"
     ]);
@@ -117,6 +132,19 @@ describe("tree selection helpers", () => {
     });
 
     expect(sourceCoversDescendant(parentScope, childScope)).toBe(true);
+  });
+
+  it("treats descendant bitable leaves as covered by a selected document subtree", () => {
+    const parentScope = makeDocumentScope("parent", "父文档", {
+      includesDescendants: true,
+      pathSegments: ["父文档"]
+    });
+    const bitableScope = makeBitableScope("sheet", "需求池", {
+      displayPath: "知识库 / 父文档 / 需求池",
+      pathSegments: ["父文档", "需求池"]
+    });
+
+    expect(sourceCoversDescendant(parentScope, bitableScope)).toBe(true);
   });
 
   it("normalizes overlapping roots by keeping the higher subtree root", () => {
@@ -175,6 +203,19 @@ describe("tree selection helpers", () => {
             pathSegments: ["父文档", "子文档 A"],
             displayPath: "知识库 / 父文档 / 子文档 A"
           }),
+          {
+            key: "bitable:kb:sheet",
+            kind: "bitable",
+            spaceId: "kb",
+            spaceName: "知识库",
+            title: "需求池",
+            displayPath: "知识库 / 父文档 / 需求池",
+            nodeToken: "node-sheet",
+            documentId: "sheet",
+            pathSegments: ["父文档", "需求池"],
+            hasChildren: false,
+            isExpandable: false
+          },
           makeDocument("child-b", "子文档 B", {
             pathSegments: ["父文档", "子文档 B"],
             displayPath: "知识库 / 父文档 / 子文档 B"
@@ -190,7 +231,7 @@ describe("tree selection helpers", () => {
       })
     ]);
 
-    expect(disabledKeys).toEqual(["document:kb:child-a", "document:kb:child-b"]);
+    expect(disabledKeys).toEqual(["bitable:kb:node-sheet", "document:kb:child-a", "document:kb:child-b"]);
   });
 
   it("computes disabled descendant keys for covered folder and document nodes", () => {

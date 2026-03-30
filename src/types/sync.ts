@@ -13,7 +13,7 @@ export interface KnowledgeBaseSpace {
 }
 
 export type KnowledgeBaseNodeKind = "space" | "folder" | "document" | "bitable";
-export type SyncScopeKind = Exclude<KnowledgeBaseNodeKind, "bitable">;
+export type SyncScopeKind = KnowledgeBaseNodeKind;
 export type SyncSelectionSummaryKind = SyncScopeKind | "multi-document" | "multi-source";
 
 export interface SyncScope {

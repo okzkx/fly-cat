@@ -2,10 +2,6 @@ import type { KnowledgeBaseNode, SyncScope } from "@/types/sync";
 import { dedupeSelectedSources, scopeKey } from "@/utils/syncSelection";
 
 export function buildScopeFromNode(node: KnowledgeBaseNode): SyncScope | null {
-  if (node.kind === "bitable") {
-    return null;
-  }
-
   return {
     kind: node.kind,
     spaceId: node.spaceId,
@@ -22,7 +18,7 @@ export function buildScopeFromNode(node: KnowledgeBaseNode): SyncScope | null {
 export function collectDocumentScopes(nodes: KnowledgeBaseNode[]): SyncScope[] {
   const scopes: SyncScope[] = [];
   for (const node of nodes) {
-    if (node.kind === "document") {
+    if (node.kind === "document" || node.kind === "bitable") {
       const scope = buildScopeFromNode(node);
       if (scope) {
         scopes.push(scope);
@@ -51,7 +47,7 @@ export function sourceCoversDescendant(ancestor: SyncScope, descendant: SyncScop
   if (ancestor.kind === "space") {
     return descendant.kind !== "space";
   }
-  if (ancestor.kind === "document" && descendant.kind !== "document") {
+  if (ancestor.kind === "document" && descendant.kind !== "document" && descendant.kind !== "bitable") {
     return false;
   }
   if (ancestor.pathSegments.length >= descendant.pathSegments.length) {
