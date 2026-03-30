@@ -1,11 +1,11 @@
 ---
 name: opencat-work
-description: OpenCat 任务列表连续执行器。按 TODO.md 中的优先级顺序执行任务，通过 SubAgent + opencat-task 技能逐个执行、验收、归档，全程无需人工干预。Use when the user wants to run through a TODO.md task list automatically.
+description: OpenCat 任务列表连续执行器。按 TODO.md 中的优先级顺序执行任务，但在领取任何新 TODO 之前必须先运行 `opencat-cleanup`，直到所有保留 worktree 都恢复到闲置分支。
 license: MIT
-compatibility: Requires opencat-task skill to be available in the project.
+compatibility: Requires `opencat-task` and `opencat-cleanup` skills to be available in the project.
 metadata:
   author: opencat
-  version: "1.4"
+  version: "1.5"
   derivedFrom: "dev-task-runner"
 ---
 
@@ -14,6 +14,7 @@ metadata:
 执行 `TODO.md` 中的任务，按优先级 P1 > P2 > P3 顺序，通过 SubAgent 调用 `opencat-task` 技能逐个完成。
 
 当用户明确调用 `opencat-work` 或 `/opencat-run-task` 时，默认启用 AI 自主决策：
+
 - 若用户未指定具体任务，优先从当前上下文和 `TODO.md` 中自动选择最合理的任务继续执行
 - 不因常规任务选择而停下来等待确认
 - 若多个候选任务会显著改变范围、行为或风险，且无法安全自主判断，子 Agent 不得发问等待确认，必须直接退出并返回失败原因
@@ -66,19 +67,25 @@ metadata:
 
 1. **初始化**
    - 读取 `TODO.md` 和 `DONE.md`
-   - 检查当前 git 仓库状态：主 worktree 是否有未提交变更、是否存在未合并分支、保留中的 worktree、未完成的 task/worktree 流程
+   - 检查当前 git 仓库状态
    - 扫描所有章节，识别活跃章节和活跃任务
+   - **立刻先执行 `opencat-cleanup`**
 
-2. **仓库未竟任务检查**
-   - 若存在未合并分支、仍在进行中的 worktree 任务、未完成的 task/worktree 流程，优先判断它们是否属于当前项目的未竟工作
-   - 只要仓库里还有应该先收尾的任务，就先继续/完成这些任务，**不要**直接领取新的 `TODO.md` 任务
-   - 主 worktree 的脏改动不等于可以直接领取新任务；只有确认当前没有更优先的未竟工作后，才进入任务选择与 checkpoint 判断
+2. **cleanup 闸门**
+   - `opencat-cleanup` 必须先处理所有未竟工作：
+     - 自动提交未提交变更
+     - 继续未完成的 task/worktree 流程
+     - 删除已完成的任务分支
+     - 把所有保留 worktree 切回各自的 `idle branch`
+   - 只要还有任意一个保留 worktree 不在闲置分支上，或工作区不干净，就**不允许**领取新的 `TODO.md` 任务
+   - cleanup 若发现某个 worktree 仍在任务态，应优先启动子 Agent 继续该任务，而不是跳过它去做新的 TODO
+   - 只有当仓库与所有保留 worktree 都达到“完全干净、全部闲置”的状态后，才进入任务选择
 
 3. **状态判断与候选任务选择**
 
    | 条件 | 操作 |
    |------|------|
-   | 所有章节为空 | **直接结束**，报告"无任务" |
+   | 所有章节为空 | **直接结束**，报告“无任务” |
    | 有活跃任务 | 选择该活跃任务作为当前候选任务 |
    | 无活跃任务 但 有未完成任务 | 选择第一个未完成任务作为当前候选任务 |
 
@@ -86,77 +93,79 @@ metadata:
    1. 活跃章节中的第一个任务
    2. 若活跃章节为空，按 P1 > P2 > P3 顺序取第一个有任务的章节的第一个任务
 
-4. **任务前 checkpoint 提交**
-   - 每次准备执行当前候选任务前，先检查主 worktree 是否干净；只有主 worktree 干净后，才允许真正领取任务并启动 SubAgent
-   - 若主 worktree 已干净，记录 `checkpoint=clean`，直接继续
-   - 若主 worktree 有未提交改动，主 Agent 必须先分析这些改动是否可安全纳入一次 checkpoint commit
-   - checkpoint 只允许提交“可安全提交”的当前本地改动；目标是把主 worktree 恢复到干净状态，而不是只提交 `TODO.md` / `DONE.md`
-   - **禁止**把密钥、凭证、缓存、构建产物或其他明显不应入库的文件混入 checkpoint
-   - 若改动可安全提交，则先暂存相关文件并创建 checkpoint commit，例如：`chore(opencat-work):checkpoint_before_<task-slug>`
-   - 若改动无法安全归类、无法与不应提交内容分离、或会明显混入无关变更，则本轮任务按失败处理并记录原因，**不要**带着脏仓继续执行
-   - checkpoint 成功后，若当前任务之前还不是活跃任务，此时再标记为活跃任务：`- > 任务A`
+4. **领取任务前的清洁确认**
+   - 进入本步骤时，仓库应当已经经过 `opencat-cleanup`，处于“主 worktree 干净 + 所有保留 worktree 处于闲置分支”的状态
+   - 若当前候选任务之前还不是活跃任务，此时再标记为活跃任务：`- > 任务A`
+   - 若在标记或准备启动 SubAgent 的过程中又出现新的脏改动、任务分支或非闲置 worktree，必须重新执行 `opencat-cleanup`
+   - `opencat-work` 自己不再发明额外的临时 worktree 收尾流程；仓库清洁统一交给 `opencat-cleanup`
 
 5. **执行任务**
    - 主 Agent 只负责选择任务、启动/衔接 SubAgent、更新任务记录与汇总结果，不提前实现、调试或接管子任务细节
    - 同一时刻只能有一个任务 SubAgent 处于执行中；禁止为同一任务或不同任务并行创建多个 SubAgent 争抢工作
    - 主 Agent 启动 SubAgent 后，必须耐心等待其完成，通过轮询进度/结果来衔接；除非确认 SubAgent 已失败、卡死或用户明确要求接管，否则不要因为等待而切换成主 Agent 亲自实现
    - **10 分钟静默等待规则**：只要 SubAgent 已正常启动且没有明确失败信号，即使连续 10 分钟没有新的文本回应，也默认视为仍在正常执行；在这 10 分钟窗口内不要仅因无输出就判定卡住、不要频繁 resume/追问催促
-   - 只有 checkpoint 已完成且主 worktree 已恢复干净，才允许启动 SubAgent
-   - 启动 SubAgent（`general-purpose` 类型）
+   - 只有 cleanup 已明确报告“仓库完全干净且所有 worktree 均闲置”后，才允许启动 SubAgent
+   - 启动任务 SubAgent
    - 只有当当前 SubAgent 已完成并销毁后，主 Agent 才能为下一个任务再创建新的 SubAgent
-   - **重要** **SubAgent** 内部必须调用 **`/opencat-task` 技能** 完成任务
-   - **重要** **SubAgent** 必须全程自主执行；若遇到无法安全自主决定的情况，不得向主 Agent 提问或等待确认，必须直接退出并返回失败原因
-   - 若任务以“修复”开头，SubAgent 必须先重新确认 bug 是否仍可复现、现有实现是否真的覆盖问题、是否存在新的回归路径；不能仅因 `DONE.md`/archive 中有同名或相似记录就直接归档
+   - **重要** SubAgent 内部必须调用 `opencat-task`
+   - **重要** SubAgent 必须全程自主执行；若遇到难以判断的情况，不得向主 Agent 提问或等待确认，必须选择最保守的可继续方案，记录问题后继续
+   - 若任务以“修复”开头，SubAgent 必须先重新确认 bug 是否仍可复现、现有实现是否真的覆盖问题、是否存在新的回归路径；不能仅因 `DONE.md` / archive 中有同名或相似记录就直接归档
    - 只有明确属于“新功能重复建档”且有充分证据证明任务只是重复记录时，才允许做最小化清队列处理
-   - **必须使用 worktree 隔离**：SubAgent 必须按照 opencat-task 的完整流程执行
+   - **必须使用 worktree 隔离**：SubAgent 必须按照 `opencat-task` 的完整流程执行
      - purpose 阶段在主 worktree
-     - apply/archive 阶段在独立的 git worktree 中
-     - 在工作分支开始开发前，先 rebase 到最新主干
+     - apply/archive 阶段在独立的保留 worktree slot 中
+     - 每个保留 worktree slot 都有自己的 `idle branch`
+     - 当 worktree 承接任务时，必须切到该任务的 `task branch`
      - 变更必须合并回主干
-     - worktree 保留不删除
-     - 在准备 merge 回主干前，再次 rebase 到最新主干
+     - merge 完成后，任务分支必须删除
+     - worktree 必须切回自己的 `idle branch`
+     - 只有回到闲置分支且工作区干净，才算本任务真正收尾完成
      - 遇到主干推进、分支分叉或合并冲突时，永远先 rebase 到最新提交，再自行解决冲突，不因冲突而停下来等待确认
    - SubAgent 完成后自动销毁，上下文完全隔离
 
 6. **归档**
    - 从 `TODO.md` 删除已完成任务行
    - 在 `DONE.md` 对应章节追加记录：`- [时间] 任务名称 — 执行结果`
-   - 提交 git：`git add TODO.md DONE.md && git commit -m "完成: 任务名称"`
+   - 提交 git：`完成: 任务名称`
 
 7. **继续下一个**
+   - 每完成一个任务后，再次执行 `opencat-cleanup`
+   - 只有 cleanup 再次确认所有保留 worktree 都已回到闲置态，才允许继续领取下一项 TODO
    - 活跃章节还有任务 → 标记第一个为活跃任务
    - 活跃章节为空 → 按优先级取下一章节的第一个任务，标记为活跃
-   - 所有章节为空 → 报告"全部完成"
+   - 所有章节为空 → 报告“全部完成”
 
 8. **失败处理**
    - 在任务行后追加注释：`- 任务名称 <!-- 失败: 原因 -->`
-   - 若 checkpoint 无法安全完成，也按失败处理；记录具体阻塞原因，不得跳过 checkpoint 强行继续
-   - 若 SubAgent 因“无法安全自主决定”而退出，也按失败处理；记录具体卡点，不发起追问式恢复
-   - 等待人工修复后重新运行
+   - 若 cleanup 无法把仓库恢复为“全部闲置、全部干净”，先记录具体阻塞原因，再继续处理后续仍可执行的收尾或下一可执行任务
+   - 若 SubAgent 仍有未解决卡点，不得追问式恢复；要么继续完成当前任务的可执行部分，要么记录问题后转到下一项可执行任务
+   - 默认不等待人工修复；只有仓库已经无法继续推进任何步骤时，才结束本轮并输出已记录问题
 
 ## 核心规则
 
-1. **SubAgent 独立执行**: 每个任务由全新 SubAgent 执行，上下文 100% 隔离
-2. **必须使用 opencat-task**: SubAgent 内部通过 `/opencat-task` 技能完成任务
-3. **主 Agent 不抢子 Agent 工作**: 主 Agent 必须保持上下文窗口干净简洁，只做编排、状态管理和最终汇总，不直接展开实现、调试、测试、读大量业务代码等本应由 SubAgent 完成的工作
-4. **主 Agent 耐心等待**: 子 Agent 已正常启动后，主 Agent 应持续等待其完成并仅做必要轮询；不要因短时间没有结果就接管实现，避免上下文热污染
-5. **10 分钟无回应不算卡死**: 只要子 Agent 已启动且无明确失败证据，连续 10 分钟没有新回应也仍视为正常执行；10 分钟内不得仅因静默就判定卡住或频繁发送追问
-6. **单子 Agent 串行执行**: 主 Agent 一次只能启动一个任务 SubAgent；必须等该 SubAgent 结束并销毁后，才能启动下一个任务的 SubAgent
-7. **必须使用 worktree**: opencat-task 的 apply/archive 阶段必须在独立 worktree 中执行
-8. **开发前先变基**: 工作分支在开始开发前，必须先 rebase 到最新 base_branch
-9. **变更合并回主干**: 完成后必须将变更合并回 base_branch，且 merge 前必须再次 rebase 到最新 base_branch
-10. **worktree 保留不删除**: 任务完成后保留 worktree 目录供下次使用
-11. **冲突处理固定策略**: 遇到分支冲突、主干推进、rebase 冲突或 merge 冲突时，永远先 rebase 到最新提交，再自行解决冲突并继续流程
-12. **立即保存**: 每次编辑文件后立即保存，不要批量操作
-13. **任务描述清晰**: 任务应当具体可执行、可验收
-14. **不修改任务内容**: 除非用户明确要求
-15. **默认自主选择任务**: 显式调用本技能但未指定任务时，按上下文和优先级自主决定并继续
-16. **修复任务必须重审**: 凡是“修复”开头的任务，都必须重新核对当前行为、代码与历史提交，不能仅凭归档/DONE 存在相似项就跳过
-17. **新任务前先收尾仓库状态**: 获取新任务前，必须先检查并优先处理当前 git 仓库中的未合并分支、保留 worktree 和其他未竟工作
-18. **每个任务前先做 checkpoint**: 无论是继续活跃任务还是领取新任务，主 Agent 在执行前都必须先确认主 worktree 干净；若不干净，先创建 checkpoint commit
-19. **checkpoint 只提交安全改动**: checkpoint 允许提交当前可安全入库的本地改动，但不得混入密钥、凭证、缓存、构建产物或其他明显不应提交的内容
-20. **checkpoint 失败即阻塞任务**: 若主 worktree 改动无法安全纳入 checkpoint，本轮任务必须按失败处理，不得带脏仓继续启动 SubAgent
-21. **子 Agent 禁止提问卡住**: 子 Agent 必须全程自己执行；若无法安全自主决定，直接失败退出并返回原因，禁止向主 Agent 发问等待确认
+1. **新任务前必须先 cleanup**: 每次执行 `TODO.md` 前，必须先运行 `opencat-cleanup`
+2. **所有 worktree 全部闲置后才能跑 TODO**: 只要有任意一个保留 worktree 不在 `idle branch` 上，就视为还有旧任务未收尾
+3. **SubAgent 独立执行**: 每个任务由全新 SubAgent 执行，上下文 100% 隔离
+4. **必须使用 opencat-task**: SubAgent 内部通过 `opencat-task` 完成任务
+5. **主 Agent 不抢子 Agent 工作**: 主 Agent 只做编排、状态管理和最终汇总，不直接展开实现、调试、测试、读大量业务代码等本应由 SubAgent 完成的工作
+6. **主 Agent 耐心等待**: 子 Agent 已正常启动后，主 Agent 应持续等待其完成并仅做必要轮询；不要因短时间没有结果就接管实现，避免上下文热污染
+7. **10 分钟无回应不算卡死**: 只要子 Agent 已启动且无明确失败证据，连续 10 分钟没有新回应也仍视为正常执行；10 分钟内不得仅因静默就判定卡住或频繁发送追问
+8. **单子 Agent 串行执行**: 主 Agent 一次只能启动一个任务 SubAgent；必须等该 SubAgent 结束并销毁后，才能启动下一个任务的 SubAgent
+9. **必须使用 worktree**: `opencat-task` 的 apply/archive 阶段必须在独立 worktree 中执行
+10. **闲置分支是唯一待命状态**: 保留 worktree 空闲时必须在各自的 `idle branch` 上，且工作区干净
+11. **非闲置即任务态**: worktree 不处于闲置分支时，它就一定是在执行某个任务
+12. **开发前先变基**: 工作分支在开始开发前，必须先 rebase 到最新 `base_branch`
+13. **变更合并回主干**: 完成后必须将变更合并回 `base_branch`，且 merge 前必须再次 rebase 到最新 `base_branch`
+14. **任务分支必须删除**: 任务完成并回到闲置态后，对应任务分支必须删除
+15. **worktree 保留不删除**: 任务完成后保留 worktree 目录供下次使用
+16. **冲突处理固定策略**: 遇到分支冲突、主干推进、rebase 冲突或 merge 冲突时，永远先 rebase 到最新提交，再自行解决冲突并继续流程
+17. **立即保存**: 每次编辑文件后立即保存，不要批量操作
+18. **任务描述清晰**: 任务应当具体可执行、可验收
+19. **不修改任务内容**: 除非用户明确要求
+20. **默认自主选择任务**: 显式调用本技能但未指定任务时，按上下文和优先级自主决定并继续
+21. **修复任务必须重审**: 凡是“修复”开头的任务，都必须重新核对当前行为、代码与历史提交，不能仅凭归档 / DONE 存在相似项就跳过
+22. **子 Agent 禁止提问卡住**: 子 Agent 必须全程自己执行；若遇到难以判断的情况，选择最保守可继续路径并记录原因，禁止向主 Agent 发问等待确认
+23. **默认记录问题后继续**: 无论是 cleanup 还是 task 执行，只要仍有可继续步骤，就先记录异常并继续，不因常规不确定性暂停
 
 ## 输出格式
 
@@ -165,7 +174,7 @@ metadata:
 
 **当前任务:** <任务名称>
 **优先级:** P1|P2|P3
-**Checkpoint:** clean|committed|blocked
+**Cleanup:** ready|continuing|blocked
 **状态:** 执行中|完成|失败
 
 <进度说明>
@@ -174,17 +183,17 @@ metadata:
 ## 注意事项
 
 - `TODO.md` + `DONE.md` 是权威来源
-- git 仓库当前状态也是权威信号；领取新任务前必须先检查是否有未竟工作
-- 每个任务在真正开始执行前，主 Agent 都要先确认主 worktree 已干净；必要时先自动创建一次 checkpoint commit
-- checkpoint 的目标是清理主 worktree，而不是替代 `opencat-task` 在 worktree 内部的 propose/apply/archive 提交
+- git 仓库当前状态也是权威信号；领取新任务前必须先检查是否还有未竟工作
+- `opencat-work` 的第一动作永远是 `opencat-cleanup`
+- cleanup 的目标不是只清主 worktree，而是让所有保留 worktree 都回到各自的 `idle branch`
+- 只要某个 worktree 还不在闲置分支，它就不是“可复用空槽位”，而是“未收尾任务”
 - 工作分支开始开发前和 merge 回主干前，都必须先 rebase 到最新主干
 - 子 Agent 正常启动后，如无明确失败信号，连续 10 分钟无新回应仍按正常执行处理；避免因短暂无输出而频繁催促或误判卡死
 - 主 Agent 启动子 Agent 后应优先等待和轮询结果，避免主上下文因为接管实现而被热污染
 - 主 Agent 只能串行使用一个任务子 Agent，当前子 Agent 未结束前不能再创建新的任务子 Agent
-- 子 Agent 不得通过提问向主 Agent 请求决策；遇到无法安全自主判断的情况，直接退出并返回失败原因
-- checkpoint 若会混入无关改动或不应入库文件，必须直接阻塞当前任务并记录原因
+- 子 Agent 不得通过提问向主 Agent 请求决策；遇到难以判断的情况，应选择最保守路径并记录问题后继续
 - 支持断点恢复（从中断处继续）
 - 支持 `/clear` 后继续，状态保存在文件中
-- 失败任务等待人工修复后继续
+- 默认先完成可执行部分，再把剩余问题写入记录；不要因为常规异常等待人工修复
 - 文件格式保持简洁
 - 遇到冲突时不暂停询问，默认 rebase 到最新提交并自行解决冲突
