@@ -52,6 +52,25 @@ describe("knowledge base tree loading", () => {
     expect(bitableNode?.isExpandable).toBe(false);
   });
 
+  it("builds a selectable sync scope for bitable leaf nodes", () => {
+    const nodes = listKnowledgeBaseNodes("kb-product", "node-doc-product-roadmap");
+    const bitableNode = nodes.find((node) => node.kind === "bitable");
+
+    const scope = buildScopeFromNode(bitableNode!);
+
+    expect(scope).toEqual({
+      kind: "bitable",
+      spaceId: "kb-product",
+      spaceName: "产品知识库",
+      title: "需求池",
+      displayPath: "产品知识库 / 方案库 / 产品方案总览 / 需求池",
+      nodeToken: "node-bitable-product-demand-pool",
+      documentId: "bitable-product-demand-pool",
+      pathSegments: ["方案库", "产品方案总览", "需求池"],
+      includesDescendants: false
+    });
+  });
+
   it("selects a subtree-capable document without preloading its descendants", () => {
     const nodes = listKnowledgeBaseNodes("kb-product", "product-library");
     const subtreeRoot = nodes.find((node) => node.documentId === "doc-product-roadmap");
@@ -156,7 +175,7 @@ describe("knowledge base tree loading", () => {
     expect(task.selectedSources).toHaveLength(1);
     expect(task.selectedSources?.[0]?.kind).toBe("folder");
     expect(task.selectionSummary?.kind).toBe("folder");
-    expect(task.selectionSummary?.documentCount).toBe(3);
+    expect(task.selectionSummary?.documentCount).toBe(4);
   });
 
   it("creates folder-root task metadata for a selected library node", () => {
@@ -182,8 +201,35 @@ describe("knowledge base tree loading", () => {
     expect(task.selectedSources).toHaveLength(1);
     expect(task.selectedSources?.[0]?.nodeToken).toBe("product-library");
     expect(task.selectionSummary?.kind).toBe("folder");
-    expect(task.selectionSummary?.documentCount).toBe(3);
+    expect(task.selectionSummary?.documentCount).toBe(4);
     expect(task.selectionSummary?.rootCount).toBe(1);
     expect(task.selectionSummary?.displayPath).toBe("产品知识库 / 方案库");
+  });
+
+  it("creates a single-root sync task for a selected bitable leaf", () => {
+    const nodes = listKnowledgeBaseNodes("kb-product", "node-doc-product-roadmap");
+    const bitableNode = nodes.find((node) => node.kind === "bitable");
+
+    const task = createSyncTask(
+      [
+        {
+          kind: "bitable",
+          spaceId: bitableNode!.spaceId,
+          spaceName: bitableNode!.spaceName,
+          title: bitableNode!.title,
+          displayPath: bitableNode!.displayPath,
+          nodeToken: bitableNode!.nodeToken,
+          documentId: bitableNode!.documentId,
+          pathSegments: bitableNode!.pathSegments
+        }
+      ],
+      "C:/tmp/sync-target"
+    );
+
+    expect(task.selectedSources?.[0]?.kind).toBe("bitable");
+    expect(task.selectedScope?.kind).toBe("bitable");
+    expect(task.selectionSummary?.kind).toBe("bitable");
+    expect(task.selectionSummary?.documentCount).toBe(1);
+    expect(task.counters.total).toBe(1);
   });
 });

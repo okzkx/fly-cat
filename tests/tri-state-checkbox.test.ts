@@ -15,6 +15,7 @@ function makeNode(key: string, children?: KnowledgeBaseNode[]): KnowledgeBaseNod
     title: key,
     displayPath: key,
     nodeToken: `token-${key}`,
+    pathSegments: [key],
     hasChildren: Boolean(children?.length),
     isExpandable: Boolean(children?.length),
     children

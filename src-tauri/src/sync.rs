@@ -88,6 +88,21 @@ pub fn default_extension(obj_type: &str) -> &'static str {
     }
 }
 
+pub fn expected_output_path(sync_root: &Path, source_document: &SyncSourceDocument) -> std::path::PathBuf {
+    match source_document.obj_type.trim().to_ascii_lowercase().as_str() {
+        "sheet" | "bitable" => {
+            let extension = default_extension(&source_document.obj_type);
+            let file_name = format!("{}.{}", source_document.title, extension);
+            if source_document.path_segments.is_empty() {
+                sync_root.join(&file_name)
+            } else {
+                sync_root.join(source_document.path_segments.join("/")).join(&file_name)
+            }
+        }
+        _ => markdown_output_path(sync_root, source_document),
+    }
+}
+
 /// Export a document via the Feishu Export Task API (server-side rendering).
 /// Returns a ManifestRecord; the caller is responsible for writing it to the manifest.
 pub fn sync_document_via_export(
@@ -121,12 +136,7 @@ pub fn sync_document_via_export(
         .map_err(classify_export_error)?;
 
     // Step 4: Build output path preserving directory structure
-    let file_name = format!("{}.{}", source_document.title, extension);
-    let output_path = if source_document.path_segments.is_empty() {
-        sync_root.join(&file_name)
-    } else {
-        sync_root.join(source_document.path_segments.join("/")).join(&file_name)
-    };
+    let output_path = expected_output_path(sync_root, source_document);
     let output_path_string = output_path.to_string_lossy().to_string();
 
     // Remove previous output if path changed

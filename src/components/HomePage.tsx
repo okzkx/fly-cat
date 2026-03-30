@@ -224,10 +224,7 @@ function NodeSyncStatusTag({
   if (!nodeKind || Object.keys(syncStatuses).length === 0) {
     return null;
   }
-  if (nodeKind === "bitable") {
-    return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>不支持</Tag>;
-  }
-  if (nodeKind === "document") {
+  if (nodeKind === "document" || nodeKind === "bitable") {
     return (
       <DocumentSyncStatusTag
         documentId={treeNode.scopeValue?.documentId}
@@ -323,8 +320,8 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, s
       title: node.title,
       key: node.key,
       isLeaf: !node.isExpandable,
-      selectable: node.kind !== "bitable",
-      disableCheckbox: node.kind === "bitable" || isDisabledNode || isSyncing,
+      selectable: true,
+      disableCheckbox: isDisabledNode || isSyncing,
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,

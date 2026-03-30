@@ -29,6 +29,20 @@ function makeFolderScope(nodeToken: string, title: string, overrides: Partial<Sy
   };
 }
 
+function makeBitableScope(documentId: string, title: string, overrides: Partial<SyncScope> = {}): SyncScope {
+  return {
+    kind: "bitable",
+    spaceId: "kb",
+    spaceName: "知识库",
+    title,
+    displayPath: `知识库 / ${title}`,
+    nodeToken: `node-${documentId}`,
+    documentId,
+    pathSegments: [title],
+    ...overrides
+  };
+}
+
 describe("sync selection summaries", () => {
   it("prefers subtree-capable document sources when deduplicating", () => {
     const sources = dedupeSelectedSources([
@@ -99,5 +113,16 @@ describe("sync selection summaries", () => {
     expect(summary?.kind).toBe("multi-source");
     expect(summary?.documentCount).toBe(3);
     expect(summary?.displayPath).toContain("同步根");
+  });
+
+  it("builds single-leaf summary for a selected bitable", () => {
+    const summary = buildSelectionSummary(
+      [makeBitableScope("sheet-1", "需求池")],
+      null
+    );
+
+    expect(summary?.kind).toBe("bitable");
+    expect(summary?.documentCount).toBe(1);
+    expect(summary?.rootCount).toBe(1);
   });
 });

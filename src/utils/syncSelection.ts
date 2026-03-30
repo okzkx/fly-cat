@@ -51,7 +51,7 @@ export function buildSelectionSummary(
           spaceName: selectedScope.spaceName,
           title: selectedScope.title,
           displayPath: selectedScope.displayPath,
-          documentCount: selectedScope.kind === "document" ? 1 : 0,
+          documentCount: selectedScope.kind === "document" || selectedScope.kind === "bitable" ? 1 : 0,
           previewPaths: [selectedScope.displayPath],
           includesDescendants: Boolean(selectedScope.includesDescendants),
           rootCount: 1
@@ -62,7 +62,7 @@ export function buildSelectionSummary(
   if (sources.length === 1) {
     const source = sources[0];
     const effectiveDocumentCount =
-      options?.effectiveDocumentCount ?? (source.kind === "document" ? 1 : 0);
+      options?.effectiveDocumentCount ?? (source.kind === "document" || source.kind === "bitable" ? 1 : 0);
     return {
       kind: source.kind,
       spaceId: source.spaceId,
