@@ -648,7 +648,9 @@ export default function HomePage({
   const handleStartSync = async (): Promise<void> => {
     try {
       const result = await onCreateTask(uncheckedSyncedDocumentIds);
-      if (result) {
+      if (result?.cleanupOnly) {
+        message.info(result.message || "已清理取消勾选的同步文档");
+      } else if (result?.task) {
         message.success(`已创建同步任务：${result.task.name}`);
       } else {
         message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围或勾选目录、文档");

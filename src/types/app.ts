@@ -70,7 +70,9 @@ export interface SyncTask {
 }
 
 export interface HomeSyncResult {
-  task: SyncTask;
+  task?: SyncTask;
+  cleanupOnly?: boolean;
+  message?: string;
 }
 
 export interface AppBootstrap {

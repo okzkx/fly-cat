@@ -10,6 +10,7 @@ import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getEffectiveSelectedSources } from "@/utils/syncSelection";
+import { shouldSkipTaskCreationAfterCleanup } from "@/utils/syncStart";
 import {
   createSyncTask,
   getAppBootstrap,
@@ -353,6 +354,12 @@ export default function App(): React.JSX.Element {
                     // Refresh sync statuses after cleanup
                     const refreshedStatuses = await getDocumentSyncStatuses(syncTarget);
                     setDocumentSyncStatuses(refreshedStatuses);
+                  }
+                  if (shouldSkipTaskCreationAfterCleanup(uncheckedSyncedDocumentIds, selectedSources)) {
+                    return {
+                      cleanupOnly: true,
+                      message: `已清理 ${uncheckedSyncedDocumentIds.length} 个取消勾选的已同步文档`
+                    };
                   }
                   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
                   if (effectiveSelectedSources.length === 0) {
