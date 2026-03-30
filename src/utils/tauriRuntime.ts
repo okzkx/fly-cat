@@ -3,6 +3,7 @@ import { listen, type EventCallback, type UnlistenFn } from "@tauri-apps/api/eve
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import type { AppBootstrap, AppSettings, ConnectionCheckResult, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentFreshnessResult, KnowledgeBaseNode, SyncScope } from "@/types/sync";
+import { buildFeishuBrowserUrl, type BrowserOpenTarget } from "@/utils/feishuBrowserUrl";
 import {
   TASK_EVENTS,
   createSyncTask as createBrowserSyncTask,
@@ -346,26 +347,14 @@ export async function openWorkspaceFolder(path: string): Promise<{ success: bool
 /**
  * Open a document in the browser.
  * Uses the Tauri opener plugin to open the URL.
- * @param nodeToken The document token
- * @param kind The node kind (document, bitable, etc.)
+ * @param target The browser-open target
  */
 export async function openDocumentInBrowser(
-  nodeToken: string,
-  kind: "document" | "bitable" | "folder"
+  target: BrowserOpenTarget
 ): Promise<{ success: boolean; error?: string }> {
-  if (!nodeToken) {
-    return { success: false, error: "无效的文档标识" };
-  }
-
-  // Build the Feishu document URL based on node kind
-  let url: string;
-  if (kind === "bitable") {
-    url = `https://feishu.cn/base/${nodeToken}`;
-  } else if (kind === "document") {
-    url = `https://feishu.cn/docx/${nodeToken}`;
-  } else {
-    // Folders don't have a direct URL
-    return { success: false, error: "文件夹不支持在浏览器中打开" };
+  const { url, error } = buildFeishuBrowserUrl(target);
+  if (!url) {
+    return { success: false, error: error || "无法在浏览器中打开当前内容" };
   }
 
   if (!isTauriRuntime()) {
