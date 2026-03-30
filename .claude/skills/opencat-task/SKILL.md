@@ -138,7 +138,7 @@ git pull --ff-only  # 刷新 trunk
 git rebase <base_branch>
 ```
 
-有冲突则**自行解决**，除非仓库状态无法恢复。
+有冲突则**永远先 rebase 到最新提交并自行解决**，除非仓库状态无法恢复。
 
 #### 11. Archive 阶段（Worktree）
 
@@ -165,7 +165,7 @@ git checkout <base_branch>
 git merge --no-ff "<work_branch>"
 ```
 
-有冲突则**自行解决**。
+若主干在合并前推进，先让工作分支 rebase 到最新 `<base_branch>`，再自行解决冲突并继续合并，不因冲突停下来等待确认。
 
 #### 14. 清理
 
@@ -273,7 +273,8 @@ git merge --no-ff "<work_branch>"
 |------|------|
 | worktree 保留 | 合并后只删除分支，保留 worktree 目录 |
 | 调用现有技能 | 直接调用 `openspec-propose/apply/archive` |
-| 冲突自解 | 默认自行解决 rebase/merge 冲突 |
+| 永远先 rebase | 遇到主干推进、分支分叉、rebase/merge 冲突时，先 rebase 到最新提交，再自行解决冲突 |
+| 冲突自解 | 默认自行解决 rebase/merge 冲突，不因常规冲突暂停 |
 | 不重写历史 | 不修改 `<base_branch>` 历史 |
 | 不自动推送 | 除非用户明确要求 |
 
