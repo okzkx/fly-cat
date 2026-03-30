@@ -110,6 +110,21 @@ openspec validate --change "<name>"
 
 在 worktree 中切换到 `<work_branch>`。
 
+#### 6.5 开发前先 Rebase 到主干
+
+在 worktree 中正式开始 apply 阶段开发前，必须先把工作分支变基到最新 `<base_branch>`：
+
+```bash
+# 主 worktree 中
+git fetch
+git pull --ff-only  # 刷新 trunk
+
+# worktree 中
+git rebase <base_branch>
+```
+
+若有冲突，AI 默认自行解决并继续 rebase；除非仓库状态无法安全恢复，不因常规冲突暂停等待确认。
+
 #### 7. Apply 阶段（Worktree）
 
 **在 worktree 中**调用 `openspec-apply-change` skill。
@@ -127,7 +142,7 @@ git add <相关文件>
 git commit -m "[apply] <change-name>: <描述>"
 ```
 
-#### 10. 刷新主干并 Rebase
+#### 10. 合并前再次刷新主干并 Rebase
 
 ```bash
 # 主 worktree 中
@@ -165,7 +180,7 @@ git checkout <base_branch>
 git merge --no-ff "<work_branch>"
 ```
 
-若主干在合并前推进，先让工作分支 rebase 到最新 `<base_branch>`，再自行解决冲突并继续合并，不因冲突停下来等待确认。
+无论是否观察到主干推进，只要准备合并回 `<base_branch>`，都先确保工作分支已经 rebase 到最新 `<base_branch>`；若 rebase 或 merge 有冲突，AI 默认自行解决并继续，不因常规冲突停下来等待确认。
 
 #### 14. 清理
 
@@ -273,6 +288,7 @@ git merge --no-ff "<work_branch>"
 |------|------|
 | worktree 保留 | 合并后只删除分支，保留 worktree 目录 |
 | 调用现有技能 | 直接调用 `openspec-propose/apply/archive` |
+| 开发前先 rebase | 在工作分支开始 apply 开发前，先 rebase 到最新 `<base_branch>` |
 | 永远先 rebase | 遇到主干推进、分支分叉、rebase/merge 冲突时，先 rebase 到最新提交，再自行解决冲突 |
 | 冲突自解 | 默认自行解决 rebase/merge 冲突，不因常规冲突暂停 |
 | 不重写历史 | 不修改 `<base_branch>` 历史 |
