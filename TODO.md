@@ -2,10 +2,10 @@
 
 ## P1 >
 
-- > 修复：删除美术模块文件夹时出现失败，报错：本次失败主要发生在发现阶段（1项）。获取文档信息失败(code=99991400): request trigger frequency limit
-- 修复：点击在在网页中浏览的按钮没有反应
+- > 修复：点击在在网页中浏览的按钮没有反应
 
 ## P2 >
+- 修复：还是打开实际写入目录报错 ：Not allowed to open path C:/Users/zengkaixiang/Documents/synced-docs
 
 ## P3
 
