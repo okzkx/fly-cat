@@ -427,7 +427,7 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
 }
 
 /// Parse a Feishu block JSON into a RawBlock enum
-/// Block types: 1=text, 2=heading, 3=bullet list, 4=ordered list, 28=image
+/// Block types: 1=text, 2=heading, 3=bullet list, 4=ordered list, 27=image
 fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
     let block_type = block
         .get("block_type")
@@ -482,8 +482,8 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::Paragraph { text })
             }
         }
-        // Image block (type 28)
-        28 => {
+        // Image block (type 27; keep 28 for compatibility with older assumptions)
+        27 | 28 => {
             let image = block.get("image");
             let media_id = image
                 .and_then(|i| i.get("token"))
@@ -1207,7 +1207,7 @@ mod tests {
             (
                 "image-1".to_string(),
                 json!({
-                    "block_type": 28,
+                    "block_type": 27,
                     "image": { "token": "img-nested" }
                 }),
             ),
@@ -1242,6 +1242,24 @@ mod tests {
         assert!(matches!(blocks[0], RawBlock::Heading { .. }));
         assert!(matches!(blocks[1], RawBlock::Image { .. }));
         assert!(matches!(blocks[2], RawBlock::Paragraph { .. }));
+    }
+
+    #[test]
+    fn parses_current_feishu_image_block_type() {
+        let block = json!({
+            "block_type": 27,
+            "image": { "token": "img-current" }
+        });
+
+        let parsed = parse_block_from_json(&block).expect("image block should parse");
+
+        assert!(matches!(
+            parsed,
+            RawBlock::Image {
+                media_id,
+                alt,
+            } if media_id == "img-current" && alt.is_empty()
+        ));
     }
 
     #[test]
