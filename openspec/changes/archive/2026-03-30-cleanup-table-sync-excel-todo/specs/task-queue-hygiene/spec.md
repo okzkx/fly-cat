@@ -1,10 +1,4 @@
-# Task Queue Hygiene
-
-## Purpose
-
-Define how workflow maintenance should clear stale active TODO items after the underlying implementation has already been completed and recorded elsewhere.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Clear stale active TODO items after completion is verified
 The workflow MUST allow a task run to treat an active TODO item as cleanup-only when the implementation is already present in the codebase and archived OpenSpec evidence confirms that the underlying work was completed earlier.
