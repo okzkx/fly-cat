@@ -1,6 +1,6 @@
 ---
 name: opencat-task
-description: OpenSpec 分阶段工作流执行器。**必须**使用 worktree 隔离、**必须**合并回主干、**必须**保留 worktree 并归还到闲置分支。用户要端到端执行 OpenSpec 变更时使用。
+description: OpenSpec 分阶段工作流执行器。**必须**先调用 `opencat-check` 做环境检查、**必须**使用 worktree 隔离并合并回主干、**必须**在结束时调用 `opencat-cleanup` 归还闲置态。
 license: MIT
 compatibility: 运行前先用 `opencat-check` 检查环境与 worktree 拓扑；若发现残留任务、detached worktree 或脏闲置 worktree，先执行 `opencat-cleanup`
 metadata:
@@ -11,15 +11,16 @@ metadata:
 
 # OpenCat Task - OpenSpec 分阶段工作流
 
-端到端执行 OpenSpec 变更：从提案到归档，使用“可复用 worktree 槽位 + 闲置分支 / 任务分支”两态模型隔离实现工作。
+端到端执行 OpenSpec 变更：从提案到归档，使用“可复用 worktree 槽位 + 闲置分支 / 任务分支”两态模型隔离实现工作。环境检查统一交给 `opencat-check`，收尾与工程清理由 `opencat-cleanup` 负责。
 
 ## 🚨 核心不可违反规则
 
-1. **必须**使用 worktree 隔离执行 apply / archive 阶段，严禁直接在主 worktree 里完成整条任务链。
-2. **必须**把任务变更合并回 `trunk`，严禁停留在未合并任务分支就把流程视为完成。
-3. **必须**保留 worktree 目录，但任务完成后该 worktree 也**必须**回到自己的 `idle branch` 且工作区干净。
-4. **必须**在开发前和合并前都先 rebase 到最新主干；遇到常规冲突时，默认自行解决并继续。
-5. **必须**默认自主决断并继续推进；最多记录问题，不因常规不确定性暂停询问用户。
+1. **必须**先调用 `opencat-check`；若环境、依赖或 worktree 拓扑不健康，先修复或转交 `opencat-cleanup`，再继续任务。
+2. **必须**使用 worktree 隔离执行 apply / archive 阶段，严禁直接在主 worktree 里完成整条任务链。
+3. **必须**把任务变更合并回 `trunk`，严禁停留在未合并任务分支就把流程视为完成。
+4. **必须**在流程结束时调用 `opencat-cleanup`，由它统一删除任务分支、恢复 `idle branch` 和清理工程状态。
+5. **必须**在开发前和合并前都先 rebase 到最新主干；遇到常规冲突时，默认自行解决并继续。
+6. **必须**默认自主决断并继续推进；最多记录问题，不因常规不确定性暂停询问用户。
 
 ---
 
@@ -75,14 +76,23 @@ metadata:
 ### 阶段概览
 
 ```text
-purpose → validate → propose-commit → claim-idle-slot → rebase
+check-env → purpose → validate → propose-commit → claim-idle-slot → rebase
     → apply → validate → apply-commit → rebase → archive
-    → archive-commit → merge → return-slot-to-idle → verify
+    → archive-commit → merge → cleanup
 ```
 
 ### 详细步骤
 
-#### 1. 分类请求
+#### 1. 环境检查
+
+在真正进入任务流程前，**先调用 `opencat-check`**：
+
+- 验证 git / node / 包管理器 / OpenSpec CLI / 项目依赖是否就绪
+- 验证 retained worktree、`idle branch`、`task branch` 拓扑是否健康
+- 若 `opencat-check` 判定仓库存在残留任务、detached worktree、脏闲置槽位或其他拓扑异常，先转交 `opencat-cleanup`
+- 只有 `opencat-check` 报告“当前可以运行 `opencat-task`”后，才进入下面步骤
+
+#### 2. 分类请求
 
 **简单变更**（满足多数条件）：
 - 小修复、小功能、文档/配置修改
@@ -96,7 +106,7 @@ purpose → validate → propose-commit → claim-idle-slot → rebase
 
 > 不确定时归类为“复杂”
 
-#### 2. 准备 Git 计划（主 worktree）
+#### 3. 准备 Git 计划（主 worktree）
 
 必须先在主 worktree 中记录并检查：
 
@@ -111,13 +121,13 @@ purpose → validate → propose-commit → claim-idle-slot → rebase
 - `worktree_path`: 将要承接本任务的 slot 路径
 - `idle_branch`: 该 slot 配对的闲置分支，固定为 `opencat/idle/<slot-name>`
 
-#### 3. Purpose 阶段（主 worktree）
+#### 4. Purpose 阶段（主 worktree）
 
 **在主 worktree 中**调用 `openspec-propose` skill。
 
 > 此时不要先把某个保留 worktree 抢占为任务态；先完成 purpose 文档与验证。
 
-#### 4. 验证 Purpose
+#### 5. 验证 Purpose
 
 ```text
 openspec validate --change "<name>"
@@ -125,7 +135,7 @@ openspec validate --change "<name>"
 
 失败则修复后重试。
 
-#### 5. 创建 Purpose 提交
+#### 6. 创建 Purpose 提交
 
 验证通过后：
 
@@ -134,7 +144,7 @@ openspec validate --change "<name>"
 - 提交：`[propose] <change-name>: <描述>`
 - 主 worktree 切回 `<base_branch>`
 
-#### 6. 领取 Worktree Slot
+#### 7. 领取 Worktree Slot
 
 查找可复用的 worktree slot（按优先级）：
 
@@ -166,7 +176,7 @@ openspec validate --change "<name>"
 - 立刻转交 `opencat-cleanup`
 - 只有 cleanup 把该 slot 恢复到 idle state 后，才允许继续领取它
 
-#### 7. 让 slot 进入任务态
+#### 8. 让 slot 进入任务态
 
 选定 slot 后：
 
@@ -175,7 +185,7 @@ openspec validate --change "<name>"
 - 在目标 worktree 中从 `idle_branch` 切换到 `<task_branch>`
 - 从这一刻起，该 worktree 就处于 task state
 
-#### 8. 开发前先 Rebase 到主干
+#### 9. 开发前先 Rebase 到主干
 
 在 worktree 中正式开始 apply 阶段前，必须先把 `task_branch` 变基到最新 `<base_branch>`：
 
@@ -190,24 +200,24 @@ git rebase <base_branch>
 
 若有冲突，AI 默认自行解决并继续 rebase；除非仓库状态无法安全恢复，不因常规冲突暂停等待确认。
 
-#### 9. Apply 阶段（Worktree）
+#### 10. Apply 阶段（Worktree）
 
 **在目标 worktree 中**调用 `openspec-apply-change` skill。
 
-#### 10. 验证 Apply
+#### 11. 验证 Apply
 
 ```text
 openspec validate --change "<name>"
 ```
 
-#### 11. 创建 Apply 提交
+#### 12. 创建 Apply 提交
 
 ```text
 git add <相关文件>
 git commit -m "[apply] <change-name>: <描述>"
 ```
 
-#### 12. 合并前再次刷新主干并 Rebase
+#### 13. 合并前再次刷新主干并 Rebase
 
 ```text
 # 主 worktree 中刷新 trunk
@@ -220,7 +230,7 @@ git rebase <base_branch>
 
 有冲突则**永远先 rebase 到最新提交并自行解决**，除非仓库状态无法恢复。
 
-#### 13. Archive 阶段（Worktree）
+#### 14. Archive 阶段（Worktree）
 
 调用 `openspec-archive-change` skill。
 
@@ -232,14 +242,14 @@ git rebase <base_branch>
 - 规格影响
 - 任务完成情况
 
-#### 14. 创建 Archive 提交
+#### 15. 创建 Archive 提交
 
 ```text
 git add <archive 相关文件>
 git commit -m "[archive] <change-name>: <中文标题>"
 ```
 
-#### 15. 合并回主干（主 worktree）
+#### 16. 合并回主干（主 worktree）
 
 ```text
 git checkout <base_branch>
@@ -248,31 +258,20 @@ git merge --no-ff "<task_branch>"
 
 无论是否观察到主干推进，只要准备合并回 `<base_branch>`，都先确保 `<task_branch>` 已经 rebase 到最新 `<base_branch>`；若 rebase 或 merge 有冲突，AI 默认自行解决并继续，不因常规冲突停下来等待确认。
 
-#### 16. 归还 slot 到闲置态
+#### 17. 结束时调用 `opencat-cleanup`
 
-任务完成后，目标 worktree 必须回到它的配对 `idle_branch`，而不是停在 `<base_branch>` 或 detached HEAD：
+任务 merge 回主干后，不在本技能里重复实现工程清理细节，而是**统一调用 `opencat-cleanup`**：
 
-- 确保 worktree 内的所有变更都已提交
-- 切回 `<idle_branch>`
-- 让 `<idle_branch>` 对齐最新 `<base_branch>`
-- 删除 `<task_branch>`
-- 保留 worktree 目录供下次复用
+- 删除已完成的任务分支
+- 把承接任务的 worktree 归还到自己的 `idle branch`
+- 确认 retained worktree 全部回到干净、可复用状态
+- 收尾任何中途遗留的工程残留
 
-说明：
-
-- `idle_branch` 只是该 slot 的待命分支，不承载任务历史
-- `<task_branch>` 删除后，任务历史应只保留在 `trunk` 上
-- 返回闲置态后，`git status --short` 必须为空
-
-#### 17. 验证清理
-
-必须同时确认：
+本技能只要求 cleanup 完成后满足以下结果：
 
 - `<task_branch>` 已删除
-- worktree 当前分支是 `<idle_branch>`
-- worktree 工作区干净
-- `idle_branch` 已对齐最新 `<base_branch>`
-- 没有孤立归档目录
+- 相关 worktree 已回到自己的 `idle_branch`
+- 工作区干净
 - worktree 目录仍然保留
 
 ---
@@ -387,6 +386,8 @@ git merge --no-ff "<task_branch>"
 
 | 规则 | 说明 |
 |------|------|
+| 环境检查外置 | git / node / OpenSpec / 依赖 / worktree 拓扑检查统一交给 `opencat-check` |
+| 工程清理外置 | 任务结束后的分支删除、归还闲置态和工程收尾统一交给 `opencat-cleanup` |
 | worktree 保留 | 合并后保留 worktree 目录，供下次复用 |
 | 必须有闲置分支 | 每个保留 worktree slot 都必须有自己的 `idle_branch` |
 | 闲置必须干净 | worktree 空闲时，必须在 `idle_branch` 且 `git status --short` 为空 |

@@ -27,6 +27,13 @@ metadata:
 - 每个保留 worktree 最终回到自己的 `idle branch`
 - 在所有 worktree 都处于闲置态之前，不允许开始执行新的 TODO List
 
+## 调用约定
+
+- `opencat-work` 在开始跑 TODO 队列时，固定先调用一次 `opencat-cleanup`
+- `opencat-task` 在完成 merge 回主干后，固定再调用一次 `opencat-cleanup`
+- `opencat-cleanup` 是唯一负责工程残留、分支收尾、归还 `idle branch` 的技能
+- `opencat-work` / `opencat-task` 不应在各自文档里重复实现完整 cleanup 细节，只保留调用点与结果要求
+
 ---
 
 ## 适用场景
