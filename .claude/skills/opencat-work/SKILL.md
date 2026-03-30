@@ -9,7 +9,7 @@ metadata:
   derivedFrom: "dev-task-runner"
 ---
 
-# /opencat-run-task - 任务列表连续执行器
+# /opencat-work - 任务列表连续执行器
 
 执行 `TODO.md` 中的任务，按优先级 P1 > P2 > P3 顺序，通过 SubAgent 调用 `opencat-task` 技能逐个完成。环境检查统一交给 `opencat-check`，工程清理统一交给 `opencat-cleanup`。
 
@@ -21,7 +21,14 @@ metadata:
 4. **必须**默认自主决断并继续推进；最多记录问题，不因常规不确定性退出、暂停或回头追问用户。
 5. 对“修复”类任务，**必须**重新验证当前现状；严禁仅凭历史 DONE / archive 记录直接跳过。
 
-当用户明确调用 `opencat-work` 或 `/opencat-run-task` 时，默认启用 AI 自主决策：
+## 调用约定
+
+- 本技能启动后，固定先执行一次 `check + cleanup`：先 `opencat-check`，再 `opencat-cleanup`。
+- 只有当这次 `check + cleanup` 确认仓库可继续领取新任务后，才允许进入 TODO 选择。
+- 每个具体任务都交给子 Agent 运行 `opencat-task`；主 Agent 只做队列编排、状态管理和最终记录。
+- 每完成一个任务后，再执行一次 `check + cleanup`，确认仓库重新回到“全部闲置、全部干净”状态。
+
+当用户明确调用 `opencat-work` 时，默认启用 AI 自主决策：
 
 - 若用户未指定具体任务，优先从当前上下文和 `TODO.md` 中自动选择最合理的任务继续执行
 - 不因常规任务选择而停下来等待确认
@@ -76,8 +83,7 @@ metadata:
 1. **初始化**
    - 读取 `TODO.md` 和 `DONE.md`
    - 扫描所有章节，识别活跃章节和活跃任务
-   - **先调用 `opencat-check`**
-   - **再立刻执行 `opencat-cleanup`**
+   - **立刻执行一次 `check + cleanup`**
 
 2. **check + cleanup 闸门**
    - `opencat-check` 负责统一验证工具链、依赖和 worktree 拓扑是否健康
@@ -98,10 +104,10 @@ metadata:
    2. 若活跃章节为空，按 P1 > P2 > P3 顺序取第一个有任务的章节的第一个任务
 
 4. **领取任务前的清洁确认**
-   - 进入本步骤时，仓库应当已经经过 `opencat-check` 与 `opencat-cleanup`，处于“主 worktree 干净 + 所有保留 worktree 处于闲置分支”的状态
+   - 进入本步骤时，仓库应当已经完成本轮 `check + cleanup`，处于“主 worktree 干净 + 所有保留 worktree 处于闲置分支”的状态
    - 若当前候选任务之前还不是活跃任务，此时再标记为活跃任务：`- > 任务A`
-   - 若在标记或准备启动 SubAgent 的过程中又出现新的脏改动、任务分支或非闲置 worktree，重新执行 `opencat-check` 与 `opencat-cleanup`
-   - `opencat-work` 自己不再发明额外的环境检查和工程收尾流程；统一交给 `opencat-check` / `opencat-cleanup`
+   - 若在标记或准备启动 SubAgent 的过程中又出现新的脏改动、任务分支或非闲置 worktree，重新执行一次 `check + cleanup`
+   - `opencat-work` 自己不再发明额外的环境检查和工程收尾流程；统一交给这套 `check + cleanup` 入口
 
 5. **执行任务**
    - 主 Agent 只负责选择任务、启动/衔接 SubAgent、更新任务记录与汇总结果，不提前实现、调试或接管子任务细节
@@ -116,7 +122,6 @@ metadata:
    - 若任务以“修复”开头，SubAgent 必须先重新确认 bug 是否仍可复现、现有实现是否真的覆盖问题、是否存在新的回归路径；不能仅因 `DONE.md` / archive 中有同名或相似记录就直接归档
    - 只有明确属于“新功能重复建档”且有充分证据证明任务只是重复记录时，才允许做最小化清队列处理
    - **必须使用 worktree 隔离**：SubAgent 必须按照 `opencat-task` 的完整流程执行
-     - 开始前先调用 `opencat-check`
      - purpose / apply / archive / merge 由 `opencat-task` 负责
      - 结束时由 `opencat-task` 调用 `opencat-cleanup` 做统一收尾
    - SubAgent 完成后自动销毁，上下文完全隔离
@@ -127,8 +132,7 @@ metadata:
    - 提交 git：`完成: 任务名称`
 
 7. **继续下一个**
-   - 每完成一个任务后，再次执行 `opencat-check`
-   - 然后再次执行 `opencat-cleanup`
+   - 每完成一个任务后，再次执行一次 `check + cleanup`
    - 只有 cleanup 再次确认所有保留 worktree 都已回到闲置态，才允许继续领取下一项 TODO
    - 活跃章节还有任务 → 标记第一个为活跃任务
    - 活跃章节为空 → 按优先级取下一章节的第一个任务，标记为活跃
@@ -183,8 +187,8 @@ metadata:
 
 - `TODO.md` + `DONE.md` 是权威来源
 - git 仓库当前状态也是权威信号；领取新任务前必须先检查是否还有未竟工作
-- `opencat-work` 的第一动作永远是 `opencat-check`，紧接着执行 `opencat-cleanup`
-- 环境检查统一由 `opencat-check` 负责，不在本技能里重复展开
+- `opencat-work` 的第一动作永远是执行一次 `check + cleanup`
+- 环境检查统一由 `opencat-check` 负责，工程清理由 `opencat-cleanup` 负责
 - cleanup 的目标不是只清主 worktree，而是让所有保留 worktree 都回到各自的 `idle branch`
 - 只要某个 worktree 还不在闲置分支，它就不是“可复用空槽位”，而是“未收尾任务”
 - 工作分支开始开发前和 merge 回主干前，都必须先 rebase 到最新主干
