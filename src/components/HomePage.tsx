@@ -681,6 +681,21 @@ export default function HomePage({
     }
   };
 
+  const handleOpenInBrowser = async (
+    nodeToken: string,
+    kind: "document" | "bitable"
+  ): Promise<void> => {
+    try {
+      const result = await openDocumentInBrowser(nodeToken, kind);
+      if (!result.success) {
+        message.error(result.error || "无法在浏览器中打开当前内容");
+      }
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      message.error(messageText || "打开浏览器失败");
+    }
+  };
+
   const handleTriStateToggle = (node: ScopeTreeDataNode): void => {
     if (!node.scopeValue || node.disableCheckbox) {
       return;
@@ -908,7 +923,7 @@ export default function HomePage({
                         title="在浏览器打开"
                         onClick={(e) => {
                           e.stopPropagation();
-                          void openDocumentInBrowser(
+                          void handleOpenInBrowser(
                             treeNode.nodeToken!,
                             treeNode.nodeKind === "bitable" ? "bitable" : "document"
                           );
