@@ -1,6 +1,7 @@
 export {
   getAppBootstrap,
   TASK_EVENTS,
+  clearAllSyncTasks,
   createSyncTask,
   deleteSyncTask,
   getRuntimeInfo,

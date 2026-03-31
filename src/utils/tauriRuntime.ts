@@ -6,6 +6,7 @@ import type { DocumentFreshnessResult, KnowledgeBaseNode, SyncScope } from "@/ty
 import { buildFeishuBrowserUrl, type BrowserOpenTarget } from "@/utils/feishuBrowserUrl";
 import {
   TASK_EVENTS,
+  clearAllSyncTasks as clearBrowserAllSyncTasks,
   createSyncTask as createBrowserSyncTask,
   deleteSyncTask as deleteBrowserSyncTask,
   getSyncTasks as getBrowserSyncTasks,
@@ -242,6 +243,14 @@ export async function deleteSyncTask(taskId: string): Promise<void> {
     return;
   }
   await invoke("delete_sync_task", { taskId });
+}
+
+export async function clearAllSyncTasks(): Promise<void> {
+  if (!isTauriRuntime()) {
+    clearBrowserAllSyncTasks();
+    return;
+  }
+  await invoke("clear_all_sync_tasks");
 }
 
 export async function getSyncedDocumentIds(syncRoot: string): Promise<Set<string>> {
