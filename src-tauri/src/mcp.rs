@@ -434,9 +434,29 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
     })
 }
 
-/// Parse a Feishu block JSON into a RawBlock enum
-/// Block types: 1=text, 2=heading, 3=bullet list, 4=ordered list, 14=code,
-///              17=todo, 22=table/divider, 24=quote, 27|28=image
+/// Parse a Feishu block JSON into a RawBlock enum.
+///
+/// Feishu docx v1 BlockType enumeration (official API reference):
+///   1  = page            (document root)
+///   2  = text            (plain text paragraph)
+///   3  = heading1        (level 1 heading)
+///   4  = heading2        (level 2 heading)
+///   5  = heading3        (level 3 heading)
+///   6  = heading4        (level 4 heading)
+///   7  = heading5        (level 5 heading)
+///   8  = heading6        (level 6 heading)
+///   9  = heading7        (level 7 heading)
+///   10 = heading8        (level 8 heading)
+///   11 = heading9        (level 9 heading)
+///   12 = bullet          (unordered list item)
+///   13 = ordered         (ordered list item)
+///   14 = code            (code block)
+///   15 = quote           (block quote)
+///   17 = todo            (todo / checklist item)
+///   18 = bitable         (multi-dimensional table)
+///   22 = divider         (horizontal rule)
+///   27 = image           (image)
+///   31 = table           (table)
 fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
     let block_type = block
         .get("block_type")
@@ -444,8 +464,11 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
         .unwrap_or(0);
 
     match block_type {
-        // Text block (type 1)
-        1 => {
+        // Page block (type 1) — document root, skip
+        1 => None,
+
+        // Text / paragraph block (type 2)
+        2 => {
             let text = extract_text_from_block(block);
             if text.is_empty() {
                 None
@@ -453,23 +476,12 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::Paragraph { text })
             }
         }
-        // Heading block (type 2)
-        2 => {
-            let heading = block.get("heading");
-            let level = heading
-                .and_then(|h| h.get("style"))
-                .and_then(|s| s.as_str())
-                .and_then(|s| match s {
-                    "heading1" => Some(1),
-                    "heading2" => Some(2),
-                    "heading3" => Some(3),
-                    "heading4" => Some(4),
-                    "heading5" => Some(5),
-                    "heading6" => Some(6),
-                    _ => Some(1),
-                })
-                .unwrap_or(1);
 
+        // Heading blocks (types 3-11: heading1-heading9)
+        3..=11 => {
+            let level = (block_type - 2) as u8; // block_type 3 -> level 1, etc.
+            let key = format!("heading{}", block_type - 2);
+            let heading = block.get(&key);
             let text = heading
                 .and_then(|h| h.get("elements"))
                 .and_then(|e| e.as_array())
@@ -482,8 +494,9 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::Heading { level, text })
             }
         }
-        // T3: Bullet list (type 3)
-        3 => {
+
+        // Bullet / unordered list item (type 12)
+        12 => {
             let text = extract_text_from_block(block);
             if text.is_empty() {
                 None
@@ -491,8 +504,9 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::BulletList { items: vec![text] })
             }
         }
-        // T2: Ordered list (type 4)
-        4 => {
+
+        // Ordered list item (type 13)
+        13 => {
             let text = extract_text_from_block(block);
             if text.is_empty() {
                 None
@@ -500,7 +514,8 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::OrderedList { items: vec![text] })
             }
         }
-        // T4: Code block (type 14) — code content uses plain text (no inline styles)
+
+        // Code block (type 14)
         14 => {
             let code_block = block.get("code");
             let language = code_block
@@ -519,7 +534,18 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::CodeBlock { language, code })
             }
         }
-        // T8: Todo / task block (type 17)
+
+        // Quote block (type 15)
+        15 => {
+            let text = extract_text_from_block(block);
+            if text.is_empty() {
+                None
+            } else {
+                Some(RawBlock::Quote { text })
+            }
+        }
+
+        // Todo / task block (type 17)
         17 => {
             let todo_block = block.get("todo");
             let elements = todo_block
@@ -533,62 +559,20 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
             } else {
                 let done = todo_block
                     .and_then(|tb| tb.get("style"))
-                    .and_then(|s| s.as_i64())
-                    .map(|v| v == 1)
+                    .and_then(|s| s.get("done"))
+                    .and_then(|d| d.as_bool())
                     .unwrap_or(false);
                 Some(RawBlock::Todo {
                     items: vec![(done, text)],
                 })
             }
         }
-        // T6/T7: Table (type 22) — check for divider subtype, otherwise table
-        22 => {
-            // Check if this is a divider (has "divider" key)
-            if block.get("divider").is_some() {
-                Some(RawBlock::Divider)
-            } else {
-                // Table block
-                let table_block = block.get("table");
-                let rows = table_block
-                    .and_then(|tb| tb.get("cells"))
-                    .and_then(|c| c.as_array())
-                    .map(|cell_rows| {
-                        cell_rows
-                            .iter()
-                            .filter_map(|row| {
-                                row.as_array().map(|cells| {
-                                    cells
-                                        .iter()
-                                        .map(|cell| {
-                                            // Each cell may be an array of elements
-                                            cell.as_array()
-                                                .map(|elements| extract_text_from_elements(elements))
-                                                .unwrap_or_default()
-                                        })
-                                        .collect::<Vec<_>>()
-                                })
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                if rows.is_empty() {
-                    None
-                } else {
-                    Some(RawBlock::Table { rows })
-                }
-            }
-        }
-        // T5: Quote block (type 24, quote_container)
-        24 => {
-            let text = extract_text_from_block(block);
-            if text.is_empty() {
-                None
-            } else {
-                Some(RawBlock::Quote { text })
-            }
-        }
-        // Image block (type 27; keep 28 for compatibility with older assumptions)
-        27 | 28 => {
+
+        // Divider (type 22)
+        22 => Some(RawBlock::Divider),
+
+        // Image block (type 27)
+        27 => {
             let image = block.get("image");
             let media_id = image
                 .and_then(|i| i.get("token"))
@@ -605,7 +589,40 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 }),
             }
         }
-        // Unknown block types - fallback to paragraph with placeholder
+
+        // Table block (type 31)
+        31 => {
+            let table_block = block.get("table");
+            let rows = table_block
+                .and_then(|tb| tb.get("cells"))
+                .and_then(|c| c.as_array())
+                .map(|cell_rows| {
+                    cell_rows
+                        .iter()
+                        .filter_map(|row| {
+                            row.as_array().map(|cells| {
+                                cells
+                                    .iter()
+                                    .map(|cell| {
+                                        // Each cell may be an array of elements
+                                        cell.as_array()
+                                            .map(|elements| extract_text_from_elements(elements))
+                                            .unwrap_or_default()
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if rows.is_empty() {
+                None
+            } else {
+                Some(RawBlock::Table { rows })
+            }
+        }
+
+        // Unknown block types - fallback to paragraph with text extraction
         _ => {
             let text = extract_text_from_block(block);
             if text.is_empty() {
@@ -623,12 +640,21 @@ fn extract_text_from_block(block: &Value) -> RichText {
     let elements = block
         .get("text")
         .and_then(|t| t.get("elements"))
-        .or_else(|| block.get("heading").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading1").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading2").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading3").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading4").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading5").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading6").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading7").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading8").and_then(|h| h.get("elements")))
+        .or_else(|| block.get("heading9").and_then(|h| h.get("elements")))
         .or_else(|| block.get("bullet").and_then(|b| b.get("elements")))
         .or_else(|| block.get("ordered").and_then(|o| o.get("elements")))
         .or_else(|| block.get("todo").and_then(|tb| tb.get("elements")))
         .or_else(|| block.get("quote").and_then(|q| q.get("elements")))
         .or_else(|| block.get("quote1").and_then(|q| q.get("elements")))
+        .or_else(|| block.get("callout").and_then(|c| c.get("elements")))
         .and_then(|e| e.as_array());
 
     match elements {
@@ -675,6 +701,45 @@ fn extract_text_from_elements(elements: &[Value]) -> RichText {
         .collect();
 
     RichText { segments }
+}
+
+/// Merge consecutive list items of the same type into a single block.
+///
+/// Feishu API returns each bullet/ordered/todo item as an individual block.
+/// This function groups consecutive items of the same list type into single
+/// BulletList / OrderedList / Todo blocks so the markdown renderer can emit
+/// proper Markdown lists.
+fn merge_consecutive_list_blocks(blocks: Vec<RawBlock>) -> Vec<RawBlock> {
+    let mut merged: Vec<RawBlock> = Vec::new();
+
+    for block in blocks {
+        let should_merge = match (&block, merged.last_mut()) {
+            (RawBlock::BulletList { .. }, Some(RawBlock::BulletList { .. })) => true,
+            (RawBlock::OrderedList { .. }, Some(RawBlock::OrderedList { .. })) => true,
+            (RawBlock::Todo { .. }, Some(RawBlock::Todo { .. })) => true,
+            _ => false,
+        };
+
+        if should_merge {
+            let last = merged.last_mut().unwrap();
+            match (block, last) {
+                (RawBlock::BulletList { items }, RawBlock::BulletList { items: ref mut existing }) => {
+                    existing.extend(items);
+                }
+                (RawBlock::OrderedList { items }, RawBlock::OrderedList { items: ref mut existing }) => {
+                    existing.extend(items);
+                }
+                (RawBlock::Todo { items }, RawBlock::Todo { items: ref mut existing }) => {
+                    existing.extend(items);
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            merged.push(block);
+        }
+    }
+
+    merged
 }
 
 fn extract_block_children_ids(block: &Value) -> Vec<String> {
@@ -1062,7 +1127,7 @@ impl FeishuOpenApiClient {
             |block_id: &str| self.fetch_single_block_json_with_retry(document_id, block_id, token);
         flatten_block_tree(&all_children_ids, &mut fetch_block, &mut visited, &mut blocks)?;
 
-        Ok(blocks)
+        Ok(merge_consecutive_list_blocks(blocks))
     }
 
     /// Fetch a single block by its ID and return the raw block JSON.
@@ -1421,9 +1486,8 @@ mod tests {
             (
                 "heading-1".to_string(),
                 json!({
-                    "block_type": 2,
-                    "heading": {
-                        "style": "heading2",
+                    "block_type": 4,
+                    "heading2": {
                         "elements": [{ "text_run": { "content": "章节" } }]
                     },
                     "children": ["image-1"]
@@ -1432,14 +1496,14 @@ mod tests {
             (
                 "image-1".to_string(),
                 json!({
-                    "block_type": 28,
+                    "block_type": 27,
                     "image": { "token": "img-nested" }
                 }),
             ),
             (
                 "paragraph-1".to_string(),
                 json!({
-                    "block_type": 1,
+                    "block_type": 2,
                     "text": {
                         "elements": [{ "text_run": { "content": "尾段" } }]
                     }
@@ -1484,7 +1548,7 @@ mod tests {
     #[test]
     fn parses_bullet_list_block() {
         let block = json!({
-            "block_type": 3,
+            "block_type": 12,
             "bullet": {
                 "elements": [{ "text_run": { "content": "列表项" } }]
             }
@@ -1498,7 +1562,7 @@ mod tests {
     #[test]
     fn parses_ordered_list_block() {
         let block = json!({
-            "block_type": 4,
+            "block_type": 13,
             "ordered": {
                 "elements": [{ "text_run": { "content": "有序项" } }]
             }
@@ -1543,7 +1607,7 @@ mod tests {
     #[test]
     fn parses_quote_block() {
         let block = json!({
-            "block_type": 24,
+            "block_type": 15,
             "quote": {
                 "elements": [{ "text_run": { "content": "引用内容" } }]
             }
@@ -1557,7 +1621,7 @@ mod tests {
     #[test]
     fn parses_table_block() {
         let block = json!({
-            "block_type": 22,
+            "block_type": 31,
             "table": {
                 "cells": [
                     [
@@ -1594,7 +1658,7 @@ mod tests {
         let block = json!({
             "block_type": 17,
             "todo": {
-                "style": 0,
+                "style": { "done": false },
                 "elements": [{ "text_run": { "content": "待办事项" } }]
             }
         });
@@ -1609,7 +1673,7 @@ mod tests {
         let block = json!({
             "block_type": 17,
             "todo": {
-                "style": 1,
+                "style": { "done": true },
                 "elements": [{ "text_run": { "content": "已完成事项" } }]
             }
         });
