@@ -1,7 +1,6 @@
 # TODO
 
-## P1 >
-- > 根据 .claude\docs\gou.md 来优化复选框逻辑
+## P1
 
 ## P2
 
