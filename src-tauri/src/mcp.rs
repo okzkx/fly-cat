@@ -992,42 +992,75 @@ impl FeishuOpenApiClient {
 
     /// Fetch document blocks using Feishu Block API
     /// Returns structured blocks including images with media_id
+    ///
+    /// Paginates through root block children to avoid truncation when a
+    /// document has more than `page_size` top-level blocks.
     fn fetch_document_blocks(
         &self,
         document_id: &str,
         token: &str,
     ) -> Result<Vec<RawBlock>, McpError> {
-        // Get the root block (document itself) which contains children
-        let root_value = call_openapi_json(
-            self.agent
+        let mut all_children_ids: Vec<String> = Vec::new();
+        let mut page_token: Option<String> = None;
+
+        loop {
+            let mut request = self
+                .agent
                 .get(&self.endpoint(&format!(
                     "/docx/v1/documents/{document_id}/blocks/{document_id}"
                 )))
                 .set("Authorization", &format!("Bearer {token}"))
-                .query("page_size", "500"),
-            "获取文档块",
-        )?;
+                .query("page_size", "500");
 
-        if let Some(error) = extract_openapi_error(&root_value, "获取文档块") {
-            return Err(error);
+            if let Some(pt) = page_token.as_deref() {
+                request = request.query("page_token", pt);
+            }
+
+            let root_value = call_openapi_json(request, "获取文档块")?;
+
+            if let Some(error) = extract_openapi_error(&root_value, "获取文档块") {
+                return Err(error);
+            }
+
+            let data = root_value
+                .get("data")
+                .ok_or_else(|| McpError::InvalidResponse("Block response missing data".into()))?;
+
+            let block = data
+                .get("block")
+                .ok_or_else(|| McpError::InvalidResponse("Block response missing block".into()))?;
+
+            let page_children = extract_block_children_ids(block);
+            all_children_ids.extend(page_children);
+
+            let has_more = data
+                .get("has_more")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if !has_more {
+                break;
+            }
+
+            page_token = data
+                .get("page_token")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string());
+
+            if page_token.is_none() {
+                break;
+            }
         }
 
-        let block = root_value
-            .get("data")
-            .and_then(|data| data.get("block"))
-            .ok_or_else(|| McpError::InvalidResponse("Block response missing block".into()))?;
-
-        let children_ids = extract_block_children_ids(block);
-
-        if children_ids.is_empty() {
+        if all_children_ids.is_empty() {
             return Ok(vec![]);
         }
 
         let mut blocks = Vec::new();
         let mut visited = HashSet::new();
         let mut fetch_block =
-            |block_id: &str| self.fetch_single_block_json(document_id, block_id, token);
-        flatten_block_tree(&children_ids, &mut fetch_block, &mut visited, &mut blocks)?;
+            |block_id: &str| self.fetch_single_block_json_with_retry(document_id, block_id, token);
+        flatten_block_tree(&all_children_ids, &mut fetch_block, &mut visited, &mut blocks)?;
 
         Ok(blocks)
     }
@@ -1057,6 +1090,63 @@ impl FeishuOpenApiClient {
             .and_then(|data| data.get("block"))
             .cloned()
             .ok_or_else(|| McpError::InvalidResponse("Child block response missing block".into()))
+    }
+
+    /// Fetch a single block with retry logic for rate-limited (throttled) responses.
+    ///
+    /// Uses up to 6 attempts with 500 ms initial backoff, doubling on each
+    /// successive retry.  Throttled requests are identified by the Feishu
+    /// error code `99991400` (frequency control).  When all retries are
+    /// exhausted the block is skipped and logged via `eprintln!` so that the
+    /// rest of the document can still be synced.
+    fn fetch_single_block_json_with_retry(
+        &self,
+        document_id: &str,
+        block_id: &str,
+        token: &str,
+    ) -> Result<Value, McpError> {
+        const MAX_ATTEMPTS: u8 = 6;
+        const INITIAL_BACKOFF_MS: u64 = 500;
+        const THROTTLE_CODE: i64 = 99991400;
+
+        let mut backoff_ms = INITIAL_BACKOFF_MS;
+
+        for attempt in 0..MAX_ATTEMPTS {
+            match self.fetch_single_block_json(document_id, block_id, token) {
+                Ok(value) => return Ok(value),
+                Err(McpError::Transport(ref msg)) => {
+                    // Detect throttling: error code 99991400 indicates frequency control
+                    let is_throttled = msg.contains(&THROTTLE_CODE.to_string())
+                        || msg.contains("frequency control")
+                        || msg.contains("rate limit");
+
+                    if is_throttled && attempt + 1 < MAX_ATTEMPTS {
+                        eprintln!(
+                            "[warn] 子块 `{block_id}` 被限频，第 {}/{} 次重试，等待 {backoff_ms}ms",
+                            attempt + 1,
+                            MAX_ATTEMPTS,
+                        );
+                        thread::sleep(Duration::from_millis(backoff_ms));
+                        backoff_ms *= 2;
+                        continue;
+                    }
+
+                    // Non-throttle error or exhausted retries
+                    if is_throttled {
+                        eprintln!(
+                            "[warn] 子块 `{block_id}` 限频重试耗尽({MAX_ATTEMPTS}次)，跳过该块"
+                        );
+                    }
+                    return Err(McpError::Transport(msg.clone()));
+                }
+                Err(other) => return Err(other),
+            }
+        }
+
+        // Should be unreachable but just in case
+        Err(McpError::Transport(format!(
+            "子块 `{block_id}` 获取失败: 重试耗尽"
+        )))
     }
 
     /// Create an export task for a document (server-side rendering).
