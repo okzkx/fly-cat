@@ -73,6 +73,58 @@ pub struct ExportTaskResult {
 }
 
 const FEISHU_TOKEN_ENDPOINT: &str = "https://passport.feishu.cn/suite/passport/oauth/token";
+const FEISHU_THROTTLE_CODE: &str = "99991400";
+const FEISHU_MAX_THROTTLE_RETRY_ATTEMPTS: u8 = 6;
+const FEISHU_INITIAL_THROTTLE_BACKOFF_MS: u64 = 500;
+
+fn is_feishu_rate_limited_message(message: &str) -> bool {
+    message.contains(FEISHU_THROTTLE_CODE)
+        || message.contains("frequency control")
+        || message.contains("request trigger frequency limit")
+        || message.contains("rate limit")
+}
+
+fn retry_feishu_rate_limited_request<T, F>(
+    label: &str,
+    max_attempts: u8,
+    initial_backoff_ms: u64,
+    mut request: F,
+) -> Result<T, McpError>
+where
+    F: FnMut() -> Result<T, McpError>,
+{
+    let attempts = max_attempts.max(1);
+    let mut backoff_ms = initial_backoff_ms;
+
+    for attempt in 0..attempts {
+        match request() {
+            Ok(value) => return Ok(value),
+            Err(McpError::Transport(message)) => {
+                let is_throttled = is_feishu_rate_limited_message(&message);
+                if is_throttled && attempt + 1 < attempts {
+                    eprintln!(
+                        "[warn] {label} 被限频，第 {}/{} 次重试，等待 {backoff_ms}ms",
+                        attempt + 1,
+                        attempts,
+                    );
+                    if backoff_ms > 0 {
+                        thread::sleep(Duration::from_millis(backoff_ms));
+                        backoff_ms *= 2;
+                    }
+                    continue;
+                }
+
+                if is_throttled {
+                    eprintln!("[warn] {label} 限频重试耗尽({attempts}次)");
+                }
+                return Err(McpError::Transport(message));
+            }
+            Err(other) => return Err(other),
+        }
+    }
+
+    Err(McpError::Transport(format!("{label}失败: 重试耗尽")))
+}
 
 fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
     let code = value
@@ -1004,6 +1056,19 @@ impl FeishuOpenApiClient {
         })
     }
 
+    pub fn fetch_document_summary_with_retry(
+        &self,
+        document_id: &str,
+    ) -> Result<FeishuDocumentSummary, McpError> {
+        let label = format!("文档 `{document_id}` 信息");
+        retry_feishu_rate_limited_request(
+            &label,
+            FEISHU_MAX_THROTTLE_RETRY_ATTEMPTS,
+            FEISHU_INITIAL_THROTTLE_BACKOFF_MS,
+            || self.fetch_document_summary(document_id),
+        )
+    }
+
     pub fn list_child_nodes(
         &self,
         space_id: &str,
@@ -1216,60 +1281,19 @@ impl FeishuOpenApiClient {
     }
 
     /// Fetch a single block with retry logic for rate-limited (throttled) responses.
-    ///
-    /// Uses up to 6 attempts with 500 ms initial backoff, doubling on each
-    /// successive retry.  Throttled requests are identified by the Feishu
-    /// error code `99991400` (frequency control).  When all retries are
-    /// exhausted the block is skipped and logged via `eprintln!` so that the
-    /// rest of the document can still be synced.
     fn fetch_single_block_json_with_retry(
         &self,
         document_id: &str,
         block_id: &str,
         token: &str,
     ) -> Result<Value, McpError> {
-        const MAX_ATTEMPTS: u8 = 6;
-        const INITIAL_BACKOFF_MS: u64 = 500;
-        const THROTTLE_CODE: i64 = 99991400;
-
-        let mut backoff_ms = INITIAL_BACKOFF_MS;
-
-        for attempt in 0..MAX_ATTEMPTS {
-            match self.fetch_single_block_json(document_id, block_id, token) {
-                Ok(value) => return Ok(value),
-                Err(McpError::Transport(ref msg)) => {
-                    // Detect throttling: error code 99991400 indicates frequency control
-                    let is_throttled = msg.contains(&THROTTLE_CODE.to_string())
-                        || msg.contains("frequency control")
-                        || msg.contains("rate limit");
-
-                    if is_throttled && attempt + 1 < MAX_ATTEMPTS {
-                        eprintln!(
-                            "[warn] 子块 `{block_id}` 被限频，第 {}/{} 次重试，等待 {backoff_ms}ms",
-                            attempt + 1,
-                            MAX_ATTEMPTS,
-                        );
-                        thread::sleep(Duration::from_millis(backoff_ms));
-                        backoff_ms *= 2;
-                        continue;
-                    }
-
-                    // Non-throttle error or exhausted retries
-                    if is_throttled {
-                        eprintln!(
-                            "[warn] 子块 `{block_id}` 限频重试耗尽({MAX_ATTEMPTS}次)，跳过该块"
-                        );
-                    }
-                    return Err(McpError::Transport(msg.clone()));
-                }
-                Err(other) => return Err(other),
-            }
-        }
-
-        // Should be unreachable but just in case
-        Err(McpError::Transport(format!(
-            "子块 `{block_id}` 获取失败: 重试耗尽"
-        )))
+        let label = format!("子块 `{block_id}`");
+        retry_feishu_rate_limited_request(
+            &label,
+            FEISHU_MAX_THROTTLE_RETRY_ATTEMPTS,
+            FEISHU_INITIAL_THROTTLE_BACKOFF_MS,
+            || self.fetch_single_block_json(document_id, block_id, token),
+        )
     }
 
     /// Create an export task for a document (server-side rendering).
@@ -1530,6 +1554,43 @@ mod tests {
 
         assert!(error.to_string().contains("docx:document"));
         assert!(error.to_string().contains("Access denied"));
+    }
+
+    #[test]
+    fn retries_rate_limited_transport_errors_until_success() {
+        let mut attempts = 0;
+        let result = retry_feishu_rate_limited_request(
+            "测试文档信息",
+            3,
+            0,
+            || -> Result<&'static str, McpError> {
+                attempts += 1;
+                if attempts < 3 {
+                    return Err(McpError::Transport(
+                        "获取文档信息失败(code=99991400): request trigger frequency limit".into(),
+                    ));
+                }
+                Ok("ok")
+            },
+        )
+        .expect("rate-limited request should eventually succeed");
+
+        assert_eq!(result, "ok");
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn non_throttle_transport_errors_fail_without_retry() {
+        let mut attempts = 0;
+        let result = retry_feishu_rate_limited_request("测试文档信息", 3, 0, || {
+            attempts += 1;
+            Err::<(), _>(McpError::Transport(
+                "获取文档信息失败(code=99991672): Access denied".into(),
+            ))
+        });
+
+        assert!(matches!(result, Err(McpError::Transport(_))));
+        assert_eq!(attempts, 1);
     }
 
     #[test]
