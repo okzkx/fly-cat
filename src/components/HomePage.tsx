@@ -1,6 +1,7 @@
 import {
   CheckCircleOutlined,
   CloudSyncOutlined,
+  DeleteOutlined,
   ExclamationCircleOutlined,
   ExportOutlined,
   FileTextOutlined,
@@ -556,16 +557,16 @@ export default function HomePage({
   onOpenTasks,
   activeTaskSummary,
   onCreateTask,
+  onBatchDeleteCheckedSyncedDocuments,
   onResyncDocumentScope
 }: HomePageProps): React.JSX.Element {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const emptyState = getHomePageEmptyState(connectionValidation, spaces.length);
   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
   const selectionSummary = buildSelectionSummary(effectiveSelectedSources, selectedScope);
   const syncingIds = getSyncingDocumentIds(activeSyncTask);
   const canRunSync = Boolean(syncRoot) && connectionValidation?.usable === true;
 
-  const [uncheckedSyncedDocKeys, setUncheckedSyncedDocKeys] = useState<Set<string>>(new Set());
   const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
 
@@ -628,24 +629,7 @@ export default function HomePage({
     return ids;
   }, [documentSyncStatuses]);
 
-  // Reset unchecked state when sync statuses change (e.g., after task completion)
-  useMemo(() => {
-    setUncheckedSyncedDocKeys(new Set());
-  }, [documentSyncStatuses]);
-
   const checkedSourceKeys = selectedSources.map((source) => scopeKey(source));
-
-  // Collect default checked keys from synced documents in the loaded trees
-  const syncedDocTreeKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const spaceId of Object.keys(loadedSpaceTrees)) {
-      const tree = loadedSpaceTrees[spaceId];
-      if (tree) {
-        keys.push(...collectSyncedDocKeysFromTree(tree, syncedDocumentIds));
-      }
-    }
-    return new Set(keys);
-  }, [loadedSpaceTrees, syncedDocumentIds]);
 
   // Build syncingKeys based on actual active task's discovered documents
   const syncingKeys = useMemo(() => {
@@ -669,16 +653,19 @@ export default function HomePage({
     return keys;
   }, [activeSyncTask, loadedSpaceTrees, checkedSourceKeys]);
 
-  // Merge user-checked keys with default synced document keys, minus unchecked
-  const allCheckedKeys = useMemo(() => {
-    const merged = new Set(checkedSourceKeys);
-    for (const key of syncedDocTreeKeys) {
-      if (!uncheckedSyncedDocKeys.has(key)) {
-        merged.add(key);
+  const allCheckedKeys = useMemo(() => new Set(checkedSourceKeys), [checkedSourceKeys]);
+
+  const batchDeleteSyncedDocumentIds = useMemo(() => {
+    const docIds: string[] = [];
+    for (const spaceId of Object.keys(loadedSpaceTrees)) {
+      const tree = loadedSpaceTrees[spaceId];
+      if (tree) {
+        docIds.push(...collectDocumentIdsByTreeKeys(tree, allCheckedKeys));
       }
     }
-    return merged;
-  }, [checkedSourceKeys, syncedDocTreeKeys, uncheckedSyncedDocKeys]);
+    const unique = [...new Set(docIds)];
+    return unique.filter((id) => syncedDocumentIds.has(id) && !syncingIds.has(id));
+  }, [loadedSpaceTrees, allCheckedKeys, syncedDocumentIds, syncingIds]);
 
   // Build tree data once (needed for tri-state cascade logic)
   const treeData = useMemo(() =>
@@ -690,27 +677,10 @@ export default function HomePage({
     computeHalfCheckedKeys(treeData, allCheckedKeys),
   [treeData, allCheckedKeys]);
 
-  // Compute unchecked synced document IDs for cleanup
-  const uncheckedSyncedDocumentIds = useMemo(() => {
-    if (uncheckedSyncedDocKeys.size === 0) {
-      return [];
-    }
-    const docIds: string[] = [];
-    for (const spaceId of Object.keys(loadedSpaceTrees)) {
-      const tree = loadedSpaceTrees[spaceId];
-      if (tree) {
-        docIds.push(...collectDocumentIdsByTreeKeys(tree, uncheckedSyncedDocKeys));
-      }
-    }
-    return docIds;
-  }, [loadedSpaceTrees, uncheckedSyncedDocKeys]);
-
   const handleStartSync = async (): Promise<void> => {
     try {
-      const result = await onCreateTask(uncheckedSyncedDocumentIds);
-      if (result?.cleanupOnly) {
-        message.info(result.message || "已清理取消勾选的同步文档");
-      } else if (result?.task) {
+      const result = await onCreateTask();
+      if (result?.task) {
         message.success(`已创建同步任务：${result.task.name}`);
       } else {
         message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围或勾选目录、文档");
@@ -719,6 +689,28 @@ export default function HomePage({
       const messageText = error instanceof Error ? error.message : String(error);
       message.error(messageText || "同步任务创建失败，请重新登录后重试");
     }
+  };
+
+  const handleBatchDeleteSynced = (): void => {
+    if (batchDeleteSyncedDocumentIds.length === 0) {
+      return;
+    }
+    modal.confirm({
+      title: "批量删除本地已同步文档",
+      content: `将从本地删除 ${batchDeleteSyncedDocumentIds.length} 个已勾选且已同步的文档，删除后状态变为未同步。是否继续？`,
+      okText: "删除",
+      okType: "danger",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await onBatchDeleteCheckedSyncedDocuments(batchDeleteSyncedDocumentIds);
+          message.success("已删除所选已同步文档");
+        } catch (error) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          message.error(messageText || "批量删除失败");
+        }
+      }
+    });
   };
 
   const handleOpenWorkspace = async (): Promise<void> => {
@@ -782,40 +774,6 @@ export default function HomePage({
     }
     const newCheckedKeys = computeCascadedCheckedKeys(allCheckedKeys, nodeKey, descendantKeys, currentState);
 
-    // Determine which keys were added and removed
-    const addedKeys = new Set<string>();
-    const removedKeys = new Set<string>();
-    for (const key of newCheckedKeys) {
-      if (!allCheckedKeys.has(key)) {
-        addedKeys.add(key);
-      }
-    }
-    for (const key of allCheckedKeys) {
-      if (!newCheckedKeys.has(key)) {
-        removedKeys.add(key);
-      }
-    }
-
-    // Update uncheckedSyncedDocKeys for cascaded changes
-    if (addedKeys.size > 0 || removedKeys.size > 0) {
-      setUncheckedSyncedDocKeys((prev) => {
-        const next = new Set(prev);
-        // Keys that are now checked should not be in unchecked set
-        for (const key of addedKeys) {
-          if (syncedDocTreeKeys.has(key)) {
-            next.delete(key);
-          }
-        }
-        // Keys that are now unchecked and are synced should be in unchecked set
-        for (const key of removedKeys) {
-          if (syncedDocTreeKeys.has(key)) {
-            next.add(key);
-          }
-        }
-        return next;
-      });
-    }
-
     // Synchronize highlight: checking also selects/highlights the node
     if (newCheckedKeys.has(nodeKey)) {
       onScopeChange(node.scopeValue);
@@ -868,14 +826,24 @@ export default function HomePage({
           </div>
         }
         extra={
-          <Button
-            type="primary"
-            icon={<SyncOutlined />}
-            disabled={spaces.length === 0 || effectiveSelectedSources.length === 0}
-            onClick={() => void handleStartSync()}
-          >
-            开始同步
-          </Button>
+          <Space>
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              disabled={spaces.length === 0 || !canRunSync || batchDeleteSyncedDocumentIds.length === 0}
+              onClick={() => handleBatchDeleteSynced()}
+            >
+              批量删除
+            </Button>
+            <Button
+              type="primary"
+              icon={<SyncOutlined />}
+              disabled={spaces.length === 0 || effectiveSelectedSources.length === 0}
+              onClick={() => void handleStartSync()}
+            >
+              开始同步
+            </Button>
+          </Space>
         }
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
