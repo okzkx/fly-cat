@@ -16,6 +16,13 @@ fn normalize_block(raw_block: RawBlock) -> CanonicalBlock {
         RawBlock::Heading { level, text } => CanonicalBlock::Heading { level, text },
         RawBlock::Paragraph { text } => CanonicalBlock::Paragraph { text },
         RawBlock::Image { media_id, alt } => CanonicalBlock::Image { media_id, alt },
+        RawBlock::OrderedList { items } => CanonicalBlock::OrderedList { items },
+        RawBlock::BulletList { items } => CanonicalBlock::BulletList { items },
+        RawBlock::CodeBlock { language, code } => CanonicalBlock::CodeBlock { language, code },
+        RawBlock::Quote { text } => CanonicalBlock::Quote { text },
+        RawBlock::Table { rows } => CanonicalBlock::Table { rows },
+        RawBlock::Divider => CanonicalBlock::Divider,
+        RawBlock::Todo { items } => CanonicalBlock::Todo { items },
     }
 }
 

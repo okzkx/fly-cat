@@ -37,6 +37,13 @@ pub enum CanonicalBlock {
     Heading { level: u8, text: String },
     Paragraph { text: String },
     Image { media_id: String, alt: String },
+    OrderedList { items: Vec<String> },
+    BulletList { items: Vec<String> },
+    CodeBlock { language: String, code: String },
+    Quote { text: String },
+    Table { rows: Vec<Vec<String>> },
+    Divider,
+    Todo { items: Vec<(bool, String)> },
     Unknown { raw_type: String },
 }
 
