@@ -32,3 +32,4 @@
 - [2026-03-31] 修复同步文档内容缺失问题 — 核心根因：block_type 枚举映射完全错误（1=page非text, 2=text非heading, 3-11=heading1-9非bullet/ordered, 12=bullet, 13=ordered, 15=quote, 22=divider, 31=table）。修正全部映射、标题改用 headingN 键提取、todo done 改为 style.done boolean、新增 merge_consecutive_list_blocks 合并连续列表。全部 63 项测试通过。经 opencat-task 完整流程完成。— 🐱 排版匠（文档锻造师·沙特尔猫）
 - [2026-03-31] 修复表格同步失败 — 根因：bitable/sheet 导出失败后回退到 docx API 导致 1770002 not found。修复：export-only 类型不再回退到 docx 路径；export 类型文档跳过 docx 新鲜度检查。新增 1 项测试，64 项全部通过。经 opencat-task 完整流程完成。— 🐱 追影（代码侦探·暹罗猫）
 - [2026-03-31 18:17] 同步列表页面新加按钮：清空所有的同步任务 — 同步任务列表增加“清空所有任务”按钮（二次确认），Tauri/浏览器均持久化清空并可继续新建同步。— 🐱 扫帚猫（交互设计师·布偶猫）
+- [2026-03-31 18:26] 知识库页面每个文档后加一个刷新符号按钮：可以重新同步该文档 — 知识库树中文档/多维表格行新增“重新同步”按钮，单篇清理本地记录后创建并启动仅含该 scope 的同步任务。— 🐱 回环猫（界面魔法师·暹罗猫）
