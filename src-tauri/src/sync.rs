@@ -110,13 +110,15 @@ pub fn expected_output_path(
         "sheet" | "bitable" => {
             let extension = default_extension(&source_document.obj_type);
             let file_name = format!("{}.{}", source_document.title, extension);
-            if source_document.path_segments.is_empty() {
-                sync_root.join(&file_name)
-            } else {
-                sync_root
-                    .join(source_document.path_segments.join("/"))
-                    .join(&file_name)
+            let mut output_path = sync_root.to_path_buf();
+            for segment in source_document
+                .path_segments
+                .iter()
+                .take(source_document.path_segments.len().saturating_sub(1))
+            {
+                output_path = output_path.join(segment);
             }
+            output_path.join(&file_name)
         }
         _ => markdown_output_path(sync_root, source_document),
     }
@@ -433,6 +435,32 @@ mod tests {
         assert!(result.output_path.ends_with(".md"));
         assert_eq!(result.image_assets.len(), 1);
         assert!(result.image_assets[0].starts_with("_assets/"));
+    }
+
+    #[test]
+    fn export_only_output_path_uses_parent_segments_without_duplicate_leaf_folder() {
+        let source = SyncSourceDocument {
+            document_id: "bitable-product-demand-pool".into(),
+            space_id: "kb-product".into(),
+            space_name: "产品知识库".into(),
+            node_token: "node-bitable-product-demand-pool".into(),
+            title: "需求池".into(),
+            version: "v1".into(),
+            update_time: "t1".into(),
+            path_segments: vec!["方案库".into(), "产品方案总览".into(), "需求池".into()],
+            source_path: "产品知识库/方案库/产品方案总览/需求池".into(),
+            obj_type: "bitable".into(),
+        };
+
+        let output = expected_output_path(Path::new("C:/tmp/sync-target"), &source);
+
+        assert_eq!(
+            output,
+            Path::new("C:/tmp/sync-target")
+                .join("方案库")
+                .join("产品方案总览")
+                .join("需求池.xlsx")
+        );
     }
 
     #[test]
