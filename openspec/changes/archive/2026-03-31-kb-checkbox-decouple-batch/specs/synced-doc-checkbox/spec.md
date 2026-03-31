@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Checkbox Selection Independent of Sync Status
 The system SHALL NOT merge document sync status from the manifest into the tree checkbox checked-key set. All checkboxes SHALL default to unchecked until the user checks nodes via the existing selection / tri-state interaction. Document sync state (synced, failed, pending, syncing, not synced) SHALL be communicated only through non-checkbox UI such as tags and indicators next to each node.
@@ -35,22 +35,10 @@ The system SHALL provide a dedicated control (e.g. "批量删除") that deletes 
 - **WHEN** no checked subtree contains a synced document ID eligible for deletion
 - **THEN** the batch delete control is disabled
 
-### Requirement: Syncing and Pending Documents Disable Checkbox
-The system MUST disable the checkbox for documents that are currently being synced (status "syncing") or waiting to be synced (status "pending") in an active sync task. The disable MUST prevent both checking and unchecking actions.
-
-#### Scenario: Syncing document checkbox is disabled
-- **WHEN** an active sync task has a document in "syncing" state
-- **THEN** that document's tree node checkbox is disabled and cannot be toggled by the user
-
-#### Scenario: Pending document checkbox is disabled
-- **WHEN** an active sync task has a document in "pending" state
-- **THEN** that document's tree node checkbox is disabled and cannot be toggled by the user
-
-#### Scenario: Checkbox re-enabled after task completion
-- **WHEN** the active sync task completes or fails and the document was not successfully synced
-- **THEN** the document's checkbox becomes enabled again for user interaction
+## MODIFIED Requirements
 
 ### Requirement: Cascading Parent-Child Checkbox Toggle with Tri-State Cycling
+
 When a user clicks the checkbox of a parent node (folder or document with descendants), the system SHALL cycle through three visual states (checked, indeterminate/half-checked, unchecked) with the following cascading behavior.
 
 #### State Transitions
@@ -98,6 +86,7 @@ The system SHALL compute half-checked keys from the actual checked keys set deri
 - **THEN** the folder node is rendered with an indeterminate (half-checked) visual state
 
 ### Requirement: Tri-state respects scope-only keys for covered descendants
+
 When a node's `SyncScope` covers descendants (`space`, `folder`, or `document` with `includesDescendants`), the knowledge base tree MAY represent selection using only that node's key in the merged checked-key set (without listing every descendant key). For tri-state cycling on that node, the system SHALL treat this situation as **all checked** when every loaded descendant that is missing from the checked-key set has its checkbox disabled due to coverage by a selected ancestor. The system SHALL NOT treat it as mixed solely because descendant keys are omitted while the parent key is checked and descendants are covered-disabled.
 
 #### Scenario: User unchecks after checking a folder that covers loaded children
@@ -116,7 +105,3 @@ When a node's `SyncScope` covers descendants (`space`, `folder`, or `document` w
 ### Requirement: User Can Uncheck Synced Documents
 
 ### Requirement: Auto-delete Unchecked Synced Documents on Sync Start
-
-### Requirement: Cascading uncheck tracks synced documents for cleanup
-
-### Requirement: Cascading check removes from unchecked tracking

@@ -1,71 +1,8 @@
 # synced-doc-checkbox Specification
 
 ## Purpose
-Manages the checkbox state of synced documents in the knowledge base tree, including default checked state for synced documents, user-initiated unchecking, automatic deletion of unchecked synced documents on sync start, and checkbox disabling during active sync operations.
+Manages knowledge-base tree checkbox selection for batch sync and batch delete: checkboxes are independent of manifest sync status (sync state is shown via tags), "Start Sync" only uses checked sources without deleting unchecked synced files, "批量删除" removes checked synced documents locally, with tri-state parent/child behavior and disabled checkboxes while items are syncing or pending.
 ## Requirements
-### Requirement: Synced Documents Default Checked in Knowledge Tree
-The system SHALL display all successfully synced documents as checked by default in the knowledge base tree. The checked state MUST be derived from the document sync statuses obtained from the backend manifest. A synced document that is not in the user's explicit selection MUST still appear checked through automatic key merging.
-
-The Tree component MUST use the default checkbox behavior (without `checkStrictly`), which automatically calculates and displays half-checked (indeterminate) states for parent nodes when some but not all of their children are checked.
-
-#### Scenario: Synced document appears checked on tree load
-- **WHEN** the knowledge base tree loads and a document has a sync status of "synced" in `documentSyncStatuses`
-- **THEN** that document's tree node checkbox is in the checked state without any user interaction
-
-#### Scenario: Newly synced document appears checked after task completion
-- **WHEN** a sync task completes successfully and the document sync statuses are refreshed
-- **THEN** newly synced documents automatically appear as checked in the tree
-
-#### Scenario: Failed synced document does not appear checked by default
-- **WHEN** a document has a sync status of "failed" in `documentSyncStatuses`
-- **THEN** that document's tree node checkbox is not in the default checked state
-
-#### Scenario: Parent node shows half-checked state when partial children are checked
-- **WHEN** a folder node has some (but not all) of its descendant documents checked
-- **THEN** the folder node's checkbox displays an indeterminate/half-checked state (minus sign)
-
-#### Scenario: Parent node shows checked state when all children are checked
-- **WHEN** a folder node has all of its descendant documents checked
-- **THEN** the folder node's checkbox displays a fully checked state
-
-#### Scenario: Parent node shows unchecked state when no children are checked
-- **WHEN** a folder node has none of its descendant documents checked
-- **THEN** the folder node's checkbox displays an unchecked state
-
-### Requirement: User Can Uncheck Synced Documents
-The system SHALL allow the user to uncheck a synced document's checkbox. The unchecked state MUST be tracked separately from the explicit user selection. The system MUST maintain a set of "unchecked synced document keys" to distinguish user-initiated unchecks from the default checked state.
-
-#### Scenario: User unchecks a synced document
-- **WHEN** the user clicks the checkbox of a synced document to uncheck it
-- **THEN** the document is removed from the checked keys set and is not re-added by the default synced key merging logic
-
-#### Scenario: User re-checks a previously unchecked synced document
-- **WHEN** the user clicks the checkbox of a previously unchecked synced document to check it again
-- **THEN** the document reappears as checked and is removed from the unchecked synced document tracking set
-
-### Requirement: Auto-delete Unchecked Synced Documents on Sync Start
-The system SHALL automatically delete all documents that are both (a) currently synced on disk and (b) not in the current checked keys set when the user clicks "Start Sync". The deletion MUST occur before creating the new sync task and MUST include removal of the document file, associated image assets, and manifest records. After deletion, the system MUST refresh document sync statuses to reflect the cleanup. If the user did not explicitly choose any sync sources and the action only performs cleanup of unchecked synced documents, the system MUST complete that cleanup without creating a follow-up sync task or issuing remote discovery requests.
-
-#### Scenario: Unchecked synced document deleted on sync start
-- **WHEN** the user clicks "Start Sync" with a synced document unchecked in the tree
-- **THEN** the system calls `removeSyncedDocuments` for that document's ID, deleting the file and clearing its manifest record before creating the sync task
-
-#### Scenario: All unchecked synced documents cleaned up
-- **WHEN** the user clicks "Start Sync" with multiple synced documents unchecked
-- **THEN** the system batch-deletes all unchecked synced documents in a single `removeSyncedDocuments` call before creating the sync task
-
-#### Scenario: No deletion when all synced documents are checked
-- **WHEN** the user clicks "Start Sync" and all synced documents remain checked
-- **THEN** the system proceeds directly to creating the sync task without calling `removeSyncedDocuments`
-
-#### Scenario: Sync statuses refreshed after cleanup
-- **WHEN** the system finishes deleting unchecked synced documents
-- **THEN** the system refreshes `documentSyncStatuses` so the tree no longer shows deleted documents as synced
-
-#### Scenario: Cleanup-only action does not start discovery
-- **WHEN** the user clicks "Start Sync" only to remove unchecked synced documents and has no explicit sync sources selected
-- **THEN** the system completes the local cleanup and returns without creating a sync task or triggering remote discovery
-
 ### Requirement: Syncing and Pending Documents Disable Checkbox
 The system MUST disable the checkbox for documents that are currently being synced (status "syncing") or waiting to be synced (status "pending") in an active sync task. The disable MUST prevent both checking and unchecking actions.
 
@@ -100,6 +37,8 @@ When a user clicks the checkbox of a parent node (folder or document with descen
 #### Simplified Two-State Optimization
 When a parent node and ALL of its descendants are in the same state (all checked OR all unchecked), the system SHALL only toggle between checked and unchecked, skipping the indeterminate state entirely.
 
+Parent-child display invariants SHALL hold: a fully checked parent node SHALL imply all of its descendant checkboxes that are not disabled by scope coverage are checked; a fully unchecked parent SHALL imply all descendants are unchecked; an indeterminate (half-checked) parent SHALL imply descendants are neither all checked nor all unchecked.
+
 #### Scenario: Checking a folder with no previously checked children
 - **WHEN** a folder node is unchecked with all descendants unchecked, and the user clicks its checkbox
 - **THEN** the folder and all descendant nodes become checked
@@ -120,16 +59,8 @@ When a parent node and ALL of its descendants are in the same state (all checked
 - **WHEN** a leaf document node (no descendants) checkbox is clicked
 - **THEN** the document toggles between checked and unchecked as before
 
-#### Scenario: Cascading uncheck tracks synced documents for cleanup
-- **WHEN** cascading uncheck causes synced documents to become unchecked
-- **THEN** those synced document keys are added to `uncheckedSyncedDocKeys` so they will be deleted on sync start
-
-#### Scenario: Cascading check removes from unchecked tracking
-- **WHEN** cascading check causes previously unchecked synced documents to become checked
-- **THEN** those document keys are removed from `uncheckedSyncedDocKeys`
-
 ### Requirement: Parent node half-checked state calculation
-The system SHALL compute half-checked keys from the actual checked keys set. The `checkedKeys` prop MUST contain truly checked keys and computed half-checked keys, using `checkStrictly` mode to prevent Ant Design's default cascade behavior.
+The system SHALL compute half-checked keys from the actual checked keys set derived solely from `selectedSources`. The `checkedKeys` prop MUST contain truly checked keys and computed half-checked keys, using `checkStrictly` mode to prevent Ant Design's default cascade behavior.
 
 #### Scenario: Half-checked parent computed from children
 - **WHEN** a folder node has some but not all descendant keys in the checked keys set
@@ -140,13 +71,46 @@ The system SHALL compute half-checked keys from the actual checked keys set. The
 When a node's `SyncScope` covers descendants (`space`, `folder`, or `document` with `includesDescendants`), the knowledge base tree MAY represent selection using only that node's key in the merged checked-key set (without listing every descendant key). For tri-state cycling on that node, the system SHALL treat this situation as **all checked** when every loaded descendant that is missing from the checked-key set has its checkbox disabled due to coverage by a selected ancestor. The system SHALL NOT treat it as mixed solely because descendant keys are omitted while the parent key is checked and descendants are covered-disabled.
 
 #### Scenario: User unchecks after checking a folder that covers loaded children
-
 - **WHEN** the user checks a folder whose descendants are present in the loaded tree and covered by the selection (descendant checkboxes disabled)
 - **AND** the merged checked keys contain the folder key but not the individual descendant keys
-- **THEN** the next checkbox or name-click toggle on that folder transitions to unchecked (and updates `selectedSources` / synced unchecked tracking consistently)
+- **THEN** the next checkbox or name-click toggle on that folder transitions to unchecked and updates `selectedSources` consistently
 
 #### Scenario: True mixed descendants still use indeterminate path
-
 - **WHEN** a parent node is checked and at least one loaded descendant remains interactive (checkbox not disabled) and is not in the checked-key set
 - **THEN** the tri-state logic SHALL NOT force **all checked** solely from the parent key; the user MUST still be able to reach the indeterminate transition per the existing mixed-descendant rules
+
+### Requirement: Checkbox Selection Independent of Sync Status
+The system SHALL NOT merge document sync status from the manifest into the tree checkbox checked-key set. All checkboxes SHALL default to unchecked until the user checks nodes via the existing selection / tri-state interaction. Document sync state (synced, failed, pending, syncing, not synced) SHALL be communicated only through non-checkbox UI such as tags and indicators next to each node.
+
+The Tree component MUST continue to use `checkStrictly` with application-computed `halfChecked` keys for indeterminate parents.
+
+#### Scenario: Synced document loads with checkbox unchecked
+- **WHEN** the knowledge base tree loads and a document has sync status "synced" in `documentSyncStatuses`
+- **THEN** that document's checkbox is unchecked unless the user has included it in `selectedSources`
+
+#### Scenario: After sync task completes, new synced docs do not auto-check
+- **WHEN** a sync task completes successfully and `documentSyncStatuses` is refreshed
+- **THEN** newly synced documents remain unchecked in the tree unless the user had already selected those scopes
+
+### Requirement: Start Sync Uses Only Checked Selection
+When the user clicks "Start Sync", the system SHALL create a sync task from the current effective selected sources only. The system SHALL NOT delete local synced documents merely because they are unchecked before task creation.
+
+#### Scenario: No removeSyncedDocuments on start sync for unchecked synced docs
+- **WHEN** the user clicks "Start Sync" and some synced documents remain unchecked
+- **THEN** the system does not call `removeSyncedDocuments` for those documents as part of this action
+
+#### Scenario: Start sync still requires a non-empty selection
+- **WHEN** the user has no selected sync sources
+- **THEN** the system does not create a sync task (existing empty-selection behavior preserved)
+
+### Requirement: Batch Delete Checked Synced Documents
+The system SHALL provide a dedicated control (e.g. "批量删除") that deletes from disk every document that is both (a) within the current checked selection scope (resolved to leaf document IDs) and (b) currently in "synced" status in `documentSyncStatuses`, excluding documents that are "syncing" or "pending" in the active task. Deletion MUST use `removeSyncedDocuments` and MUST be followed by refreshing `documentSyncStatuses`.
+
+#### Scenario: Batch delete removes checked synced documents
+- **WHEN** the user checks one or more nodes that include synced documents and triggers batch delete
+- **THEN** the system calls `removeSyncedDocuments` for those synced document IDs and refreshes statuses so tags show unsynced where applicable
+
+#### Scenario: Batch delete disabled with no eligible documents
+- **WHEN** no checked subtree contains a synced document ID eligible for deletion
+- **THEN** the batch delete control is disabled
 
