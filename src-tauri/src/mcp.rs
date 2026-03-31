@@ -29,6 +29,13 @@ pub enum RawBlock {
     Heading { level: u8, text: String },
     Paragraph { text: String },
     Image { media_id: String, alt: String },
+    OrderedList { items: Vec<String> },
+    BulletList { items: Vec<String> },
+    CodeBlock { language: String, code: String },
+    Quote { text: String },
+    Table { rows: Vec<Vec<String>> },
+    Divider,
+    Todo { items: Vec<(bool, String)> },
 }
 
 #[derive(Clone, Debug)]
@@ -427,7 +434,8 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
 }
 
 /// Parse a Feishu block JSON into a RawBlock enum
-/// Block types: 1=text, 2=heading, 3=bullet list, 4=ordered list, 28=image
+/// Block types: 1=text, 2=heading, 3=bullet list, 4=ordered list, 14=code,
+///              17=todo, 22=table/divider, 24=quote, 27|28=image
 fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
     let block_type = block
         .get("block_type")
@@ -473,17 +481,113 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::Heading { level, text })
             }
         }
-        // Bullet list (type 3) and ordered list (type 4) - treat as paragraphs
-        3 | 4 => {
+        // T3: Bullet list (type 3)
+        3 => {
             let text = extract_text_from_block(block);
             if text.is_empty() {
                 None
             } else {
-                Some(RawBlock::Paragraph { text })
+                Some(RawBlock::BulletList { items: vec![text] })
             }
         }
-        // Image block (type 28)
-        28 => {
+        // T2: Ordered list (type 4)
+        4 => {
+            let text = extract_text_from_block(block);
+            if text.is_empty() {
+                None
+            } else {
+                Some(RawBlock::OrderedList { items: vec![text] })
+            }
+        }
+        // T4: Code block (type 14)
+        14 => {
+            let code_block = block.get("code");
+            let language = code_block
+                .and_then(|cb| cb.get("language"))
+                .and_then(|l| l.as_str())
+                .unwrap_or("")
+                .to_string();
+            let code = code_block
+                .and_then(|cb| cb.get("elements"))
+                .and_then(|e| e.as_array())
+                .map(|elements| extract_text_from_elements(elements))
+                .unwrap_or_default();
+            if code.is_empty() {
+                None
+            } else {
+                Some(RawBlock::CodeBlock { language, code })
+            }
+        }
+        // T8: Todo / task block (type 17)
+        17 => {
+            let todo_block = block.get("todo");
+            let elements = todo_block
+                .and_then(|tb| tb.get("elements"))
+                .and_then(|e| e.as_array());
+            let text = elements
+                .map(|elems| extract_text_from_elements(elems))
+                .unwrap_or_default();
+            if text.is_empty() {
+                None
+            } else {
+                let done = todo_block
+                    .and_then(|tb| tb.get("style"))
+                    .and_then(|s| s.as_i64())
+                    .map(|v| v == 1)
+                    .unwrap_or(false);
+                Some(RawBlock::Todo {
+                    items: vec![(done, text)],
+                })
+            }
+        }
+        // T6/T7: Table (type 22) — check for divider subtype, otherwise table
+        22 => {
+            // Check if this is a divider (has "divider" key)
+            if block.get("divider").is_some() {
+                Some(RawBlock::Divider)
+            } else {
+                // Table block
+                let table_block = block.get("table");
+                let rows = table_block
+                    .and_then(|tb| tb.get("cells"))
+                    .and_then(|c| c.as_array())
+                    .map(|cell_rows| {
+                        cell_rows
+                            .iter()
+                            .filter_map(|row| {
+                                row.as_array().map(|cells| {
+                                    cells
+                                        .iter()
+                                        .map(|cell| {
+                                            // Each cell may be an array of elements
+                                            cell.as_array()
+                                                .map(|elements| extract_text_from_elements(elements))
+                                                .unwrap_or_default()
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if rows.is_empty() {
+                    None
+                } else {
+                    Some(RawBlock::Table { rows })
+                }
+            }
+        }
+        // T5: Quote block (type 24, quote_container)
+        24 => {
+            let text = extract_text_from_block(block);
+            if text.is_empty() {
+                None
+            } else {
+                Some(RawBlock::Quote { text })
+            }
+        }
+        // Image block (type 27; keep 28 for compatibility with older assumptions)
+        27 | 28 => {
             let image = block.get("image");
             let media_id = image
                 .and_then(|i| i.get("token"))
@@ -521,6 +625,9 @@ fn extract_text_from_block(block: &Value) -> String {
         .or_else(|| block.get("heading").and_then(|h| h.get("elements")))
         .or_else(|| block.get("bullet").and_then(|b| b.get("elements")))
         .or_else(|| block.get("ordered").and_then(|o| o.get("elements")))
+        .or_else(|| block.get("todo").and_then(|tb| tb.get("elements")))
+        .or_else(|| block.get("quote").and_then(|q| q.get("elements")))
+        .or_else(|| block.get("quote1").and_then(|q| q.get("elements")))
         .and_then(|e| e.as_array());
 
     match elements {
@@ -1252,5 +1359,158 @@ mod tests {
         );
 
         assert_eq!(extension, ".jpeg");
+    }
+
+    // --- New block type parsing tests ---
+
+    #[test]
+    fn parses_bullet_list_block() {
+        let block = json!({
+            "block_type": 3,
+            "bullet": {
+                "elements": [{ "text_run": { "content": "列表项" } }]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("bullet list should parse");
+        assert!(
+            matches!(parsed, RawBlock::BulletList { ref items } if items == &vec!["列表项".to_string()])
+        );
+    }
+
+    #[test]
+    fn parses_ordered_list_block() {
+        let block = json!({
+            "block_type": 4,
+            "ordered": {
+                "elements": [{ "text_run": { "content": "有序项" } }]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("ordered list should parse");
+        assert!(
+            matches!(parsed, RawBlock::OrderedList { ref items } if items == &vec!["有序项".to_string()])
+        );
+    }
+
+    #[test]
+    fn parses_code_block() {
+        let block = json!({
+            "block_type": 14,
+            "code": {
+                "language": "python",
+                "elements": [{ "text_run": { "content": "print('hello')" } }]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("code block should parse");
+        assert!(
+            matches!(parsed, RawBlock::CodeBlock { ref language, ref code }
+                if language == "python" && code == "print('hello')")
+        );
+    }
+
+    #[test]
+    fn parses_code_block_without_language() {
+        let block = json!({
+            "block_type": 14,
+            "code": {
+                "elements": [{ "text_run": { "content": "some code" } }]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("code block without language should parse");
+        assert!(
+            matches!(parsed, RawBlock::CodeBlock { ref language, ref code }
+                if language.is_empty() && code == "some code")
+        );
+    }
+
+    #[test]
+    fn parses_quote_block() {
+        let block = json!({
+            "block_type": 24,
+            "quote": {
+                "elements": [{ "text_run": { "content": "引用内容" } }]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("quote block should parse");
+        assert!(
+            matches!(parsed, RawBlock::Quote { ref text } if text == "引用内容")
+        );
+    }
+
+    #[test]
+    fn parses_table_block() {
+        let block = json!({
+            "block_type": 22,
+            "table": {
+                "cells": [
+                    [
+                        [{ "text_run": { "content": "Header 1" } }],
+                        [{ "text_run": { "content": "Header 2" } }]
+                    ],
+                    [
+                        [{ "text_run": { "content": "Cell 1" } }],
+                        [{ "text_run": { "content": "Cell 2" } }]
+                    ]
+                ]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("table block should parse");
+        assert!(matches!(parsed, RawBlock::Table { ref rows } if rows.len() == 2));
+        if let RawBlock::Table { rows } = parsed {
+            assert_eq!(rows[0], vec!["Header 1".to_string(), "Header 2".to_string()]);
+            assert_eq!(rows[1], vec!["Cell 1".to_string(), "Cell 2".to_string()]);
+        }
+    }
+
+    #[test]
+    fn parses_divider_block() {
+        let block = json!({
+            "block_type": 22,
+            "divider": {}
+        });
+        let parsed = parse_block_from_json(&block).expect("divider should parse");
+        assert!(matches!(parsed, RawBlock::Divider));
+    }
+
+    #[test]
+    fn parses_todo_block_unchecked() {
+        let block = json!({
+            "block_type": 17,
+            "todo": {
+                "style": 0,
+                "elements": [{ "text_run": { "content": "待办事项" } }]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("todo block should parse");
+        assert!(
+            matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(false, "待办事项".to_string())])
+        );
+    }
+
+    #[test]
+    fn parses_todo_block_checked() {
+        let block = json!({
+            "block_type": 17,
+            "todo": {
+                "style": 1,
+                "elements": [{ "text_run": { "content": "已完成事项" } }]
+            }
+        });
+        let parsed = parse_block_from_json(&block).expect("checked todo block should parse");
+        assert!(
+            matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(true, "已完成事项".to_string())])
+        );
+    }
+
+    #[test]
+    fn parses_image_block_type_27() {
+        let block = json!({
+            "block_type": 27,
+            "image": { "token": "img-type-27" }
+        });
+        let parsed = parse_block_from_json(&block).expect("image type 27 should parse");
+        assert!(matches!(
+            parsed,
+            RawBlock::Image { ref media_id, .. } if media_id == "img-type-27"
+        ));
     }
 }

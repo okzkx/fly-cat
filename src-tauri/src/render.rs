@@ -115,6 +115,71 @@ pub fn render_markdown(
                 }
                 lines.push(String::new());
             }
+            CanonicalBlock::OrderedList { items } => {
+                for (i, item) in items.iter().enumerate() {
+                    lines.push(format!("{}. {}", i + 1, item));
+                }
+                lines.push(String::new());
+            }
+            CanonicalBlock::BulletList { items } => {
+                for item in items {
+                    lines.push(format!("- {}", item));
+                }
+                lines.push(String::new());
+            }
+            CanonicalBlock::CodeBlock { language, code } => {
+                lines.push(format!("```{}", language));
+                lines.push(code.clone());
+                lines.push("```".to_string());
+                lines.push(String::new());
+            }
+            CanonicalBlock::Quote { text } => {
+                for line in text.lines() {
+                    lines.push(format!("> {}", line));
+                }
+                lines.push(String::new());
+            }
+            CanonicalBlock::Table { rows } => {
+                if !rows.is_empty() {
+                    // First row is the header
+                    let header = &rows[0];
+                    let col_count = header.len();
+                    lines.push(format!(
+                        "| {} |",
+                        header.join(" | ")
+                    ));
+                    lines.push(format!(
+                        "| {} |",
+                        (0..col_count)
+                            .map(|_| "---")
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    ));
+                    // Remaining rows are body
+                    for row in rows.iter().skip(1) {
+                        // Pad row to col_count if needed
+                        let padded: Vec<String> = row
+                            .iter()
+                            .cloned()
+                            .chain(std::iter::repeat(String::new()))
+                            .take(col_count)
+                            .collect();
+                        lines.push(format!("| {} |", padded.join(" | ")));
+                    }
+                    lines.push(String::new());
+                }
+            }
+            CanonicalBlock::Divider => {
+                lines.push("---".to_string());
+                lines.push(String::new());
+            }
+            CanonicalBlock::Todo { items } => {
+                for (done, text) in items {
+                    let check = if *done { "x" } else { " " };
+                    lines.push(format!("- [{}] {}", check, text));
+                }
+                lines.push(String::new());
+            }
             CanonicalBlock::Unknown { raw_type } => {
                 lines.push(format!("<!-- Unsupported block type: {} -->", raw_type));
                 lines.push(String::new());
@@ -217,5 +282,227 @@ mod tests {
         assert!(rendered.markdown.contains("## 概览"));
         assert!(rendered.markdown.contains("../_assets/"));
         assert_eq!(rendered.image_assets.len(), 1);
+    }
+
+    // --- New block type rendering tests ---
+
+    #[test]
+    fn renders_ordered_list_with_numbering() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "有序列表测试".into(),
+            blocks: vec![
+                CanonicalBlock::Heading {
+                    level: 2,
+                    text: "步骤".into(),
+                },
+                CanonicalBlock::OrderedList {
+                    items: vec![
+                        "第一步".into(),
+                        "第二步".into(),
+                        "第三步".into(),
+                    ],
+                },
+            ],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("1. 第一步"));
+        assert!(rendered.markdown.contains("2. 第二步"));
+        assert!(rendered.markdown.contains("3. 第三步"));
+    }
+
+    #[test]
+    fn renders_bullet_list_with_dashes() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "无序列表测试".into(),
+            blocks: vec![CanonicalBlock::BulletList {
+                items: vec!["苹果".into(), "香蕉".into()],
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("- 苹果"));
+        assert!(rendered.markdown.contains("- 香蕉"));
+    }
+
+    #[test]
+    fn renders_code_block_with_language() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "代码块测试".into(),
+            blocks: vec![CanonicalBlock::CodeBlock {
+                language: "rust".into(),
+                code: "fn main() { println!(\"hello\"); }".into(),
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("```rust"));
+        assert!(rendered.markdown.contains("fn main()"));
+        assert!(rendered.markdown.contains("```"));
+    }
+
+    #[test]
+    fn renders_quote_block_with_prefix() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "引用测试".into(),
+            blocks: vec![CanonicalBlock::Quote {
+                text: "这是一段引用文字".into(),
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("> 这是一段引用文字"));
+    }
+
+    #[test]
+    fn renders_multiline_quote() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "多行引用".into(),
+            blocks: vec![CanonicalBlock::Quote {
+                text: "第一行\n第二行".into(),
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("> 第一行"));
+        assert!(rendered.markdown.contains("> 第二行"));
+    }
+
+    #[test]
+    fn renders_table_with_header_and_body() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "表格测试".into(),
+            blocks: vec![CanonicalBlock::Table {
+                rows: vec![
+                    vec!["名称".into(), "类型".into()],
+                    vec!["Alice".into(), "用户".into()],
+                    vec!["Bob".into(), "管理员".into()],
+                ],
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("| 名称 | 类型 |"));
+        assert!(rendered.markdown.contains("| --- | --- |"));
+        assert!(rendered.markdown.contains("| Alice | 用户 |"));
+        assert!(rendered.markdown.contains("| Bob | 管理员 |"));
+    }
+
+    #[test]
+    fn renders_divider() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "分割线测试".into(),
+            blocks: vec![
+                CanonicalBlock::Paragraph {
+                    text: "上部分".into(),
+                },
+                CanonicalBlock::Divider,
+                CanonicalBlock::Paragraph {
+                    text: "下部分".into(),
+                },
+            ],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("---"));
+        assert!(rendered.markdown.contains("上部分"));
+        assert!(rendered.markdown.contains("下部分"));
+    }
+
+    #[test]
+    fn renders_todo_list_with_checkboxes() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "待办列表测试".into(),
+            blocks: vec![CanonicalBlock::Todo {
+                items: vec![
+                    (false, "待完成任务".into()),
+                    (true, "已完成任务".into()),
+                ],
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("- [ ] 待完成任务"));
+        assert!(rendered.markdown.contains("- [x] 已完成任务"));
     }
 }
