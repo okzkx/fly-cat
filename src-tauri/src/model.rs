@@ -62,6 +62,16 @@ impl From<String> for RichText {
     }
 }
 
+/// One entry in an ordered or bullet list, with nesting depth for Markdown output.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListItem {
+    /// 0 = top-level item; increases for each nested list level in the Feishu block tree.
+    #[serde(default)]
+    pub indent: u8,
+    pub text: RichText,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncSourceDocument {
@@ -99,8 +109,8 @@ pub enum CanonicalBlock {
     Heading { level: u8, text: RichText },
     Paragraph { text: RichText },
     Image { media_id: String, alt: String },
-    OrderedList { items: Vec<RichText> },
-    BulletList { items: Vec<RichText> },
+    OrderedList { items: Vec<ListItem> },
+    BulletList { items: Vec<ListItem> },
     CodeBlock { language: String, code: String },
     Quote { text: RichText },
     Table { rows: Vec<Vec<RichText>> },

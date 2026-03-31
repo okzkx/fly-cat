@@ -41,6 +41,14 @@ The system MUST transform retrieved document content into deterministic Markdown
 - **WHEN** the source document contains hierarchical headings and paragraphs
 - **THEN** the generated Markdown preserves that hierarchy in heading levels and paragraph order
 
+#### Scenario: Preserve nested ordered and bullet list indentation
+- **WHEN** the source document contains ordered or bullet list items nested under a parent list item in the Feishu block tree
+- **THEN** the generated Markdown indents nested list markers relative to their parent level using consistent leading spaces per nesting depth
+
+#### Scenario: Restart ordered numbering per nesting depth
+- **WHEN** the source document contains nested ordered list items at a deeper level than their parent list item
+- **THEN** the generated Markdown uses a separate incrementing index sequence for each nesting depth so child lists do not continue the parent list's global counter
+
 ### Requirement: Stable Local File Mapping
 The system MUST map each synced document to a stable local Markdown path according to deterministic rules that preserve the document's knowledge-base-relative directory structure and authoritative document naming.
 
