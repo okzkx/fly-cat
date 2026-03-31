@@ -31,3 +31,4 @@
 - [2026-03-31] 内容缺失修复 — T11: fetch_document_blocks 实现分页遍历，检查 has_more/page_token 循环获取所有子块，修复超 500 块文档被截断问题。T12: 新增 fetch_single_block_json_with_retry 方法，6 次重试 / 500ms 初始退避（指数退避至 8s），通过错误码 99991400 检测限频，跳过时记录警告。cargo check 与 63 项测试全部通过。经 opencat-task 完整 worktree 流程完成。
 - [2026-03-31] 修复同步文档内容缺失问题 — 核心根因：block_type 枚举映射完全错误（1=page非text, 2=text非heading, 3-11=heading1-9非bullet/ordered, 12=bullet, 13=ordered, 15=quote, 22=divider, 31=table）。修正全部映射、标题改用 headingN 键提取、todo done 改为 style.done boolean、新增 merge_consecutive_list_blocks 合并连续列表。全部 63 项测试通过。经 opencat-task 完整流程完成。— 🐱 排版匠（文档锻造师·沙特尔猫）
 - [2026-03-31] 修复表格同步失败 — 根因：bitable/sheet 导出失败后回退到 docx API 导致 1770002 not found。修复：export-only 类型不再回退到 docx 路径；export 类型文档跳过 docx 新鲜度检查。新增 1 项测试，64 项全部通过。经 opencat-task 完整流程完成。— 🐱 追影（代码侦探·暹罗猫）
+- [2026-03-31 18:17] 同步列表页面新加按钮：清空所有的同步任务 — 同步任务列表增加“清空所有任务”按钮（二次确认），Tauri/浏览器均持久化清空并可继续新建同步。— 🐱 扫帚猫（交互设计师·布偶猫）
