@@ -263,14 +263,15 @@ export async function getSyncedDocumentIds(syncRoot: string): Promise<Set<string
 
 export async function getDocumentSyncStatuses(
   syncRoot: string
-): Promise<Record<string, { status: "synced" | "failed"; lastSyncedAt: string }>> {
+): Promise<
+  Record<string, { status: "synced" | "failed"; lastSyncedAt: string; localFeishuVersion?: string }>
+> {
   if (!isTauriRuntime()) {
     return {};
   }
-  return invoke<Record<string, { status: "synced" | "failed"; lastSyncedAt: string }>>(
-    "get_document_sync_statuses",
-    { syncRoot }
-  );
+  return invoke<
+    Record<string, { status: "synced" | "failed"; lastSyncedAt: string; localFeishuVersion?: string }>
+  >("get_document_sync_statuses", { syncRoot });
 }
 
 export async function removeSyncedDocuments(

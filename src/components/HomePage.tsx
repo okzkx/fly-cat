@@ -34,6 +34,7 @@ type ScopeTreeDataNode = DataNode & {
   nodeKind?: KnowledgeBaseNode["kind"] | "space";
   spaceId?: string;
   nodeToken?: string;
+  wikiListVersion?: string;
   hasChildren?: boolean;
   isExpandable?: boolean;
   children?: ScopeTreeDataNode[];
@@ -166,6 +167,39 @@ function DocumentSyncStatusTag({
     return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>等待同步</Tag>;
   }
   return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>未同步</Tag>;
+}
+
+function DocumentFeishuRevisionLine({
+  documentId,
+  wikiListVersion,
+  syncStatuses,
+  freshnessMap
+}: {
+  documentId: string | undefined;
+  wikiListVersion?: string;
+  syncStatuses: Record<string, DocumentSyncStatus>;
+  freshnessMap: Record<string, DocumentFreshnessResult>;
+}): React.JSX.Element | null {
+  if (Object.keys(syncStatuses).length === 0 || !documentId) {
+    return null;
+  }
+  const sync = syncStatuses[documentId];
+  const localRaw = sync?.localFeishuVersion?.trim();
+  const local = localRaw && localRaw.length > 0 ? localRaw : "—";
+  const fr = freshnessMap[documentId];
+  const remoteFromFresh = fr?.remoteVersion?.trim();
+  const remoteFromList = wikiListVersion?.trim();
+  const remote =
+    remoteFromFresh && remoteFromFresh.length > 0
+      ? remoteFromFresh
+      : remoteFromList && remoteFromList.length > 0
+        ? remoteFromList
+        : "—";
+  return (
+    <Text type="secondary" style={{ fontSize: 11, lineHeight: "18px", whiteSpace: "nowrap" }}>
+      本地 {local} / 远端 {remote}
+    </Text>
+  );
 }
 
 function FreshnessIndicator({
@@ -332,6 +366,7 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, s
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,
+      wikiListVersion: node.wikiListVersion,
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
       scopeValue,
@@ -942,9 +977,17 @@ export default function HomePage({
                   );
 
                 return (
-                  <Space size={4}>
+                  <Space size={4} wrap>
                     {icon}
                     <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
+                    {(nodeKind === "document" || nodeKind === "bitable") && (
+                      <DocumentFeishuRevisionLine
+                        documentId={treeNode.scopeValue?.documentId}
+                        wikiListVersion={treeNode.wikiListVersion}
+                        syncStatuses={documentSyncStatuses}
+                        freshnessMap={freshnessMap}
+                      />
+                    )}
                     <NodeSyncStatusTag
                       treeNode={treeNode}
                       syncStatuses={documentSyncStatuses}

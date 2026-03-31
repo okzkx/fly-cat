@@ -156,6 +156,9 @@ pub struct SyncManifest {
 pub struct DocumentSyncStatusEntry {
     pub status: String,
     pub last_synced_at: String,
+    /// Feishu revision stored in manifest for this document (last sync attempt).
+    #[serde(default)]
+    pub local_feishu_version: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

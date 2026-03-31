@@ -50,6 +50,8 @@ export interface KnowledgeBaseNode {
   nodeToken: string;
   documentId?: string;
   pathSegments: string[];
+  /** Revision from wiki node list API (fallback for remote display). */
+  wikiListVersion?: string;
   hasChildren: boolean;
   isExpandable: boolean;
   children?: KnowledgeBaseNode[];
@@ -130,6 +132,8 @@ export interface SyncFailureSummary {
 export interface DocumentSyncStatus {
   status: "synced" | "failed";
   lastSyncedAt: string;
+  /** Manifest Feishu revision for this document (last sync). */
+  localFeishuVersion?: string;
 }
 
 export interface DocumentFreshnessResult {
