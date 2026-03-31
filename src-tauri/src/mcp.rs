@@ -1,4 +1,4 @@
-use crate::model::{RichSegment, RichText};
+use crate::model::{ListItem, RichSegment, RichText};
 use serde_json::{json, Value};
 use std::{collections::HashSet, fmt, io::Read, path::Path, thread, time::Duration};
 
@@ -30,8 +30,8 @@ pub enum RawBlock {
     Heading { level: u8, text: RichText },
     Paragraph { text: RichText },
     Image { media_id: String, alt: String },
-    OrderedList { items: Vec<RichText> },
-    BulletList { items: Vec<RichText> },
+    OrderedList { items: Vec<ListItem> },
+    BulletList { items: Vec<ListItem> },
     CodeBlock { language: String, code: String },
     Quote { text: RichText },
     Table { rows: Vec<Vec<RichText>> },
@@ -457,7 +457,7 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
 ///   22 = divider         (horizontal rule)
 ///   27 = image           (image)
 ///   31 = table           (table)
-fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
+fn parse_block_from_json(block: &Value, list_depth: u8) -> Option<RawBlock> {
     let block_type = block
         .get("block_type")
         .and_then(|v| v.as_i64())
@@ -501,7 +501,12 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
             if text.is_empty() {
                 None
             } else {
-                Some(RawBlock::BulletList { items: vec![text] })
+                Some(RawBlock::BulletList {
+                    items: vec![ListItem {
+                        indent: list_depth,
+                        text,
+                    }],
+                })
             }
         }
 
@@ -511,7 +516,12 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
             if text.is_empty() {
                 None
             } else {
-                Some(RawBlock::OrderedList { items: vec![text] })
+                Some(RawBlock::OrderedList {
+                    items: vec![ListItem {
+                        indent: list_depth,
+                        text,
+                    }],
+                })
             }
         }
 
@@ -759,6 +769,7 @@ fn flatten_block_tree<F>(
     fetch_block: &mut F,
     visited: &mut HashSet<String>,
     blocks: &mut Vec<RawBlock>,
+    list_depth: u8,
 ) -> Result<(), McpError>
 where
     F: FnMut(&str) -> Result<Value, McpError>,
@@ -768,12 +779,27 @@ where
             continue;
         }
         let block = fetch_block(child_id)?;
-        if let Some(parsed) = parse_block_from_json(&block) {
+        let block_type = block
+            .get("block_type")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        if let Some(parsed) = parse_block_from_json(&block, list_depth) {
             blocks.push(parsed);
         }
         let nested_children = extract_block_children_ids(&block);
         if !nested_children.is_empty() {
-            flatten_block_tree(&nested_children, fetch_block, visited, blocks)?;
+            let child_list_depth = if matches!(block_type, 12 | 13 | 17) {
+                list_depth.saturating_add(1)
+            } else {
+                list_depth
+            };
+            flatten_block_tree(
+                &nested_children,
+                fetch_block,
+                visited,
+                blocks,
+                child_list_depth,
+            )?;
         }
     }
 
@@ -1125,7 +1151,13 @@ impl FeishuOpenApiClient {
         let mut visited = HashSet::new();
         let mut fetch_block =
             |block_id: &str| self.fetch_single_block_json_with_retry(document_id, block_id, token);
-        flatten_block_tree(&all_children_ids, &mut fetch_block, &mut visited, &mut blocks)?;
+        flatten_block_tree(
+            &all_children_ids,
+            &mut fetch_block,
+            &mut visited,
+            &mut blocks,
+            0,
+        )?;
 
         Ok(merge_consecutive_list_blocks(blocks))
     }
@@ -1525,6 +1557,7 @@ mod tests {
             &mut fetch_block,
             &mut visited,
             &mut blocks,
+            0,
         )
         .expect("flatten should succeed");
 
@@ -1553,9 +1586,9 @@ mod tests {
                 "elements": [{ "text_run": { "content": "列表项" } }]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("bullet list should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("bullet list should parse");
         assert!(
-            matches!(parsed, RawBlock::BulletList { ref items } if items == &vec![RichText::plain("列表项")])
+            matches!(parsed, RawBlock::BulletList { ref items } if items == &vec![ListItem { indent: 0, text: RichText::plain("列表项") }])
         );
     }
 
@@ -1567,10 +1600,66 @@ mod tests {
                 "elements": [{ "text_run": { "content": "有序项" } }]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("ordered list should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("ordered list should parse");
         assert!(
-            matches!(parsed, RawBlock::OrderedList { ref items } if items == &vec![RichText::plain("有序项")])
+            matches!(parsed, RawBlock::OrderedList { ref items } if items == &vec![ListItem { indent: 0, text: RichText::plain("有序项") }])
         );
+    }
+
+    #[test]
+    fn flatten_nested_ordered_list_preserves_child_indent() {
+        let blocks_by_id = HashMap::from([
+            (
+                "outer".to_string(),
+                json!({
+                    "block_type": 13,
+                    "ordered": {
+                        "elements": [{ "text_run": { "content": "外层" } }]
+                    },
+                    "children": ["inner"]
+                }),
+            ),
+            (
+                "inner".to_string(),
+                json!({
+                    "block_type": 13,
+                    "ordered": {
+                        "elements": [{ "text_run": { "content": "内层" } }]
+                    }
+                }),
+            ),
+        ]);
+
+        let mut fetch_block = |block_id: &str| {
+            blocks_by_id
+                .get(block_id)
+                .cloned()
+                .ok_or_else(|| McpError::InvalidResponse(format!("missing block `{block_id}`")))
+        };
+        let mut visited = HashSet::new();
+        let mut blocks = Vec::new();
+
+        flatten_block_tree(
+            &["outer".to_string()],
+            &mut fetch_block,
+            &mut visited,
+            &mut blocks,
+            0,
+        )
+        .expect("flatten should succeed");
+
+        let merged = merge_consecutive_list_blocks(blocks);
+        assert_eq!(merged.len(), 1);
+        match &merged[0] {
+            RawBlock::OrderedList { items } => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0].indent, 0);
+                assert_eq!(items[0].text, RichText::plain("外层"));
+                assert_eq!(items[1].indent, 1);
+                assert_eq!(items[1].text, RichText::plain("内层"));
+            }
+            _ => panic!("expected single OrderedList"),
+        }
     }
 
     #[test]
@@ -1582,7 +1671,7 @@ mod tests {
                 "elements": [{ "text_run": { "content": "print('hello')" } }]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("code block should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("code block should parse");
         assert!(
             matches!(parsed, RawBlock::CodeBlock { ref language, ref code }
                 if language == "python" && code == "print('hello')")
@@ -1597,7 +1686,7 @@ mod tests {
                 "elements": [{ "text_run": { "content": "some code" } }]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("code block without language should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("code block without language should parse");
         assert!(
             matches!(parsed, RawBlock::CodeBlock { ref language, ref code }
                 if language.is_empty() && code == "some code")
@@ -1612,7 +1701,7 @@ mod tests {
                 "elements": [{ "text_run": { "content": "引用内容" } }]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("quote block should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("quote block should parse");
         assert!(
             matches!(parsed, RawBlock::Quote { ref text } if text == &RichText::plain("引用内容"))
         );
@@ -1635,7 +1724,7 @@ mod tests {
                 ]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("table block should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("table block should parse");
         assert!(matches!(parsed, RawBlock::Table { ref rows } if rows.len() == 2));
         if let RawBlock::Table { rows } = parsed {
             assert_eq!(rows[0], vec![RichText::plain("Header 1"), RichText::plain("Header 2")]);
@@ -1649,7 +1738,7 @@ mod tests {
             "block_type": 22,
             "divider": {}
         });
-        let parsed = parse_block_from_json(&block).expect("divider should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("divider should parse");
         assert!(matches!(parsed, RawBlock::Divider));
     }
 
@@ -1662,7 +1751,7 @@ mod tests {
                 "elements": [{ "text_run": { "content": "待办事项" } }]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("todo block should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("todo block should parse");
         assert!(
             matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(false, RichText::plain("待办事项"))])
         );
@@ -1677,7 +1766,7 @@ mod tests {
                 "elements": [{ "text_run": { "content": "已完成事项" } }]
             }
         });
-        let parsed = parse_block_from_json(&block).expect("checked todo block should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("checked todo block should parse");
         assert!(
             matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(true, RichText::plain("已完成事项"))])
         );
@@ -1689,7 +1778,7 @@ mod tests {
             "block_type": 27,
             "image": { "token": "img-type-27" }
         });
-        let parsed = parse_block_from_json(&block).expect("image type 27 should parse");
+        let parsed = parse_block_from_json(&block, 0).expect("image type 27 should parse");
         assert!(matches!(
             parsed,
             RawBlock::Image { ref media_id, .. } if media_id == "img-type-27"

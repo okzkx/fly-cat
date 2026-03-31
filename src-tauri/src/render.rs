@@ -1,5 +1,7 @@
 use crate::mcp::{ImageProvider, ImageResource, McpError};
-use crate::model::{CanonicalBlock, CanonicalDocument, RichSegment, RichText, SyncSourceDocument};
+use crate::model::{
+    CanonicalBlock, CanonicalDocument, ListItem, RichSegment, RichText, SyncSourceDocument,
+};
 use std::path::{Path, PathBuf};
 
 pub struct RenderedDocument {
@@ -100,6 +102,36 @@ fn render_rich_text(rich: &RichText) -> String {
     rich.segments.iter().map(render_segment).collect()
 }
 
+const LIST_INDENT_SPACES_PER_LEVEL: usize = 4;
+
+fn markdown_ordered_list_lines(items: &[ListItem]) -> Vec<String> {
+    let mut counts: Vec<u32> = Vec::new();
+    let mut lines = Vec::with_capacity(items.len());
+    for item in items {
+        let d = item.indent as usize;
+        if counts.len() <= d {
+            counts.resize(d + 1, 0);
+        } else {
+            counts.truncate(d + 1);
+        }
+        counts[d] += 1;
+        let n = counts[d];
+        let pad = " ".repeat(d * LIST_INDENT_SPACES_PER_LEVEL);
+        lines.push(format!("{pad}{n}. {}", render_rich_text(&item.text)));
+    }
+    lines
+}
+
+fn markdown_bullet_list_lines(items: &[ListItem]) -> Vec<String> {
+    items
+        .iter()
+        .map(|item| {
+            let pad = " ".repeat(item.indent as usize * LIST_INDENT_SPACES_PER_LEVEL);
+            format!("{pad}- {}", render_rich_text(&item.text))
+        })
+        .collect()
+}
+
 pub fn render_markdown(
     document: &CanonicalDocument,
     markdown_dir: &Path,
@@ -142,14 +174,14 @@ pub fn render_markdown(
                 lines.push(String::new());
             }
             CanonicalBlock::OrderedList { items } => {
-                for (i, item) in items.iter().enumerate() {
-                    lines.push(format!("{}. {}", i + 1, render_rich_text(item)));
+                for line in markdown_ordered_list_lines(items) {
+                    lines.push(line);
                 }
                 lines.push(String::new());
             }
             CanonicalBlock::BulletList { items } => {
-                for item in items {
-                    lines.push(format!("- {}", render_rich_text(item)));
+                for line in markdown_bullet_list_lines(items) {
+                    lines.push(line);
                 }
                 lines.push(String::new());
             }
@@ -259,7 +291,7 @@ fn relative_path_from(base: &Path, target: &Path) -> String {
 mod tests {
     use super::*;
     use crate::mcp::FixtureMcpClient;
-    use crate::model::{CanonicalBlock, CanonicalDocument, SyncSourceDocument};
+    use crate::model::{CanonicalBlock, CanonicalDocument, ListItem, SyncSourceDocument};
     use std::path::PathBuf;
 
     #[test]
@@ -329,9 +361,18 @@ mod tests {
                 },
                 CanonicalBlock::OrderedList {
                     items: vec![
-                        "第一步".into(),
-                        "第二步".into(),
-                        "第三步".into(),
+                        ListItem {
+                            indent: 0,
+                            text: "第一步".into(),
+                        },
+                        ListItem {
+                            indent: 0,
+                            text: "第二步".into(),
+                        },
+                        ListItem {
+                            indent: 0,
+                            text: "第三步".into(),
+                        },
                     ],
                 },
             ],
@@ -352,13 +393,65 @@ mod tests {
     }
 
     #[test]
+    fn renders_nested_ordered_list_with_indent_and_per_depth_numbering() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "嵌套有序列表".into(),
+            blocks: vec![CanonicalBlock::OrderedList {
+                items: vec![
+                    ListItem {
+                        indent: 0,
+                        text: "一级甲".into(),
+                    },
+                    ListItem {
+                        indent: 1,
+                        text: "二级子项".into(),
+                    },
+                    ListItem {
+                        indent: 1,
+                        text: "二级子项二".into(),
+                    },
+                    ListItem {
+                        indent: 0,
+                        text: "一级乙".into(),
+                    },
+                ],
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("1. 一级甲"));
+        assert!(rendered.markdown.contains("    1. 二级子项"));
+        assert!(rendered.markdown.contains("    2. 二级子项二"));
+        assert!(rendered.markdown.contains("2. 一级乙"));
+    }
+
+    #[test]
     fn renders_bullet_list_with_dashes() {
         let document = CanonicalDocument {
             document_id: "doc-test".into(),
             space_id: "kb-test".into(),
             title: "无序列表测试".into(),
             blocks: vec![CanonicalBlock::BulletList {
-                items: vec!["苹果".into(), "香蕉".into()],
+                items: vec![
+                    ListItem {
+                        indent: 0,
+                        text: "苹果".into(),
+                    },
+                    ListItem {
+                        indent: 0,
+                        text: "香蕉".into(),
+                    },
+                ],
             }],
         };
 
