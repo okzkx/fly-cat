@@ -160,6 +160,9 @@ pub struct KnowledgeBaseNode {
     pub document_id: Option<String>,
     #[serde(default)]
     pub path_segments: Vec<String>,
+    /// Revision from wiki child-node list (fallback remote display before freshness).
+    #[serde(default)]
+    pub wiki_list_version: String,
     pub has_children: bool,
     pub is_expandable: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -779,6 +782,7 @@ fn clone_collapsed_nodes(nodes: &[KnowledgeBaseNode]) -> Vec<KnowledgeBaseNode> 
             node_token: node.node_token.clone(),
             document_id: node.document_id.clone(),
             path_segments: node.path_segments.clone(),
+            wiki_list_version: node.wiki_list_version.clone(),
             has_children: node.has_children,
             is_expandable: node.is_expandable,
             children: vec![],
@@ -845,6 +849,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
             node_token: "eng-guides".into(),
             document_id: None,
             path_segments: vec!["研发规范".into()],
+            wiki_list_version: String::new(),
             has_children: true,
             is_expandable: true,
             children: vec![
@@ -858,6 +863,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     node_token: "node-doc-eng-architecture".into(),
                     document_id: Some("doc-eng-architecture".into()),
                     path_segments: vec!["研发规范".into(), "研发架构设计".into()],
+                    wiki_list_version: "v1".into(),
                     has_children: false,
                     is_expandable: false,
                     children: vec![],
@@ -872,6 +878,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     node_token: "node-doc-eng-api".into(),
                     document_id: Some("doc-eng-api".into()),
                     path_segments: vec!["研发规范".into(), "研发API概览".into()],
+                    wiki_list_version: "v1".into(),
                     has_children: false,
                     is_expandable: false,
                     children: vec![],
@@ -888,6 +895,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
             node_token: "product-library".into(),
             document_id: None,
             path_segments: vec!["方案库".into()],
+            wiki_list_version: String::new(),
             has_children: true,
             is_expandable: true,
             children: vec![
@@ -901,6 +909,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     node_token: "node-doc-product-overview".into(),
                     document_id: Some("doc-product-overview".into()),
                     path_segments: vec!["方案库".into(), "Product Overview".into()],
+                    wiki_list_version: "v1".into(),
                     has_children: false,
                     is_expandable: false,
                     children: vec![],
@@ -915,6 +924,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     node_token: "node-doc-product-roadmap".into(),
                     document_id: Some("doc-product-roadmap".into()),
                     path_segments: vec!["方案库".into(), "产品方案总览".into()],
+                    wiki_list_version: "v1".into(),
                     has_children: true,
                     is_expandable: true,
                     children: vec![
@@ -937,6 +947,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                                 "产品方案总览".into(),
                                 "2026 H1 路线图".into(),
                             ],
+                            wiki_list_version: "v1".into(),
                             has_children: false,
                             is_expandable: false,
                             children: vec![],
@@ -959,6 +970,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                                 "产品方案总览".into(),
                                 "需求池".into(),
                             ],
+                            wiki_list_version: "v1".into(),
                             has_children: false,
                             is_expandable: false,
                             children: vec![],
@@ -977,6 +989,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
             node_token: "node-doc-ops-playbook".into(),
             document_id: Some("doc-ops-playbook".into()),
             path_segments: vec!["运维值班手册".into()],
+            wiki_list_version: "v1".into(),
             has_children: false,
             is_expandable: false,
             children: vec![],
@@ -1924,6 +1937,7 @@ fn build_tree_nodes_from_openapi(
             document_id: matches!(node.obj_type.as_str(), "docx" | "sheet" | "bitable")
                 .then_some(node.obj_token.clone()),
             path_segments,
+            wiki_list_version: node.version.clone(),
             has_children: node.has_child,
             is_expandable,
             children: vec![],
@@ -2671,6 +2685,7 @@ pub fn get_document_sync_statuses(
             crate::model::DocumentSyncStatusEntry {
                 status,
                 last_synced_at: record.last_synced_at,
+                local_feishu_version: record.version.clone(),
             },
         );
     }
