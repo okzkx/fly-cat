@@ -35,3 +35,4 @@
 - [2026-03-31 18:26] 知识库页面每个文档后加一个刷新符号按钮：可以重新同步该文档 — 知识库树中文档/多维表格行新增“重新同步”按钮，单篇清理本地记录后创建并启动仅含该 scope 的同步任务。— 🐱 回环猫（界面魔法师·暹罗猫）
 - [2026-03-31 18:35] 排版还有一点小问题，有序列表以及二级有序列表的缩进没有做。二级列表的和一级列表排在一列了 — 修复同步 Markdown 中有序/无序列表嵌套：块树深度写入 `ListItem.indent`，渲染时逐级缩进且子有序列表独立编号；规格已归档 `2026-03-31-fix-nested-list-indent`。— 🐱 缩进猫（文档锻造师·沙特尔猫）
 - [2026-03-31] 修复表格同步 export_tasks missing ticket — 根因：飞书导出任务 OpenAPI 响应需解析 `data.ticket` 与 `data.result`，原实现错误读取根级字段导致误报缺少 ticket。已补充导出任务信封解析、非零 `code` 错误透传与 5 项相关测试；OpenSpec 已归档 `2026-03-31-fix-export-task-api-envelope`。经 opencat-task propose/apply/archive/merge/cleanup 完成。— 🐱 票据猫（接口锻造师·俄罗斯蓝猫）
+- [2026-03-31] 修复：知识库打勾后无法取消 — 父级 scope 仅写入父 key、子节点因覆盖禁用未单独入 checked 集时，三态判断误判为 `mixed`，导致无法进入取消分支。已在 `HomePage` 的勾选切换逻辑中把“缺失子 key 仅因覆盖禁用”纠正为 `all-checked`；OpenSpec 已归档 `2026-03-31-fix-knowledge-base-checkbox-uncheck`，`npm test` 82 项通过。— 🐱 勾勾猫（交互设计师·美国短毛猫）
