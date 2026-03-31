@@ -91,6 +91,32 @@ fn extract_openapi_error(value: &Value, context: &str) -> Option<McpError> {
     )))
 }
 
+/// Parse ticket from `POST /drive/v1/export_tasks` body per Feishu Open Platform envelope (`data.ticket`).
+fn parse_export_task_create_response(value: &Value) -> Result<String, McpError> {
+    if let Some(err) = extract_openapi_error(value, "创建导出任务") {
+        return Err(err);
+    }
+    value
+        .get("data")
+        .and_then(|d| d.get("ticket"))
+        .and_then(|v| v.as_str())
+        .or_else(|| value.get("ticket").and_then(|v| v.as_str()))
+        .map(|s| s.to_string())
+        .ok_or_else(|| McpError::InvalidResponse("export_tasks missing ticket".into()))
+}
+
+/// Parse `result` from `GET /drive/v1/export_tasks/{ticket}` body (`data.result` in official docs).
+fn parse_export_task_status_result(value: &Value) -> Result<&Value, McpError> {
+    if let Some(err) = extract_openapi_error(value, "查询导出任务状态") {
+        return Err(err);
+    }
+    value
+        .get("data")
+        .and_then(|d| d.get("result"))
+        .or_else(|| value.get("result"))
+        .ok_or_else(|| McpError::InvalidResponse("export task status missing result".into()))
+}
+
 fn status_error_from_response(response: ureq::Response, context: &str) -> McpError {
     let status = response.status();
     match response.into_json::<Value>() {
@@ -1274,11 +1300,7 @@ impl FeishuOpenApiClient {
             .into_json()
             .map_err(|err| McpError::InvalidResponse(format!("导出任务响应解析失败: {err}")))?;
 
-        let ticket = value
-            .get("ticket")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| McpError::InvalidResponse("export_tasks missing ticket".into()))?
-            .to_string();
+        let ticket = parse_export_task_create_response(&value)?;
 
         Ok(ExportTaskResponse { ticket })
     }
@@ -1298,9 +1320,7 @@ impl FeishuOpenApiClient {
             "查询导出任务状态",
         )?;
 
-        let result = value
-            .get("result")
-            .ok_or_else(|| McpError::InvalidResponse("export task status missing result".into()))?;
+        let result = parse_export_task_status_result(&value)?;
         let job_status = result
             .get("job_status")
             .and_then(|v| v.as_i64())
@@ -1510,6 +1530,63 @@ mod tests {
 
         assert!(error.to_string().contains("docx:document"));
         assert!(error.to_string().contains("Access denied"));
+    }
+
+    #[test]
+    fn parses_export_task_create_envelope_with_data_ticket() {
+        let body = json!({
+            "code": 0,
+            "msg": "success",
+            "data": { "ticket": "6933093124755423251" }
+        });
+        let ticket = parse_export_task_create_response(&body).expect("ticket");
+        assert_eq!(ticket, "6933093124755423251");
+    }
+
+    #[test]
+    fn parses_export_task_create_root_ticket_fallback() {
+        let body = json!({ "code": 0, "msg": "ok", "ticket": "legacy-root" });
+        let ticket = parse_export_task_create_response(&body).expect("ticket");
+        assert_eq!(ticket, "legacy-root");
+    }
+
+    #[test]
+    fn export_task_create_nonzero_code_is_transport_error() {
+        let body = json!({ "code": 1069904, "msg": "invalid param" });
+        let err = parse_export_task_create_response(&body).expect_err("expected api error");
+        assert!(matches!(err, McpError::Transport(_)));
+        assert!(err.to_string().contains("1069904"));
+    }
+
+    #[test]
+    fn parses_export_task_status_envelope_with_data_result() {
+        let body = json!({
+            "code": 0,
+            "msg": "success",
+            "data": {
+                "result": {
+                    "job_status": 0,
+                    "file_token": "boxcnxe5OdjlAkNgSNdsJvabcef"
+                }
+            }
+        });
+        let result = parse_export_task_status_result(&body).expect("result");
+        assert_eq!(result["job_status"], 0);
+        assert_eq!(
+            result["file_token"].as_str(),
+            Some("boxcnxe5OdjlAkNgSNdsJvabcef")
+        );
+    }
+
+    #[test]
+    fn parses_export_task_status_root_result_fallback() {
+        let body = json!({
+            "code": 0,
+            "msg": "ok",
+            "result": { "job_status": 2, "file_token": "" }
+        });
+        let result = parse_export_task_status_result(&body).expect("result");
+        assert_eq!(result["job_status"], 2);
     }
 
     #[test]
