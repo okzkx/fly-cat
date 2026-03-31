@@ -10,7 +10,6 @@ import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getEffectiveSelectedSources } from "@/utils/syncSelection";
-import { shouldSkipTaskCreationAfterCleanup } from "@/utils/syncStart";
 import {
   createSyncTask,
   getAppBootstrap,
@@ -347,20 +346,7 @@ export default function App(): React.JSX.Element {
                 }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
-                onCreateTask={async (uncheckedSyncedDocumentIds: string[]) => {
-                  // Delete unchecked synced documents before creating a new sync task
-                  if (uncheckedSyncedDocumentIds.length > 0 && syncTarget) {
-                    await removeSyncedDocuments(syncTarget, uncheckedSyncedDocumentIds);
-                    // Refresh sync statuses after cleanup
-                    const refreshedStatuses = await getDocumentSyncStatuses(syncTarget);
-                    setDocumentSyncStatuses(refreshedStatuses);
-                  }
-                  if (shouldSkipTaskCreationAfterCleanup(uncheckedSyncedDocumentIds, selectedSources)) {
-                    return {
-                      cleanupOnly: true,
-                      message: `已清理 ${uncheckedSyncedDocumentIds.length} 个取消勾选的已同步文档`
-                    };
-                  }
+                onCreateTask={async () => {
                   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
                   if (effectiveSelectedSources.length === 0) {
                     return null;
@@ -372,6 +358,13 @@ export default function App(): React.JSX.Element {
                   setTasks(await getSyncTasks());
                   startSyncTask(task.id);
                   return { task };
+                }}
+                onBatchDeleteCheckedSyncedDocuments={async (documentIds: string[]) => {
+                  if (!syncTarget || documentIds.length === 0) {
+                    return;
+                  }
+                  await removeSyncedDocuments(syncTarget, documentIds);
+                  setDocumentSyncStatuses(await getDocumentSyncStatuses(syncTarget));
                 }}
                 onResyncDocumentScope={async (scope) => {
                   if (!syncTarget || !connectionValidation?.usable) {

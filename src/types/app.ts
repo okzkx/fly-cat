@@ -111,7 +111,8 @@ export interface HomePageProps {
   onLoadTreeChildren: (spaceId: string, parentNodeToken?: string) => Promise<void>;
   onOpenTasks: () => void;
   activeTaskSummary: string;
-  onCreateTask: (uncheckedSyncedDocumentIds: string[]) => Promise<HomeSyncResult | null>;
+  onCreateTask: () => Promise<HomeSyncResult | null>;
+  onBatchDeleteCheckedSyncedDocuments: (documentIds: string[]) => Promise<void>;
   onResyncDocumentScope: (scope: SyncScope) => Promise<void>;
 }
 
