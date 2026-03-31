@@ -6,7 +6,7 @@ mod storage;
 mod sync;
 
 use commands::{
-    begin_user_authorization, check_document_freshness, clear_freshness_metadata,
+    begin_user_authorization, check_document_freshness, clear_all_sync_tasks, clear_freshness_metadata,
     complete_user_authorization, create_sync_task, delete_sync_task, get_app_bootstrap,
     get_document_sync_statuses, get_runtime_info, get_synced_document_ids, list_space_source_tree,
     list_sync_tasks, load_freshness_metadata, logout_user, open_workspace_folder,
@@ -37,6 +37,7 @@ pub fn run() {
             retry_sync_task,
             resume_sync_tasks,
             delete_sync_task,
+            clear_all_sync_tasks,
             remove_synced_documents,
             check_document_freshness,
             load_freshness_metadata,

@@ -1,5 +1,6 @@
 import {
   ArrowLeftOutlined,
+  ClearOutlined,
   DeleteOutlined,
   PlayCircleOutlined,
   ReloadOutlined
@@ -9,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { SyncTask, TaskListPageProps } from "@/types/app";
 import {
   TASK_EVENTS,
+  clearAllSyncTasks,
   deleteSyncTask,
   getSyncTasks,
   initializeTaskEventBridge,
@@ -123,13 +125,15 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
   const { message } = App.useApp();
   const [tasks, setTasks] = useState<SyncTask[]>(initialTasks ?? []);
 
-  const runTaskAction = async (action: () => Promise<unknown>): Promise<void> => {
+  const runTaskAction = async (action: () => Promise<unknown>): Promise<boolean> => {
     try {
       await action();
       setTasks(await getSyncTasks());
+      return true;
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
       message.error(messageText || "任务操作失败，请重新登录后重试");
+      return false;
     }
   };
 
@@ -250,9 +254,29 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
       <Card
         title="飞猫助手任务列表"
         extra={
-          <Button icon={<ArrowLeftOutlined />} onClick={onGoBack}>
-            返回首页
-          </Button>
+          <Space>
+            <Popconfirm
+              title="确定清空所有同步任务吗？"
+              description="仅移除任务记录，不会删除已同步到本地的文件。"
+              disabled={tasks.length === 0}
+              onConfirm={() =>
+                void runTaskAction(async () => {
+                  await clearAllSyncTasks();
+                }).then((ok) => {
+                  if (ok) {
+                    message.success("已清空所有同步任务");
+                  }
+                })
+              }
+            >
+              <Button danger icon={<ClearOutlined />} disabled={tasks.length === 0}>
+                清空所有任务
+              </Button>
+            </Popconfirm>
+            <Button icon={<ArrowLeftOutlined />} onClick={onGoBack}>
+              返回首页
+            </Button>
+          </Space>
         }
       >
         <Table

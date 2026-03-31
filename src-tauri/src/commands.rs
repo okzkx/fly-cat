@@ -2895,6 +2895,20 @@ pub fn delete_sync_task(
 }
 
 #[tauri::command]
+pub fn clear_all_sync_tasks(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    with_tasks(&app, state.clone(), |tasks| {
+        tasks.clear();
+        Ok(())
+    })?;
+    let mut running = state
+        .running_task_ids
+        .lock()
+        .map_err(|err| err.to_string())?;
+    running.clear();
+    Ok(())
+}
+
+#[tauri::command]
 pub fn retry_sync_task(
     task_id: String,
     app: AppHandle,

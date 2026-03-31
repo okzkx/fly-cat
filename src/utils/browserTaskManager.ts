@@ -521,3 +521,11 @@ export function deleteSyncTask(taskId: string): void {
   const tasks = getSyncTasks().filter((task) => task.id !== taskId);
   saveTasks(tasks);
 }
+
+export function clearAllSyncTasks(): void {
+  for (const timer of runningTimers.values()) {
+    window.clearInterval(timer);
+  }
+  runningTimers.clear();
+  saveTasks([]);
+}
