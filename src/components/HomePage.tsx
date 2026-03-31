@@ -17,7 +17,13 @@ import type { HomePageProps } from "@/types/app";
 import type { DocumentFreshnessResult, DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getHomePageEmptyState } from "@/utils/connectionValidation";
 import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
-import { buildScopeFromNode, collectCoveredDescendantKeys, computeCascadedCheckedKeys, computeTriState } from "@/utils/treeSelection";
+import {
+  buildScopeFromNode,
+  collectCoveredDescendantKeys,
+  computeCascadedCheckedKeys,
+  computeTriState,
+  sourceHasCoveredDescendants
+} from "@/utils/treeSelection";
 import { checkDocumentFreshness, loadFreshnessMetadata, openDocumentInBrowser, openWorkspaceFolder, saveFreshnessMetadata } from "@/utils/tauriRuntime";
 
 const { Text } = Typography;
@@ -481,6 +487,24 @@ function findNodeByKey(treeData: ScopeTreeDataNode[], targetKey: string): ScopeT
   return null;
 }
 
+/** Descendant keys missing from the set are OK for tri-state "all checked" only if each is disabled (covered by selection). */
+function missingCheckedDescendantsAreCoverageOnly(
+  treeData: ScopeTreeDataNode[],
+  descendantKeys: string[],
+  allCheckedKeys: Set<string>
+): boolean {
+  for (const dk of descendantKeys) {
+    if (allCheckedKeys.has(dk)) {
+      continue;
+    }
+    const dn = findNodeByKey(treeData, dk);
+    if (dn && !dn.disableCheckbox) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default function HomePage({
   spaces,
   selectedScope,
@@ -711,7 +735,16 @@ export default function HomePage({
 
     const nodeKey = String(node.key);
     const descendantKeys = collectTreeDataDescendantKeys(treeData, nodeKey);
-    const currentState = computeTriState(allCheckedKeys, nodeKey, descendantKeys);
+    let currentState = computeTriState(allCheckedKeys, nodeKey, descendantKeys);
+    if (
+      node.scopeValue &&
+      sourceHasCoveredDescendants(node.scopeValue) &&
+      allCheckedKeys.has(nodeKey) &&
+      currentState === "mixed" &&
+      missingCheckedDescendantsAreCoverageOnly(treeData, descendantKeys, allCheckedKeys)
+    ) {
+      currentState = "all-checked";
+    }
     const newCheckedKeys = computeCascadedCheckedKeys(allCheckedKeys, nodeKey, descendantKeys, currentState);
 
     // Determine which keys were added and removed
