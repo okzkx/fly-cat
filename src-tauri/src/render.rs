@@ -1,5 +1,5 @@
 use crate::mcp::{ImageProvider, ImageResource, McpError};
-use crate::model::{CanonicalBlock, CanonicalDocument, SyncSourceDocument};
+use crate::model::{CanonicalBlock, CanonicalDocument, RichSegment, RichText, SyncSourceDocument};
 use std::path::{Path, PathBuf};
 
 pub struct RenderedDocument {
@@ -74,6 +74,32 @@ pub fn stable_hash(input: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
+/// Render a single styled segment as Markdown inline syntax.
+fn render_segment(segment: &RichSegment) -> String {
+    let mut text = segment.content.clone();
+
+    if let Some(ref url) = segment.link {
+        text = format!("[{}]({})", text, url);
+    }
+    if segment.strikethrough {
+        text = format!("~~{text}~~");
+    }
+    if segment.bold && segment.italic {
+        text = format!("***{text}***");
+    } else if segment.bold {
+        text = format!("**{text}**");
+    } else if segment.italic {
+        text = format!("*{text}*");
+    }
+
+    text
+}
+
+/// Render a RichText value as a Markdown inline string.
+fn render_rich_text(rich: &RichText) -> String {
+    rich.segments.iter().map(render_segment).collect()
+}
+
 pub fn render_markdown(
     document: &CanonicalDocument,
     markdown_dir: &Path,
@@ -88,11 +114,11 @@ pub fn render_markdown(
         match block {
             CanonicalBlock::Heading { level, text } => {
                 let heading_level = (*level).clamp(1, 6);
-                lines.push(format!("{} {}", "#".repeat(heading_level.into()), text));
+                lines.push(format!("{} {}", "#".repeat(heading_level.into()), render_rich_text(text)));
                 lines.push(String::new());
             }
             CanonicalBlock::Paragraph { text } => {
-                lines.push(text.clone());
+                lines.push(render_rich_text(text));
                 lines.push(String::new());
             }
             CanonicalBlock::Image { media_id, alt } => {
@@ -117,13 +143,13 @@ pub fn render_markdown(
             }
             CanonicalBlock::OrderedList { items } => {
                 for (i, item) in items.iter().enumerate() {
-                    lines.push(format!("{}. {}", i + 1, item));
+                    lines.push(format!("{}. {}", i + 1, render_rich_text(item)));
                 }
                 lines.push(String::new());
             }
             CanonicalBlock::BulletList { items } => {
                 for item in items {
-                    lines.push(format!("- {}", item));
+                    lines.push(format!("- {}", render_rich_text(item)));
                 }
                 lines.push(String::new());
             }
@@ -134,7 +160,8 @@ pub fn render_markdown(
                 lines.push(String::new());
             }
             CanonicalBlock::Quote { text } => {
-                for line in text.lines() {
+                let rendered = render_rich_text(text);
+                for line in rendered.lines() {
                     lines.push(format!("> {}", line));
                 }
                 lines.push(String::new());
@@ -144,9 +171,11 @@ pub fn render_markdown(
                     // First row is the header
                     let header = &rows[0];
                     let col_count = header.len();
+                    let header_rendered: Vec<String> =
+                        header.iter().map(render_rich_text).collect();
                     lines.push(format!(
                         "| {} |",
-                        header.join(" | ")
+                        header_rendered.join(" | ")
                     ));
                     lines.push(format!(
                         "| {} |",
@@ -157,10 +186,11 @@ pub fn render_markdown(
                     ));
                     // Remaining rows are body
                     for row in rows.iter().skip(1) {
+                        let rendered_cells: Vec<String> =
+                            row.iter().map(render_rich_text).collect();
                         // Pad row to col_count if needed
-                        let padded: Vec<String> = row
-                            .iter()
-                            .cloned()
+                        let padded: Vec<String> = rendered_cells
+                            .into_iter()
                             .chain(std::iter::repeat(String::new()))
                             .take(col_count)
                             .collect();
@@ -176,7 +206,7 @@ pub fn render_markdown(
             CanonicalBlock::Todo { items } => {
                 for (done, text) in items {
                     let check = if *done { "x" } else { " " };
-                    lines.push(format!("- [{}] {}", check, text));
+                    lines.push(format!("- [{}] {}", check, render_rich_text(text)));
                 }
                 lines.push(String::new());
             }
@@ -487,8 +517,8 @@ mod tests {
             title: "待办列表测试".into(),
             blocks: vec![CanonicalBlock::Todo {
                 items: vec![
-                    (false, "待完成任务".into()),
-                    (true, "已完成任务".into()),
+                    (false, RichText::plain("待完成任务")),
+                    (true, RichText::plain("已完成任务")),
                 ],
             }],
         };
@@ -504,5 +534,209 @@ mod tests {
 
         assert!(rendered.markdown.contains("- [ ] 待完成任务"));
         assert!(rendered.markdown.contains("- [x] 已完成任务"));
+    }
+
+    // --- Rich text inline style rendering tests ---
+
+    #[test]
+    fn renders_bold_text() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "粗体测试".into(),
+            blocks: vec![CanonicalBlock::Paragraph {
+                text: RichText {
+                    segments: vec![RichSegment {
+                        content: "bold text".into(),
+                        bold: true,
+                        italic: false,
+                        strikethrough: false,
+                        link: None,
+                    }],
+                },
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("**bold text**"));
+    }
+
+    #[test]
+    fn renders_italic_text() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "斜体测试".into(),
+            blocks: vec![CanonicalBlock::Paragraph {
+                text: RichText {
+                    segments: vec![RichSegment {
+                        content: "italic text".into(),
+                        bold: false,
+                        italic: true,
+                        strikethrough: false,
+                        link: None,
+                    }],
+                },
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("*italic text*"));
+    }
+
+    #[test]
+    fn renders_strikethrough_text() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "删除线测试".into(),
+            blocks: vec![CanonicalBlock::Paragraph {
+                text: RichText {
+                    segments: vec![RichSegment {
+                        content: "deleted".into(),
+                        bold: false,
+                        italic: false,
+                        strikethrough: true,
+                        link: None,
+                    }],
+                },
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("~~deleted~~"));
+    }
+
+    #[test]
+    fn renders_link_text() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "链接测试".into(),
+            blocks: vec![CanonicalBlock::Paragraph {
+                text: RichText {
+                    segments: vec![RichSegment {
+                        content: "click here".into(),
+                        bold: false,
+                        italic: false,
+                        strikethrough: false,
+                        link: Some("https://example.com".into()),
+                    }],
+                },
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("[click here](https://example.com)"));
+    }
+
+    #[test]
+    fn renders_bold_italic_combined() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "组合样式".into(),
+            blocks: vec![CanonicalBlock::Paragraph {
+                text: RichText {
+                    segments: vec![RichSegment {
+                        content: "both".into(),
+                        bold: true,
+                        italic: true,
+                        strikethrough: false,
+                        link: None,
+                    }],
+                },
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("***both***"));
+    }
+
+    #[test]
+    fn renders_mixed_segments_in_paragraph() {
+        let document = CanonicalDocument {
+            document_id: "doc-test".into(),
+            space_id: "kb-test".into(),
+            title: "混合段落".into(),
+            blocks: vec![CanonicalBlock::Paragraph {
+                text: RichText {
+                    segments: vec![
+                        RichSegment {
+                            content: "normal ".into(),
+                            bold: false,
+                            italic: false,
+                            strikethrough: false,
+                            link: None,
+                        },
+                        RichSegment {
+                            content: "bold".into(),
+                            bold: true,
+                            italic: false,
+                            strikethrough: false,
+                            link: None,
+                        },
+                        RichSegment {
+                            content: " end".into(),
+                            bold: false,
+                            italic: false,
+                            strikethrough: false,
+                            link: None,
+                        },
+                    ],
+                },
+            }],
+        };
+
+        let rendered = render_markdown(
+            &document,
+            Path::new("out"),
+            Path::new("out"),
+            "_assets",
+            &FixtureMcpClient::new("test".into()),
+        )
+        .expect("render should succeed");
+
+        assert!(rendered.markdown.contains("normal **bold** end"));
     }
 }
