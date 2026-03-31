@@ -1985,7 +1985,7 @@ fn discover_documents_from_openapi(
 
             if kind == "document" {
                 let summary = client
-                    .fetch_document_summary(&node.obj_token)
+                    .fetch_document_summary_with_retry(&node.obj_token)
                     .map_err(|err| err.to_string())?;
                 documents.push(SyncSourceDocument {
                     document_id: node.obj_token.clone(),
@@ -2049,7 +2049,7 @@ fn discover_documents_from_openapi(
             .as_deref()
             .ok_or_else(|| "缺少文档标识，无法创建同步任务。".to_string())?;
         let summary = client
-            .fetch_document_summary(document_id)
+            .fetch_document_summary_with_retry(document_id)
             .map_err(|err| err.to_string())?;
         let mut documents = vec![SyncSourceDocument {
             document_id: document_id.to_string(),
