@@ -1,5 +1,67 @@
 use serde::{Deserialize, Serialize};
 
+/// A single styled segment of inline text.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RichSegment {
+    pub content: String,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub italic: bool,
+    #[serde(default)]
+    pub strikethrough: bool,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+/// Rich text composed of styled segments.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RichText {
+    pub segments: Vec<RichSegment>,
+}
+
+impl RichText {
+    /// Create a plain (unstyled) RichText from a string.
+    pub fn plain(content: impl Into<String>) -> Self {
+        Self {
+            segments: vec![RichSegment {
+                content: content.into(),
+                bold: false,
+                italic: false,
+                strikethrough: false,
+                link: None,
+            }],
+        }
+    }
+
+    /// Flatten to plain text without any styling.
+    pub fn to_plain_text(&self) -> String {
+        self.segments
+            .iter()
+            .map(|s| s.content.as_str())
+            .collect()
+    }
+
+    /// Check if the text is empty.
+    pub fn is_empty(&self) -> bool {
+        self.segments.iter().all(|s| s.content.is_empty())
+    }
+}
+
+impl From<&str> for RichText {
+    fn from(value: &str) -> Self {
+        RichText::plain(value)
+    }
+}
+
+impl From<String> for RichText {
+    fn from(value: String) -> Self {
+        RichText::plain(value)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncSourceDocument {
@@ -34,16 +96,16 @@ pub struct CanonicalDocument {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CanonicalBlock {
-    Heading { level: u8, text: String },
-    Paragraph { text: String },
+    Heading { level: u8, text: RichText },
+    Paragraph { text: RichText },
     Image { media_id: String, alt: String },
-    OrderedList { items: Vec<String> },
-    BulletList { items: Vec<String> },
+    OrderedList { items: Vec<RichText> },
+    BulletList { items: Vec<RichText> },
     CodeBlock { language: String, code: String },
-    Quote { text: String },
-    Table { rows: Vec<Vec<String>> },
+    Quote { text: RichText },
+    Table { rows: Vec<Vec<RichText>> },
     Divider,
-    Todo { items: Vec<(bool, String)> },
+    Todo { items: Vec<(bool, RichText)> },
     Unknown { raw_type: String },
 }
 

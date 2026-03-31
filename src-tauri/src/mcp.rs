@@ -1,3 +1,4 @@
+use crate::model::{RichSegment, RichText};
 use serde_json::{json, Value};
 use std::{collections::HashSet, fmt, io::Read, path::Path, thread, time::Duration};
 
@@ -26,16 +27,16 @@ pub struct RawDocument {
 
 #[derive(Clone, Debug)]
 pub enum RawBlock {
-    Heading { level: u8, text: String },
-    Paragraph { text: String },
+    Heading { level: u8, text: RichText },
+    Paragraph { text: RichText },
     Image { media_id: String, alt: String },
-    OrderedList { items: Vec<String> },
-    BulletList { items: Vec<String> },
+    OrderedList { items: Vec<RichText> },
+    BulletList { items: Vec<RichText> },
     CodeBlock { language: String, code: String },
-    Quote { text: String },
-    Table { rows: Vec<Vec<String>> },
+    Quote { text: RichText },
+    Table { rows: Vec<Vec<RichText>> },
     Divider,
-    Todo { items: Vec<(bool, String)> },
+    Todo { items: Vec<(bool, RichText)> },
 }
 
 #[derive(Clone, Debug)]
@@ -499,7 +500,7 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                 Some(RawBlock::OrderedList { items: vec![text] })
             }
         }
-        // T4: Code block (type 14)
+        // T4: Code block (type 14) — code content uses plain text (no inline styles)
         14 => {
             let code_block = block.get("code");
             let language = code_block
@@ -510,7 +511,7 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
             let code = code_block
                 .and_then(|cb| cb.get("elements"))
                 .and_then(|e| e.as_array())
-                .map(|elements| extract_text_from_elements(elements))
+                .map(|elements| extract_text_from_elements(elements).to_plain_text())
                 .unwrap_or_default();
             if code.is_empty() {
                 None
@@ -600,7 +601,7 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
                     alt: String::new(),
                 }),
                 None => Some(RawBlock::Paragraph {
-                    text: "[图片]".to_string(),
+                    text: "[图片]".into(),
                 }),
             }
         }
@@ -617,7 +618,7 @@ fn parse_block_from_json(block: &Value) -> Option<RawBlock> {
 }
 
 /// Extract text content from a block's text elements
-fn extract_text_from_block(block: &Value) -> String {
+fn extract_text_from_block(block: &Value) -> RichText {
     // Try different block types to find text elements
     let elements = block
         .get("text")
@@ -632,21 +633,48 @@ fn extract_text_from_block(block: &Value) -> String {
 
     match elements {
         Some(elems) => extract_text_from_elements(elems),
-        None => String::new(),
+        None => RichText::default(),
     }
 }
 
-/// Extract text from an array of text elements
-fn extract_text_from_elements(elements: &[Value]) -> String {
-    elements
+/// Extract rich text from an array of text elements, preserving inline styles.
+fn extract_text_from_elements(elements: &[Value]) -> RichText {
+    let segments: Vec<RichSegment> = elements
         .iter()
         .filter_map(|elem| {
-            elem.get("text_run")
-                .and_then(|tr| tr.get("content"))
-                .and_then(|c| c.as_str())
+            let text_run = elem.get("text_run")?;
+            let content = text_run.get("content")?.as_str()?.to_string();
+
+            let style = text_run.get("text_element_style");
+            let bold = style
+                .and_then(|s| s.get("bold"))
+                .and_then(|b| b.as_bool())
+                .unwrap_or(false);
+            let italic = style
+                .and_then(|s| s.get("italic"))
+                .and_then(|i| i.as_bool())
+                .unwrap_or(false);
+            let strikethrough = style
+                .and_then(|s| s.get("strikethrough"))
+                .and_then(|st| st.as_bool())
+                .unwrap_or(false);
+            let link = style
+                .and_then(|s| s.get("link"))
+                .and_then(|l| l.get("url"))
+                .and_then(|u| u.as_str())
+                .map(|u| u.to_string());
+
+            Some(RichSegment {
+                content,
+                bold,
+                italic,
+                strikethrough,
+                link,
+            })
         })
-        .collect::<Vec<_>>()
-        .join("")
+        .collect();
+
+    RichText { segments }
 }
 
 fn extract_block_children_ids(block: &Value) -> Vec<String> {
@@ -1373,7 +1401,7 @@ mod tests {
         });
         let parsed = parse_block_from_json(&block).expect("bullet list should parse");
         assert!(
-            matches!(parsed, RawBlock::BulletList { ref items } if items == &vec!["列表项".to_string()])
+            matches!(parsed, RawBlock::BulletList { ref items } if items == &vec![RichText::plain("列表项")])
         );
     }
 
@@ -1387,7 +1415,7 @@ mod tests {
         });
         let parsed = parse_block_from_json(&block).expect("ordered list should parse");
         assert!(
-            matches!(parsed, RawBlock::OrderedList { ref items } if items == &vec!["有序项".to_string()])
+            matches!(parsed, RawBlock::OrderedList { ref items } if items == &vec![RichText::plain("有序项")])
         );
     }
 
@@ -1432,7 +1460,7 @@ mod tests {
         });
         let parsed = parse_block_from_json(&block).expect("quote block should parse");
         assert!(
-            matches!(parsed, RawBlock::Quote { ref text } if text == "引用内容")
+            matches!(parsed, RawBlock::Quote { ref text } if text == &RichText::plain("引用内容"))
         );
     }
 
@@ -1456,8 +1484,8 @@ mod tests {
         let parsed = parse_block_from_json(&block).expect("table block should parse");
         assert!(matches!(parsed, RawBlock::Table { ref rows } if rows.len() == 2));
         if let RawBlock::Table { rows } = parsed {
-            assert_eq!(rows[0], vec!["Header 1".to_string(), "Header 2".to_string()]);
-            assert_eq!(rows[1], vec!["Cell 1".to_string(), "Cell 2".to_string()]);
+            assert_eq!(rows[0], vec![RichText::plain("Header 1"), RichText::plain("Header 2")]);
+            assert_eq!(rows[1], vec![RichText::plain("Cell 1"), RichText::plain("Cell 2")]);
         }
     }
 
@@ -1482,7 +1510,7 @@ mod tests {
         });
         let parsed = parse_block_from_json(&block).expect("todo block should parse");
         assert!(
-            matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(false, "待办事项".to_string())])
+            matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(false, RichText::plain("待办事项"))])
         );
     }
 
@@ -1497,7 +1525,7 @@ mod tests {
         });
         let parsed = parse_block_from_json(&block).expect("checked todo block should parse");
         assert!(
-            matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(true, "已完成事项".to_string())])
+            matches!(parsed, RawBlock::Todo { ref items } if items == &vec![(true, RichText::plain("已完成事项"))])
         );
     }
 
@@ -1512,5 +1540,104 @@ mod tests {
             parsed,
             RawBlock::Image { ref media_id, .. } if media_id == "img-type-27"
         ));
+    }
+
+    // --- Rich text inline style parsing tests ---
+
+    #[test]
+    fn extracts_plain_text_without_style() {
+        let elements = vec![json!({ "text_run": { "content": "hello" } })];
+        let rich = extract_text_from_elements(&elements);
+        assert_eq!(rich.segments.len(), 1);
+        assert_eq!(rich.segments[0].content, "hello");
+        assert!(!rich.segments[0].bold);
+        assert!(!rich.segments[0].italic);
+        assert!(!rich.segments[0].strikethrough);
+        assert!(rich.segments[0].link.is_none());
+    }
+
+    #[test]
+    fn extracts_bold_text() {
+        let elements = vec![json!({
+            "text_run": {
+                "content": "bold text",
+                "text_element_style": { "bold": true }
+            }
+        })];
+        let rich = extract_text_from_elements(&elements);
+        assert_eq!(rich.segments.len(), 1);
+        assert!(rich.segments[0].bold);
+        assert!(!rich.segments[0].italic);
+    }
+
+    #[test]
+    fn extracts_italic_text() {
+        let elements = vec![json!({
+            "text_run": {
+                "content": "italic text",
+                "text_element_style": { "italic": true }
+            }
+        })];
+        let rich = extract_text_from_elements(&elements);
+        assert!(rich.segments[0].italic);
+    }
+
+    #[test]
+    fn extracts_strikethrough_text() {
+        let elements = vec![json!({
+            "text_run": {
+                "content": "deleted",
+                "text_element_style": { "strikethrough": true }
+            }
+        })];
+        let rich = extract_text_from_elements(&elements);
+        assert!(rich.segments[0].strikethrough);
+    }
+
+    #[test]
+    fn extracts_link_with_url() {
+        let elements = vec![json!({
+            "text_run": {
+                "content": "click here",
+                "text_element_style": {
+                    "link": { "url": "https://example.com" }
+                }
+            }
+        })];
+        let rich = extract_text_from_elements(&elements);
+        assert_eq!(rich.segments[0].link.as_deref(), Some("https://example.com"));
+    }
+
+    #[test]
+    fn extracts_combined_styles() {
+        let elements = vec![json!({
+            "text_run": {
+                "content": "bold italic link",
+                "text_element_style": {
+                    "bold": true,
+                    "italic": true,
+                    "link": { "url": "https://example.com" }
+                }
+            }
+        })];
+        let rich = extract_text_from_elements(&elements);
+        assert!(rich.segments[0].bold);
+        assert!(rich.segments[0].italic);
+        assert_eq!(rich.segments[0].link.as_deref(), Some("https://example.com"));
+    }
+
+    #[test]
+    fn extracts_multiple_segments() {
+        let elements = vec![
+            json!({ "text_run": { "content": "normal " } }),
+            json!({ "text_run": { "content": "bold", "text_element_style": { "bold": true } } }),
+            json!({ "text_run": { "content": " end" } }),
+        ];
+        let rich = extract_text_from_elements(&elements);
+        assert_eq!(rich.segments.len(), 3);
+        assert!(!rich.segments[0].bold);
+        assert!(rich.segments[1].bold);
+        assert!(!rich.segments[2].bold);
+        assert_eq!(rich.to_plain_text(), "normal bold end");
     }
 }
