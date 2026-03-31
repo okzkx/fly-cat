@@ -112,6 +112,7 @@ export interface HomePageProps {
   onOpenTasks: () => void;
   activeTaskSummary: string;
   onCreateTask: (uncheckedSyncedDocumentIds: string[]) => Promise<HomeSyncResult | null>;
+  onResyncDocumentScope: (scope: SyncScope) => Promise<void>;
 }
 
 export interface TaskListPageProps {

@@ -373,6 +373,22 @@ export default function App(): React.JSX.Element {
                   startSyncTask(task.id);
                   return { task };
                 }}
+                onResyncDocumentScope={async (scope) => {
+                  if (!syncTarget || !connectionValidation?.usable) {
+                    return;
+                  }
+                  if (scope.documentId) {
+                    await removeSyncedDocuments(syncTarget, [scope.documentId]);
+                    setDocumentSyncStatuses(await getDocumentSyncStatuses(syncTarget));
+                  }
+                  const sources = normalizeSelectedSources([scope]);
+                  if (sources.length === 0) {
+                    return;
+                  }
+                  const task = await createSyncTask(sources, syncTarget);
+                  setTasks(await getSyncTasks());
+                  await startSyncTask(task.id);
+                }}
               />
             )}
 

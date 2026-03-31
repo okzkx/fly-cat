@@ -15,7 +15,8 @@ function mockSpawn(result: { stdout?: string; stderr?: string; code?: number; er
 
   const spawnImpl = (command: string, spawnArgs: string[], options: Record<string, unknown>) => {
     calls.push({ command, args: spawnArgs, options });
-    const emitter = new EventEmitter();
+    type MockChild = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+    const emitter = new EventEmitter() as MockChild;
 
     // Simulate stdout/stderr streams as separate emitters
     const stdoutStream = new EventEmitter();

@@ -6,6 +6,7 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
+  ReloadOutlined,
   SyncOutlined,
   TableOutlined
 } from "@ant-design/icons";
@@ -495,16 +496,19 @@ export default function HomePage({
   onLoadTreeChildren,
   onOpenTasks,
   activeTaskSummary,
-  onCreateTask
+  onCreateTask,
+  onResyncDocumentScope
 }: HomePageProps): React.JSX.Element {
   const { message } = App.useApp();
   const emptyState = getHomePageEmptyState(connectionValidation, spaces.length);
   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
   const selectionSummary = buildSelectionSummary(effectiveSelectedSources, selectedScope);
   const syncingIds = getSyncingDocumentIds(activeSyncTask);
+  const canRunSync = Boolean(syncRoot) && connectionValidation?.usable === true;
 
   const [uncheckedSyncedDocKeys, setUncheckedSyncedDocKeys] = useState<Set<string>>(new Set());
   const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
+  const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
 
   // Load freshness metadata when sync root changes
   useEffect(() => {
@@ -919,6 +923,43 @@ export default function HomePage({
                       syncStatus={documentSyncStatuses[treeNode.scopeValue?.documentId || ""]}
                       freshnessMap={freshnessMap}
                     />
+                    {(treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable") && treeNode.scopeValue && (() => {
+                      const scope = treeNode.scopeValue;
+                      const sk = scopeKey(scope);
+                      const docId = scope.documentId;
+                      const resyncDisabled =
+                        !canRunSync ||
+                        (docId !== undefined && docId !== "" && syncingIds.has(docId)) ||
+                        resyncingScopeKey === sk;
+                      return (
+                        <Tooltip title="重新同步">
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<ReloadOutlined style={{ fontSize: 12 }} />}
+                            disabled={resyncDisabled}
+                            loading={resyncingScopeKey === sk}
+                            aria-label="重新同步"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setResyncingScopeKey(sk);
+                              void (async () => {
+                                try {
+                                  await onResyncDocumentScope(scope);
+                                  message.success("已开始重新同步");
+                                } catch (err) {
+                                  console.error(err);
+                                  message.error("重新同步失败");
+                                } finally {
+                                  setResyncingScopeKey((current) => (current === sk ? null : current));
+                                }
+                              })();
+                            }}
+                            style={{ padding: "0 4px" }}
+                          />
+                        </Tooltip>
+                      );
+                    })()}
                     {(treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable") && treeNode.nodeToken && (
                       <Button
                         type="text"
