@@ -2512,22 +2512,33 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
 
         for (step, document) in queued_documents.iter().enumerate() {
             let step = (step + 1) as u32;
+            let is_export_only = matches!(
+                document.obj_type.trim().to_ascii_lowercase().as_str(),
+                "sheet" | "bitable"
+            );
             let result = {
                 // Try export task API first (fast path)
                 if let Some(ref config) = openapi_config {
                     match sync_document_via_export(document, &sync_root, config, &manifest) {
                         Ok(record) => Ok(record),
-                        Err(_) => {
-                            // Fallback: raw content + markdown rendering
-                            sync_document_content(
-                                document,
-                                &sync_root,
-                                &image_dir_name,
-                                &mcp_server_name,
-                                openapi_config.as_ref(),
-                                &manifest,
-                            )
-                            .map(|(_, record)| record)
+                        Err(export_err) => {
+                            // bitable/sheet documents can only be synced via export;
+                            // falling back to docx content path would always fail
+                            // with code 1770002 (not found).
+                            if is_export_only {
+                                Err(export_err)
+                            } else {
+                                // Fallback: raw content + markdown rendering
+                                sync_document_content(
+                                    document,
+                                    &sync_root,
+                                    &image_dir_name,
+                                    &mcp_server_name,
+                                    openapi_config.as_ref(),
+                                    &manifest,
+                                )
+                                .map(|(_, record)| record)
+                            }
                         }
                     }
                 } else {
@@ -3061,6 +3072,31 @@ pub async fn check_document_freshness(
                 .records
                 .iter()
                 .find(|r| r.document_id == *document_id);
+
+            // bitable/sheet documents are synced via the export task API
+            // and cannot be queried through the docx document summary API;
+            // treat them as "current" since we have no lightweight freshness
+            // check available for them.
+            let is_export_only = local_record
+                .map(|r| r.source_signature.starts_with("export:"))
+                .unwrap_or(false);
+
+            if is_export_only {
+                if let Some(record) = local_record {
+                    freshness_map.insert(
+                        document_id.clone(),
+                        crate::model::DocumentFreshnessResult {
+                            status: "current".to_string(),
+                            local_version: record.version.clone(),
+                            remote_version: record.version.clone(),
+                            local_update_time: record.update_time.clone(),
+                            remote_update_time: record.update_time.clone(),
+                            error: None,
+                        },
+                    );
+                }
+                continue;
+            }
 
             match client.fetch_document_summary(document_id) {
                 Ok(summary) => {
@@ -3611,5 +3647,42 @@ mod tests {
             Path::new("C:/tmp/sync-target"),
             &manifest
         ));
+    }
+
+    #[test]
+    fn bitable_sheet_obj_type_is_recognized_as_export_only() {
+        // bitable and sheet obj_types should NOT fall back to docx content path
+        let bitable = SyncSourceDocument {
+            document_id: "btbl001".into(),
+            space_id: "sp1".into(),
+            space_name: "KB".into(),
+            node_token: "nd1".into(),
+            title: "T".into(),
+            version: "v1".into(),
+            update_time: "u1".into(),
+            path_segments: vec![],
+            source_path: "KB/T".into(),
+            obj_type: "bitable".into(),
+        };
+        let sheet = SyncSourceDocument {
+            obj_type: "sheet".into(),
+            ..bitable.clone()
+        };
+        let docx = SyncSourceDocument {
+            obj_type: "docx".into(),
+            ..bitable.clone()
+        };
+
+        for (doc, expected) in [
+            (&bitable, true),
+            (&sheet, true),
+            (&docx, false),
+        ] {
+            let is_export_only = matches!(
+                doc.obj_type.trim().to_ascii_lowercase().as_str(),
+                "sheet" | "bitable"
+            );
+            assert_eq!(is_export_only, expected, "obj_type={}", doc.obj_type);
+        }
     }
 }
