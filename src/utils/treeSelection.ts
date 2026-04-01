@@ -230,6 +230,107 @@ export function computeCascadedCheckedKeys(
   return next;
 }
 
+function descendantContainsKey(node: KnowledgeBaseNode, key: string): boolean {
+  if (node.key === key) {
+    return true;
+  }
+  return node.children?.some((c) => descendantContainsKey(c, key)) ?? false;
+}
+
+/**
+ * Replace a covering selection by scopes for all loaded children under `parent`, minus the subtree rooted at `excludedKey`.
+ */
+export function scopesAfterRemovingExcluded(parent: KnowledgeBaseNode, excludedKey: string): SyncScope[] {
+  const out: SyncScope[] = [];
+  if (!parent.children?.length) {
+    return [];
+  }
+  for (const child of parent.children) {
+    if (child.key === excludedKey) {
+      continue;
+    }
+    if (descendantContainsKey(child, excludedKey)) {
+      out.push(...scopesAfterRemovingExcluded(child, excludedKey));
+    } else {
+      const cs = buildScopeFromNode(child);
+      if (cs) {
+        out.push(cs);
+      }
+    }
+  }
+  return out;
+}
+
+export function scopesForRootsExcludingKey(roots: KnowledgeBaseNode[], excludedKey: string): SyncScope[] {
+  const out: SyncScope[] = [];
+  for (const root of roots) {
+    if (root.key === excludedKey) {
+      continue;
+    }
+    if (descendantContainsKey(root, excludedKey)) {
+      out.push(...scopesAfterRemovingExcluded(root, excludedKey));
+    } else {
+      const cs = buildScopeFromNode(root);
+      if (cs) {
+        out.push(cs);
+      }
+    }
+  }
+  return normalizeSelectedSources(out);
+}
+
+function findNodeMatchingScope(nodes: KnowledgeBaseNode[], target: SyncScope): KnowledgeBaseNode | null {
+  for (const n of nodes) {
+    const s = buildScopeFromNode(n);
+    if (s && scopeKey(s) === scopeKey(target)) {
+      return n;
+    }
+    if (n.children?.length) {
+      const f = findNodeMatchingScope(n.children, target);
+      if (f) {
+        return f;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * When `excludedScope` is checked only because an ancestor covers it, replace that ancestor with explicit sibling scopes.
+ */
+export function trySubtractCoveredDescendant(
+  selectedSources: SyncScope[],
+  excludedScope: SyncScope,
+  excludedNodeKey: string,
+  spaceTrees: Record<string, KnowledgeBaseNode[]>
+): { sources: SyncScope[] } | null {
+  const covering = selectedSources.find(
+    (s) => sourceCoversDescendant(s, excludedScope) && scopeKey(s) !== scopeKey(excludedScope)
+  );
+  if (!covering) {
+    return null;
+  }
+
+  const roots = spaceTrees[excludedScope.spaceId];
+  if (!roots?.length) {
+    return null;
+  }
+
+  let newPieces: SyncScope[];
+  if (covering.kind === "space") {
+    newPieces = scopesForRootsExcludingKey(roots, excludedNodeKey);
+  } else {
+    const match = findNodeMatchingScope(roots, covering);
+    if (!match?.children?.length) {
+      return null;
+    }
+    newPieces = normalizeSelectedSources(scopesAfterRemovingExcluded(match, excludedNodeKey));
+  }
+
+  const rest = selectedSources.filter((s) => scopeKey(s) !== scopeKey(covering));
+  return { sources: normalizeSelectedSources([...rest, ...newPieces]) };
+}
+
 export function attachLoadedChildren(
   nodes: KnowledgeBaseNode[],
   parentNodeToken: string,

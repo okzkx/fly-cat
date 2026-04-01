@@ -22,8 +22,7 @@ import {
   buildScopeFromNode,
   collectCoveredDescendantKeys,
   computeCascadedCheckedKeys,
-  computeTriState,
-  sourceHasCoveredDescendants
+  computeTriState
 } from "@/utils/treeSelection";
 import { checkDocumentFreshness, loadFreshnessMetadata, openDocumentInBrowser, openWorkspaceFolder, saveFreshnessMetadata } from "@/utils/tauriRuntime";
 
@@ -352,10 +351,9 @@ function collectDocumentIdsByTreeKeys(
   return docIds;
 }
 
-function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, syncingKeys: Set<string>): ScopeTreeDataNode[] {
+function buildTreeNodes(nodes: KnowledgeBaseNode[], syncingKeys: Set<string>): ScopeTreeDataNode[] {
   return nodes.map((node) => {
     const scopeValue = buildScopeFromNode(node) ?? undefined;
-    const isDisabledNode = scopeValue ? disabledKeys.has(scopeKey(scopeValue)) : false;
     const isSyncing = scopeValue ? syncingKeys.has(scopeKey(scopeValue)) : false;
 
     return {
@@ -363,7 +361,7 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, s
       key: node.key,
       isLeaf: !node.isExpandable,
       selectable: true,
-      disableCheckbox: isDisabledNode || isSyncing,
+      disableCheckbox: isSyncing,
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,
@@ -371,7 +369,7 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], disabledKeys: Set<string>, s
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
       scopeValue,
-      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, disabledKeys, syncingKeys) : undefined
+      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, syncingKeys) : undefined
     };
   });
 }
@@ -396,11 +394,7 @@ function buildTreeData(
         nodeKind: "space",
         spaceId: space.id,
         children: loadedSpaceTrees[space.id]
-          ? buildTreeNodes(
-              loadedSpaceTrees[space.id],
-              new Set(collectCoveredDescendantKeys(loadedSpaceTrees[space.id], selectedSources)),
-              syncingKeys
-            )
+          ? buildTreeNodes(loadedSpaceTrees[space.id], syncingKeys)
           : undefined
       }))
     }
@@ -523,24 +517,6 @@ function findNodeByKey(treeData: ScopeTreeDataNode[], targetKey: string): ScopeT
   return null;
 }
 
-/** Descendant keys missing from the set are OK for tri-state "all checked" only if each is disabled (covered by selection). */
-function missingCheckedDescendantsAreCoverageOnly(
-  treeData: ScopeTreeDataNode[],
-  descendantKeys: string[],
-  allCheckedKeys: Set<string>
-): boolean {
-  for (const dk of descendantKeys) {
-    if (allCheckedKeys.has(dk)) {
-      continue;
-    }
-    const dn = findNodeByKey(treeData, dk);
-    if (dn && !dn.disableCheckbox) {
-      return false;
-    }
-  }
-  return true;
-}
-
 export default function HomePage({
   spaces,
   selectedScope,
@@ -653,19 +629,31 @@ export default function HomePage({
     return keys;
   }, [activeSyncTask, loadedSpaceTrees, checkedSourceKeys]);
 
-  const allCheckedKeys = useMemo(() => new Set(checkedSourceKeys), [checkedSourceKeys]);
+  /** Keys from selectedSources plus every loaded descendant covered by an ancestor scope (gou.md: checked parent ⇒ all children checked). */
+  const expandedCheckedKeys = useMemo(() => {
+    const set = new Set(checkedSourceKeys);
+    for (const spaceId of Object.keys(loadedSpaceTrees)) {
+      const tree = loadedSpaceTrees[spaceId];
+      if (tree) {
+        for (const k of collectCoveredDescendantKeys(tree, selectedSources)) {
+          set.add(k);
+        }
+      }
+    }
+    return set;
+  }, [checkedSourceKeys, loadedSpaceTrees, selectedSources]);
 
   const batchDeleteSyncedDocumentIds = useMemo(() => {
     const docIds: string[] = [];
     for (const spaceId of Object.keys(loadedSpaceTrees)) {
       const tree = loadedSpaceTrees[spaceId];
       if (tree) {
-        docIds.push(...collectDocumentIdsByTreeKeys(tree, allCheckedKeys));
+        docIds.push(...collectDocumentIdsByTreeKeys(tree, expandedCheckedKeys));
       }
     }
     const unique = [...new Set(docIds)];
     return unique.filter((id) => syncedDocumentIds.has(id) && !syncingIds.has(id));
-  }, [loadedSpaceTrees, allCheckedKeys, syncedDocumentIds, syncingIds]);
+  }, [loadedSpaceTrees, expandedCheckedKeys, syncedDocumentIds, syncingIds]);
 
   // Build tree data once (needed for tri-state cascade logic)
   const treeData = useMemo(() =>
@@ -674,8 +662,8 @@ export default function HomePage({
 
   // Compute half-checked keys for proper visual indeterminate display
   const halfCheckedKeys = useMemo(() =>
-    computeHalfCheckedKeys(treeData, allCheckedKeys),
-  [treeData, allCheckedKeys]);
+    computeHalfCheckedKeys(treeData, expandedCheckedKeys),
+  [treeData, expandedCheckedKeys]);
 
   const handleStartSync = async (): Promise<void> => {
     try {
@@ -762,17 +750,8 @@ export default function HomePage({
 
     const nodeKey = String(node.key);
     const descendantKeys = collectTreeDataDescendantKeys(treeData, nodeKey);
-    let currentState = computeTriState(allCheckedKeys, nodeKey, descendantKeys);
-    if (
-      node.scopeValue &&
-      sourceHasCoveredDescendants(node.scopeValue) &&
-      allCheckedKeys.has(nodeKey) &&
-      currentState === "mixed" &&
-      missingCheckedDescendantsAreCoverageOnly(treeData, descendantKeys, allCheckedKeys)
-    ) {
-      currentState = "all-checked";
-    }
-    const newCheckedKeys = computeCascadedCheckedKeys(allCheckedKeys, nodeKey, descendantKeys, currentState);
+    const currentState = computeTriState(expandedCheckedKeys, nodeKey, descendantKeys);
+    const newCheckedKeys = computeCascadedCheckedKeys(expandedCheckedKeys, nodeKey, descendantKeys, currentState);
 
     // Synchronize highlight: checking also selects/highlights the node
     if (newCheckedKeys.has(nodeKey)) {
@@ -903,7 +882,7 @@ export default function HomePage({
               checkStrictly
               defaultExpandedKeys={["wiki-root"]}
               selectedKeys={selectedKey(selectedScope)}
-              checkedKeys={{ checked: Array.from(allCheckedKeys), halfChecked: halfCheckedKeys }}
+              checkedKeys={{ checked: Array.from(expandedCheckedKeys), halfChecked: halfCheckedKeys }}
               treeData={treeData}
               loadData={async (treeNode) => {
                 const node = treeNode as ScopeTreeDataNode;

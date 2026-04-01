@@ -9,7 +9,7 @@ import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
-import { getEffectiveSelectedSources } from "@/utils/syncSelection";
+import { getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 import {
   createSyncTask,
   getAppBootstrap,
@@ -26,7 +26,12 @@ import {
   startSyncTask,
   TASK_EVENTS
 } from "@/utils/taskManager";
-import { attachLoadedChildren, normalizeSelectedSources, toggleSourceSelection } from "@/utils/treeSelection";
+import {
+  attachLoadedChildren,
+  normalizeSelectedSources,
+  toggleSourceSelection,
+  trySubtractCoveredDescendant
+} from "@/utils/treeSelection";
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -325,6 +330,17 @@ export default function App(): React.JSX.Element {
                 onToggleSource={async (scope, checked) => {
                   let replacedCrossSpaceSelection = false;
                   setSelectedSources((current) => {
+                    if (!checked) {
+                      const refined = trySubtractCoveredDescendant(
+                        current,
+                        scope,
+                        scopeKey(scope),
+                        loadedSpaceTrees
+                      );
+                      if (refined) {
+                        return refined.sources;
+                      }
+                    }
                     const nextSelection = toggleSourceSelection(current, scope, checked);
                     replacedCrossSpaceSelection = nextSelection.replacedCrossSpaceSelection;
                     return nextSelection.sources;
