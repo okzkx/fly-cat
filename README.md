@@ -27,6 +27,7 @@
   - [主工作流 opencat-task](#主工作流-opencat-task)
   - [Git 策略](#git-策略)
   - [PowerShell 注意事项](#powershell-注意事项)
+  - [致谢 opencat-workflows](#致谢-opencat-workflows)
 - [项目结构](#项目结构)
 - [许可证](#许可证)
 
@@ -174,6 +175,10 @@ Windows PowerShell 下执行 Git 提交时，避免使用 bash 风格语法：
 - 不要使用 `$(cat <<'EOF' ...)` 这类 heredoc 写法  
 - 不要使用 `&&` 串联多条 Git 命令  
 - 推荐使用 PowerShell here-string 或分步执行  
+
+### 致谢 opencat-workflows
+
+本文档所述 OpenCat 技能（`opencat-check`、`opencat-cleanup`、`opencat-task`、`opencat-work`）来自开源插件 **[opencat-workflows](https://github.com/okzkx/opencat-workflows)**。感谢上游维护者与社区贡献。
 
 ## 项目结构
 
