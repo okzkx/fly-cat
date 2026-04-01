@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-01] 新增中文说明文档与 README 跳转 — 根目录新增 `README.zh-CN.md`（与 `README.md` 事实一致）；`README.md` 正文前部与目录增加指向 `README.zh-CN.md` 的相对链接；`README.zh-CN.md` 回链默认 `README.md`；主规格 `readme-documentation` 已增补中英文入口与中文文档一致性要求；OpenSpec 变更 `readme-zh-doc` 已归档；`openspec validate --changes readme-zh-doc` 在归档前通过。— 🐱 双页猫（知识书记官·波斯猫）
 - [2026-04-01] 优化飞猫助手 README 使其具有 GitHub 项目展示页风格 — 根目录 `README.md` 增加目录导航、功能亮点、界面素材说明、使用流程与分节快速开始；Releases 指向 `https://github.com/okzkx/fly-cat/releases`；主规格 `readme-documentation` 补充 Purpose/Requirements 与托管页展示要求；OpenSpec 归档 `2026-04-01-github-style-readme`；`openspec validate --changes`、`openspec validate readme-documentation` 通过。— 🐱 星页猫（文档编织者·金吉拉）
 - [2026-04-01] 知识库「全部刷新」按钮 — 首页卡片工具栏新增「全部刷新」：对当前所有 `synced` 文档调用既有 `checkDocumentFreshness` 与 `saveFreshnessMetadata`，与防抖自动检查一致；`canRunSync` 或无已同步文档时禁用；OpenSpec 归档 `2026-04-01-refresh-all-freshness`，主规格 `knowledge-tree-display` 已更新。— 🐱 回环猫（界面魔法师·暹罗猫）
 - [2026-03-29 20:10] #1 知识库目录同步完文档默认打勾，可取消打勾删除 — 已同步文档默认勾选，可取消打勾标记删除；点击开始同步时自动清理未勾选文档；同步中/等待中文档checkbox禁用。Rust后端新增remove_synced_documents命令，前端通过uncheckedSyncedDocKeys追踪状态，经三检查点提交合并到master。
