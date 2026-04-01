@@ -360,17 +360,27 @@ function collectDocumentIdsByTreeKeys(
   return docIds;
 }
 
-function buildTreeNodes(nodes: KnowledgeBaseNode[], syncingKeys: Set<string>): ScopeTreeDataNode[] {
+function buildTreeNodes(
+  nodes: KnowledgeBaseNode[],
+  syncingKeys: Set<string>,
+  syncedDocumentIds: Set<string>
+): ScopeTreeDataNode[] {
   return nodes.map((node) => {
     const scopeValue = buildScopeFromNode(node) ?? undefined;
     const isSyncing = scopeValue ? syncingKeys.has(scopeKey(scopeValue)) : false;
+    const docId = scopeValue?.documentId;
+    const leafDoneEarly =
+      (node.kind === "document" || node.kind === "bitable") && docId
+        ? syncedDocumentIds.has(docId)
+        : false;
+    const disableCheckbox = isSyncing && !leafDoneEarly;
 
     return {
       title: node.title,
       key: node.key,
       isLeaf: !node.isExpandable,
       selectable: true,
-      disableCheckbox: isSyncing,
+      disableCheckbox,
       nodeKind: node.kind,
       spaceId: node.spaceId,
       nodeToken: node.nodeToken,
@@ -378,7 +388,10 @@ function buildTreeNodes(nodes: KnowledgeBaseNode[], syncingKeys: Set<string>): S
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
       scopeValue,
-      children: node.children && node.children.length > 0 ? buildTreeNodes(node.children, syncingKeys) : undefined
+      children:
+        node.children && node.children.length > 0
+          ? buildTreeNodes(node.children, syncingKeys, syncedDocumentIds)
+          : undefined
     };
   });
 }
@@ -387,7 +400,8 @@ function buildTreeData(
   spaces: HomePageProps["spaces"],
   loadedSpaceTrees: HomePageProps["loadedSpaceTrees"],
   selectedSources: SyncScope[],
-  syncingKeys: Set<string>
+  syncingKeys: Set<string>,
+  syncedDocumentIds: Set<string>
 ): ScopeTreeDataNode[] {
   return [
     {
@@ -403,7 +417,7 @@ function buildTreeData(
         nodeKind: "space",
         spaceId: space.id,
         children: loadedSpaceTrees[space.id]
-          ? buildTreeNodes(loadedSpaceTrees[space.id], syncingKeys)
+          ? buildTreeNodes(loadedSpaceTrees[space.id], syncingKeys, syncedDocumentIds)
           : undefined
       }))
     }
@@ -669,9 +683,10 @@ export default function HomePage({
   }, [loadedSpaceTrees, expandedCheckedKeys, syncedDocumentIds, syncingIds]);
 
   // Build tree data once (needed for tri-state cascade logic)
-  const treeData = useMemo(() =>
-    buildTreeData(spaces, loadedSpaceTrees, selectedSources, syncingKeys),
-  [spaces, loadedSpaceTrees, selectedSources, syncingKeys]);
+  const treeData = useMemo(
+    () => buildTreeData(spaces, loadedSpaceTrees, selectedSources, syncingKeys, syncedDocumentIds),
+    [spaces, loadedSpaceTrees, selectedSources, syncingKeys, syncedDocumentIds]
+  );
 
   // Compute half-checked keys for proper visual indeterminate display
   const halfCheckedKeys = useMemo(() =>
