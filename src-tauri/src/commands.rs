@@ -2159,6 +2159,7 @@ fn is_document_unchanged(
             && record.update_time == document.update_time
             && record.source_path == document.source_path
             && record.output_path == expected_output_path
+            && Path::new(&record.output_path).is_file()
     })
 }
 
@@ -3068,6 +3069,59 @@ pub fn remove_synced_documents(
     Ok(deleted_count)
 }
 
+/// Deletes on-disk outputs for the given document ids and clears version fields on manifest
+/// rows so a subsequent sync run re-downloads content. Unlike `remove_synced_documents`,
+/// manifest rows are retained.
+pub(crate) fn prepare_force_repulled_documents_impl(
+    sync_root: &str,
+    document_ids: &[String],
+) -> Result<u32, String> {
+    let root = Path::new(sync_root);
+    let mut manifest = crate::storage::load_manifest(root).unwrap_or_default();
+    let mut touched = 0u32;
+
+    for id in document_ids {
+        let Some(record) = manifest
+            .records
+            .iter_mut()
+            .find(|r| r.document_id == *id)
+        else {
+            continue;
+        };
+
+        let output_path = Path::new(&record.output_path);
+        if output_path.is_file() {
+            let _ = fs::remove_file(output_path);
+        }
+        for asset in &record.image_assets {
+            let asset_path = output_path
+                .parent()
+                .unwrap_or(root)
+                .join(asset);
+            if asset_path.is_file() {
+                let _ = fs::remove_file(asset_path);
+            }
+        }
+
+        record.version.clear();
+        record.update_time.clear();
+        record.content_hash.clear();
+        touched += 1;
+    }
+
+    crate::storage::save_manifest(root, &manifest)?;
+    clean_empty_dirs(root);
+    Ok(touched)
+}
+
+#[tauri::command]
+pub fn prepare_force_repulled_documents(
+    _app: AppHandle,
+    request: RemoveSyncedDocumentsRequest,
+) -> Result<u32, String> {
+    prepare_force_repulled_documents_impl(&request.sync_root, &request.document_ids)
+}
+
 #[tauri::command]
 pub async fn check_document_freshness(
     app: AppHandle,
@@ -3281,6 +3335,7 @@ fn clean_empty_dirs(sync_root: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::Path;
 
     fn sample_user() -> UserInfo {
@@ -3650,6 +3705,15 @@ mod tests {
             source_path: "产品知识库/方案库/产品方案总览/需求池".into(),
             obj_type: "bitable".into(),
         };
+        let sync_root = std::env::temp_dir().join("feishu-unchanged-bitable-test");
+        let _ = fs::remove_dir_all(&sync_root);
+        fs::create_dir_all(&sync_root).expect("mkdir");
+        let output_path = crate::sync::expected_output_path(&sync_root, &document);
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent).expect("mkdir parent");
+        }
+        fs::write(&output_path, b"x").expect("write output");
+
         let manifest = crate::model::SyncManifest {
             records: vec![crate::model::ManifestRecord {
                 document_id: document.document_id.clone(),
@@ -3661,12 +3725,7 @@ mod tests {
                 update_time: document.update_time.clone(),
                 source_path: document.source_path.clone(),
                 path_segments: document.path_segments.clone(),
-                output_path: crate::sync::expected_output_path(
-                    Path::new("C:/tmp/sync-target"),
-                    &document,
-                )
-                .to_string_lossy()
-                .to_string(),
+                output_path: output_path.to_string_lossy().to_string(),
                 content_hash: "hash".into(),
                 source_signature: "export:xlsx".into(),
                 status: "success".into(),
@@ -3675,11 +3734,103 @@ mod tests {
             }],
         };
 
-        assert!(is_document_unchanged(
-            &document,
-            Path::new("C:/tmp/sync-target"),
-            &manifest
-        ));
+        assert!(is_document_unchanged(&document, &sync_root, &manifest));
+        let _ = fs::remove_dir_all(&sync_root);
+    }
+
+    #[test]
+    fn unchanged_check_false_when_output_file_missing() {
+        let document = SyncSourceDocument {
+            document_id: "doc-missing-file".into(),
+            space_id: "kb-product".into(),
+            space_name: "产品知识库".into(),
+            node_token: "node-1".into(),
+            title: "T".into(),
+            version: "v1".into(),
+            update_time: "u1".into(),
+            path_segments: vec!["A".into(), "B".into()],
+            source_path: "产品知识库/A/B".into(),
+            obj_type: "docx".into(),
+        };
+        let sync_root = std::env::temp_dir().join("feishu-unchanged-missing-test");
+        let _ = fs::remove_dir_all(&sync_root);
+        fs::create_dir_all(&sync_root).expect("mkdir");
+        let output_path = crate::sync::expected_output_path(&sync_root, &document);
+
+        let manifest = crate::model::SyncManifest {
+            records: vec![crate::model::ManifestRecord {
+                document_id: document.document_id.clone(),
+                space_id: document.space_id.clone(),
+                space_name: document.space_name.clone(),
+                node_token: document.node_token.clone(),
+                title: document.title.clone(),
+                version: document.version.clone(),
+                update_time: document.update_time.clone(),
+                source_path: document.source_path.clone(),
+                path_segments: document.path_segments.clone(),
+                output_path: output_path.to_string_lossy().to_string(),
+                content_hash: "hash".into(),
+                source_signature: "".into(),
+                status: "success".into(),
+                image_assets: vec![],
+                last_synced_at: "2026-03-30T00:00:00Z".into(),
+            }],
+        };
+
+        assert!(!is_document_unchanged(&document, &sync_root, &manifest));
+        let _ = fs::remove_dir_all(&sync_root);
+    }
+
+    #[test]
+    fn prepare_force_repulled_removes_file_and_clears_versions() {
+        let sync_root = std::env::temp_dir().join("feishu-force-repull-test");
+        let _ = fs::remove_dir_all(&sync_root);
+        fs::create_dir_all(&sync_root).expect("mkdir");
+        let doc_id = "doc-force-1";
+        let sub = sync_root.join("kb");
+        fs::create_dir_all(&sub).expect("mkdir sub");
+        let out = sub.join("out.md");
+        fs::write(&out, b"body").expect("write");
+        let asset = sub.join("_assets").join("a.png");
+        fs::create_dir_all(asset.parent().unwrap()).expect("mkdir assets");
+        fs::write(&asset, b"png").expect("write asset");
+
+        let manifest = crate::model::SyncManifest {
+            records: vec![crate::model::ManifestRecord {
+                document_id: doc_id.into(),
+                space_id: "kb".into(),
+                space_name: "KB".into(),
+                node_token: "n1".into(),
+                title: "T".into(),
+                version: "v9".into(),
+                update_time: "t9".into(),
+                source_path: "KB/T".into(),
+                path_segments: vec![],
+                output_path: out.to_string_lossy().to_string(),
+                content_hash: "h".into(),
+                source_signature: "".into(),
+                status: "success".into(),
+                image_assets: vec!["_assets/a.png".into()],
+                last_synced_at: "2026-03-30T00:00:00Z".into(),
+            }],
+        };
+        crate::storage::save_manifest(&sync_root, &manifest).expect("save");
+
+        let n = prepare_force_repulled_documents_impl(
+            sync_root.to_str().unwrap(),
+            &[doc_id.into()],
+        )
+        .expect("prep");
+        assert_eq!(n, 1);
+        assert!(!out.exists());
+        assert!(!asset.exists());
+        let loaded = crate::storage::load_manifest(&sync_root).expect("load");
+        let r = loaded.records.iter().find(|r| r.document_id == doc_id).unwrap();
+        assert!(r.version.is_empty());
+        assert!(r.update_time.is_empty());
+        assert!(r.content_hash.is_empty());
+
+        let _ = fs::remove_dir_all(&sync_root);
     }
 
     #[test]

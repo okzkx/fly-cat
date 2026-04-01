@@ -30,6 +30,7 @@ import {
   loadFreshnessMetadata,
   openDocumentInBrowser,
   openWorkspaceFolder,
+  prepareForceRepulledDocuments,
   saveFreshnessMetadata
 } from "@/utils/tauriRuntime";
 
@@ -566,6 +567,8 @@ export default function HomePage({
   const selectionSummary = buildSelectionSummary(effectiveSelectedSources, selectedScope);
   const syncingIds = getSyncingDocumentIds(activeSyncTask);
   const canRunSync = Boolean(syncRoot) && connectionValidation?.usable === true;
+  const syncTaskBusy =
+    activeSyncTask?.status === "pending" || activeSyncTask?.status === "syncing";
 
   const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
@@ -716,13 +719,33 @@ export default function HomePage({
     }
     setBulkFreshnessAction(action);
     try {
+      if (action === "force") {
+        if (syncTaskBusy) {
+          message.error("已有同步任务进行中，请等待结束后再使用强制更新");
+          return;
+        }
+        await prepareForceRepulledDocuments(syncRoot, checkedSyncedDocumentIds);
+      }
       const result = await checkDocumentFreshness(checkedSyncedDocumentIds, syncRoot);
       const alignedResult = await alignDocumentSyncVersions(syncRoot, result, action === "force");
       setFreshnessMap((current) => ({ ...current, ...alignedResult }));
       await saveFreshnessMetadata(syncRoot, alignedResult);
       await onReloadDocumentSyncStatuses();
       if (action === "force") {
-        message.success(`已强制更新 ${checkedSyncedDocumentIds.length} 个所选文档版本状态`);
+        if (effectiveSelectedSources.length === 0) {
+          message.warning(
+            "已删除所选文档的本地文件并更新元数据；请勾选同步范围后点击「开始同步」从远端拉取"
+          );
+          return;
+        }
+        const syncResult = await onCreateTask();
+        if (syncResult?.task) {
+          message.success(
+            `已强制更新 ${checkedSyncedDocumentIds.length} 个所选文档：本地已清理并已创建同步任务`
+          );
+        } else {
+          message.warning("本地已清理，但未能创建同步任务，请检查同步范围后重试");
+        }
       } else {
         message.success(`已刷新 ${checkedSyncedDocumentIds.length} 个所选文档远端状态`);
       }
@@ -872,7 +895,12 @@ export default function HomePage({
             </Button>
             <Button
               icon={<ReloadOutlined />}
-              disabled={!canRunSync || checkedSyncedDocumentIds.length === 0 || bulkFreshnessAction !== null}
+              disabled={
+                !canRunSync ||
+                checkedSyncedDocumentIds.length === 0 ||
+                bulkFreshnessAction !== null ||
+                syncTaskBusy
+              }
               loading={bulkFreshnessAction === "force"}
               data-testid="force-update-selected-docs"
               onClick={() => void handleBulkFreshnessAction("force")}

@@ -10,9 +10,9 @@ use commands::{
     clear_all_sync_tasks, clear_freshness_metadata, complete_user_authorization,
     create_sync_task, delete_sync_task, get_app_bootstrap, get_document_sync_statuses,
     get_runtime_info, get_synced_document_ids, list_space_source_tree, list_sync_tasks,
-    load_freshness_metadata, logout_user, open_workspace_folder, remove_synced_documents,
-    resume_sync_tasks, retry_sync_task, save_app_settings, save_freshness_metadata,
-    start_sync_task, validate_feishu_connection, AppState,
+    load_freshness_metadata, logout_user, open_workspace_folder, prepare_force_repulled_documents,
+    remove_synced_documents, resume_sync_tasks, retry_sync_task, save_app_settings,
+    save_freshness_metadata, start_sync_task, validate_feishu_connection, AppState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -40,6 +40,7 @@ pub fn run() {
             delete_sync_task,
             clear_all_sync_tasks,
             remove_synced_documents,
+            prepare_force_repulled_documents,
             check_document_freshness,
             load_freshness_metadata,
             save_freshness_metadata,

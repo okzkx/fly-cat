@@ -286,6 +286,19 @@ export async function removeSyncedDocuments(
   });
 }
 
+/** Deletes local outputs and clears manifest version fields; keeps manifest rows for re-pull. */
+export async function prepareForceRepulledDocuments(
+  syncRoot: string,
+  documentIds: string[]
+): Promise<number> {
+  if (!isTauriRuntime()) {
+    return 0;
+  }
+  return invoke<number>("prepare_force_repulled_documents", {
+    request: { syncRoot, documentIds }
+  });
+}
+
 export async function checkDocumentFreshness(
   documentIds: string[],
   syncRoot: string

@@ -13,6 +13,7 @@ export {
   isTauriRuntime,
   logoutUser,
   removeSyncedDocuments,
+  prepareForceRepulledDocuments,
   resumeSyncTasks,
   retryFailedTask,
   saveAppSettings,
