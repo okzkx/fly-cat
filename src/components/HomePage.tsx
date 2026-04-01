@@ -24,7 +24,14 @@ import {
   computeCascadedCheckedKeys,
   computeTriState
 } from "@/utils/treeSelection";
-import { checkDocumentFreshness, loadFreshnessMetadata, openDocumentInBrowser, openWorkspaceFolder, saveFreshnessMetadata } from "@/utils/tauriRuntime";
+import {
+  alignDocumentSyncVersions,
+  checkDocumentFreshness,
+  loadFreshnessMetadata,
+  openDocumentInBrowser,
+  openWorkspaceFolder,
+  saveFreshnessMetadata
+} from "@/utils/tauriRuntime";
 
 const { Text } = Typography;
 
@@ -534,6 +541,7 @@ export default function HomePage({
   activeTaskSummary,
   onCreateTask,
   onBatchDeleteCheckedSyncedDocuments,
+  onReloadDocumentSyncStatuses,
   onResyncDocumentScope
 }: HomePageProps): React.JSX.Element {
   const { message, modal } = App.useApp();
@@ -547,7 +555,7 @@ export default function HomePage({
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
   const [refreshingAllFreshness, setRefreshingAllFreshness] = useState(false);
 
-  const syncedIdsForFreshness = useMemo(
+  const allSyncedIdsForFreshness = useMemo(
     () =>
       Object.keys(documentSyncStatuses).filter((id) => documentSyncStatuses[id]?.status === "synced"),
     [documentSyncStatuses]
@@ -574,11 +582,7 @@ export default function HomePage({
 
   // Check freshness for synced documents when they change
   useEffect(() => {
-    const syncedIds = Object.keys(documentSyncStatuses).filter(
-      (id) => documentSyncStatuses[id]?.status === "synced"
-    );
-
-    if (syncedIds.length === 0 || !syncRoot) {
+    if (allSyncedIdsForFreshness.length === 0 || !syncRoot) {
       return;
     }
 
@@ -586,7 +590,7 @@ export default function HomePage({
     const timeoutId = setTimeout(() => {
       const checkFreshness = async () => {
         try {
-          const result = await checkDocumentFreshness(syncedIds, syncRoot);
+          const result = await checkDocumentFreshness(allSyncedIdsForFreshness, syncRoot);
           setFreshnessMap(result);
           // Save to persistence
           await saveFreshnessMetadata(syncRoot, result);
@@ -599,7 +603,7 @@ export default function HomePage({
     }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [syncRoot, documentSyncStatuses]);
+  }, [allSyncedIdsForFreshness, syncRoot]);
 
   // Collect document IDs that are already synced successfully
   const syncedDocumentIds = useMemo(() => {
@@ -650,7 +654,7 @@ export default function HomePage({
     return set;
   }, [checkedSourceKeys, loadedSpaceTrees, selectedSources]);
 
-  const batchDeleteSyncedDocumentIds = useMemo(() => {
+  const checkedSyncedDocumentIds = useMemo(() => {
     const docIds: string[] = [];
     for (const spaceId of Object.keys(loadedSpaceTrees)) {
       const tree = loadedSpaceTrees[spaceId];
@@ -687,15 +691,17 @@ export default function HomePage({
   };
 
   const handleRefreshAllFreshness = async (): Promise<void> => {
-    if (!syncRoot || syncedIdsForFreshness.length === 0) {
+    if (!syncRoot || checkedSyncedDocumentIds.length === 0) {
       return;
     }
     setRefreshingAllFreshness(true);
     try {
-      const result = await checkDocumentFreshness(syncedIdsForFreshness, syncRoot);
-      setFreshnessMap(result);
-      await saveFreshnessMetadata(syncRoot, result);
-      message.success("已更新全部文档远端状态");
+      const result = await checkDocumentFreshness(checkedSyncedDocumentIds, syncRoot);
+      const alignedResult = await alignDocumentSyncVersions(syncRoot, result);
+      setFreshnessMap((current) => ({ ...current, ...alignedResult }));
+      await saveFreshnessMetadata(syncRoot, alignedResult);
+      await onReloadDocumentSyncStatuses();
+      message.success(`已更新 ${checkedSyncedDocumentIds.length} 个所选文档版本状态`);
     } catch (error) {
       console.error("Failed to refresh all document freshness:", error);
       message.error("刷新远端状态失败，请检查网络或登录状态");
@@ -705,18 +711,18 @@ export default function HomePage({
   };
 
   const handleBatchDeleteSynced = (): void => {
-    if (batchDeleteSyncedDocumentIds.length === 0) {
+    if (checkedSyncedDocumentIds.length === 0) {
       return;
     }
     modal.confirm({
       title: "批量删除本地已同步文档",
-      content: `将从本地删除 ${batchDeleteSyncedDocumentIds.length} 个已勾选且已同步的文档，删除后状态变为未同步。是否继续？`,
+      content: `将从本地删除 ${checkedSyncedDocumentIds.length} 个已勾选且已同步的文档，删除后状态变为未同步。是否继续？`,
       okText: "删除",
       okType: "danger",
       cancelText: "取消",
       onOk: async () => {
         try {
-          await onBatchDeleteCheckedSyncedDocuments(batchDeleteSyncedDocumentIds);
+          await onBatchDeleteCheckedSyncedDocuments(checkedSyncedDocumentIds);
           message.success("已删除所选已同步文档");
         } catch (error) {
           const messageText = error instanceof Error ? error.message : String(error);
@@ -833,7 +839,7 @@ export default function HomePage({
           <Space>
             <Button
               icon={<ReloadOutlined />}
-              disabled={!canRunSync || syncedIdsForFreshness.length === 0}
+              disabled={!canRunSync || checkedSyncedDocumentIds.length === 0}
               loading={refreshingAllFreshness}
               data-testid="refresh-all-freshness"
               onClick={() => void handleRefreshAllFreshness()}
@@ -843,7 +849,7 @@ export default function HomePage({
             <Button
               danger
               icon={<DeleteOutlined />}
-              disabled={spaces.length === 0 || !canRunSync || batchDeleteSyncedDocumentIds.length === 0}
+              disabled={spaces.length === 0 || !canRunSync || checkedSyncedDocumentIds.length === 0}
               onClick={() => handleBatchDeleteSynced()}
             >
               批量删除

@@ -384,6 +384,15 @@ export default function App(): React.JSX.Element {
                   await removeSyncedDocuments(syncTarget, documentIds);
                   setDocumentSyncStatuses(await getDocumentSyncStatuses(syncTarget));
                 }}
+                onReloadDocumentSyncStatuses={async () => {
+                  if (!syncTarget) {
+                    setDocumentSyncStatuses({});
+                    return {};
+                  }
+                  const nextStatuses = await getDocumentSyncStatuses(syncTarget);
+                  setDocumentSyncStatuses(nextStatuses);
+                  return nextStatuses;
+                }}
                 onResyncDocumentScope={async (scope) => {
                   if (!syncTarget || !connectionValidation?.usable) {
                     return;
