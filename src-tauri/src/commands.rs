@@ -2162,6 +2162,14 @@ fn is_document_unchanged(
     })
 }
 
+fn uses_export_download(document: &SyncSourceDocument, openapi_config_available: bool) -> bool {
+    openapi_config_available
+        && matches!(
+            document.obj_type.trim().to_ascii_lowercase().as_str(),
+            "sheet" | "bitable"
+        )
+}
+
 #[cfg(test)]
 #[allow(dead_code)] // test infrastructure; not yet called by any #[test]
 fn should_retry_document(
@@ -2526,33 +2534,19 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
 
         for (step, document) in queued_documents.iter().enumerate() {
             let step = (step + 1) as u32;
-            let is_export_only = matches!(
-                document.obj_type.trim().to_ascii_lowercase().as_str(),
-                "sheet" | "bitable"
-            );
+            let use_export_download = uses_export_download(document, openapi_config.is_some());
             let result = {
-                // Try export task API first (fast path)
-                if let Some(ref config) = openapi_config {
+                if use_export_download {
+                    let config = openapi_config
+                        .as_ref()
+                        .expect("export download requires OpenAPI config");
                     match sync_document_via_export(document, &sync_root, config, &manifest) {
                         Ok(record) => Ok(record),
                         Err(export_err) => {
-                            // bitable/sheet documents can only be synced via export;
+                            // Export-only documents can only be synced via export;
                             // falling back to docx content path would always fail
                             // with code 1770002 (not found).
-                            if is_export_only {
-                                Err(export_err)
-                            } else {
-                                // Fallback: raw content + markdown rendering
-                                sync_document_content(
-                                    document,
-                                    &sync_root,
-                                    &image_dir_name,
-                                    &mcp_server_name,
-                                    openapi_config.as_ref(),
-                                    &manifest,
-                                )
-                                .map(|(_, record)| record)
-                            }
+                            Err(export_err)
                         }
                     }
                 } else {
@@ -3680,7 +3674,7 @@ mod tests {
 
     #[test]
     fn bitable_sheet_obj_type_is_recognized_as_export_only() {
-        // bitable and sheet obj_types should NOT fall back to docx content path
+        // Only export-only objects should use the export download path.
         let bitable = SyncSourceDocument {
             document_id: "btbl001".into(),
             space_id: "sp1".into(),
@@ -3707,11 +3701,14 @@ mod tests {
             (&sheet, true),
             (&docx, false),
         ] {
-            let is_export_only = matches!(
-                doc.obj_type.trim().to_ascii_lowercase().as_str(),
-                "sheet" | "bitable"
+            assert_eq!(
+                uses_export_download(doc, true),
+                expected,
+                "obj_type={}",
+                doc.obj_type
             );
-            assert_eq!(is_export_only, expected, "obj_type={}", doc.obj_type);
         }
+
+        assert!(!uses_export_download(&bitable, false));
     }
 }
