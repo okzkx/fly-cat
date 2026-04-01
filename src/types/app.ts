@@ -113,6 +113,7 @@ export interface HomePageProps {
   activeTaskSummary: string;
   onCreateTask: () => Promise<HomeSyncResult | null>;
   onBatchDeleteCheckedSyncedDocuments: (documentIds: string[]) => Promise<void>;
+  onReloadDocumentSyncStatuses: () => Promise<Record<string, DocumentSyncStatus>>;
   onResyncDocumentScope: (scope: SyncScope) => Promise<void>;
 }
 

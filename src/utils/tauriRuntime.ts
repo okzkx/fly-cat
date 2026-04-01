@@ -323,6 +323,19 @@ export async function saveFreshnessMetadata(
   });
 }
 
+export async function alignDocumentSyncVersions(
+  syncRoot: string,
+  metadata: Record<string, DocumentFreshnessResult>
+): Promise<Record<string, DocumentFreshnessResult>> {
+  if (!isTauriRuntime()) {
+    return metadata;
+  }
+  return invoke<Record<string, DocumentFreshnessResult>>("align_document_sync_versions", {
+    syncRoot,
+    metadata
+  });
+}
+
 export async function clearFreshnessMetadata(
   syncRoot: string,
   documentIds: string[]
