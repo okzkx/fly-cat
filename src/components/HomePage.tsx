@@ -545,6 +545,13 @@ export default function HomePage({
 
   const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
+  const [refreshingAllFreshness, setRefreshingAllFreshness] = useState(false);
+
+  const syncedIdsForFreshness = useMemo(
+    () =>
+      Object.keys(documentSyncStatuses).filter((id) => documentSyncStatuses[id]?.status === "synced"),
+    [documentSyncStatuses]
+  );
 
   // Load freshness metadata when sync root changes
   useEffect(() => {
@@ -679,6 +686,24 @@ export default function HomePage({
     }
   };
 
+  const handleRefreshAllFreshness = async (): Promise<void> => {
+    if (!syncRoot || syncedIdsForFreshness.length === 0) {
+      return;
+    }
+    setRefreshingAllFreshness(true);
+    try {
+      const result = await checkDocumentFreshness(syncedIdsForFreshness, syncRoot);
+      setFreshnessMap(result);
+      await saveFreshnessMetadata(syncRoot, result);
+      message.success("已更新全部文档远端状态");
+    } catch (error) {
+      console.error("Failed to refresh all document freshness:", error);
+      message.error("刷新远端状态失败，请检查网络或登录状态");
+    } finally {
+      setRefreshingAllFreshness(false);
+    }
+  };
+
   const handleBatchDeleteSynced = (): void => {
     if (batchDeleteSyncedDocumentIds.length === 0) {
       return;
@@ -806,6 +831,15 @@ export default function HomePage({
         }
         extra={
           <Space>
+            <Button
+              icon={<ReloadOutlined />}
+              disabled={!canRunSync || syncedIdsForFreshness.length === 0}
+              loading={refreshingAllFreshness}
+              data-testid="refresh-all-freshness"
+              onClick={() => void handleRefreshAllFreshness()}
+            >
+              全部刷新
+            </Button>
             <Button
               danger
               icon={<DeleteOutlined />}
