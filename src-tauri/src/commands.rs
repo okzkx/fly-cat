@@ -3103,6 +3103,19 @@ pub(crate) fn prepare_force_repulled_documents_impl(
             }
         }
 
+        // Wiki tree: `Title.md` alongside `Title/` for child markdown. Stripping only the file
+        // leaves `Title/` so descendants remain and sync skips them as unchanged.
+        if output_path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if let Some(parent_dir) = output_path.parent() {
+                if let Some(stem) = output_path.file_stem().and_then(|s| s.to_str()) {
+                    let wiki_child_dir = parent_dir.join(stem);
+                    if wiki_child_dir.is_dir() {
+                        let _ = fs::remove_dir_all(&wiki_child_dir);
+                    }
+                }
+            }
+        }
+
         record.version.clear();
         record.update_time.clear();
         record.content_hash.clear();
@@ -3829,6 +3842,52 @@ mod tests {
         assert!(r.version.is_empty());
         assert!(r.update_time.is_empty());
         assert!(r.content_hash.is_empty());
+
+        let _ = fs::remove_dir_all(&sync_root);
+    }
+
+    #[test]
+    fn prepare_force_repulled_removes_wiki_child_directory_next_to_markdown() {
+        let sync_root = std::env::temp_dir().join("feishu-force-repull-wiki-child-test");
+        let _ = fs::remove_dir_all(&sync_root);
+        fs::create_dir_all(&sync_root).expect("mkdir");
+        let doc_id = "doc-parent-wiki";
+        let kb = sync_root.join("KB");
+        let parent_md = kb.join("Parent.md");
+        fs::create_dir_all(parent_md.parent().unwrap()).expect("mkdir kb");
+        fs::write(&parent_md, b"parent").expect("write parent");
+        let child_dir = kb.join("Parent");
+        fs::create_dir_all(&child_dir).expect("mkdir child scope");
+        let child_md = child_dir.join("Child.md");
+        fs::write(&child_md, b"child").expect("write child");
+
+        let manifest = crate::model::SyncManifest {
+            records: vec![crate::model::ManifestRecord {
+                document_id: doc_id.into(),
+                space_id: "s".into(),
+                space_name: "KB".into(),
+                node_token: "n1".into(),
+                title: "Parent".into(),
+                version: "v1".into(),
+                update_time: "t1".into(),
+                source_path: "KB/Parent".into(),
+                path_segments: vec![],
+                output_path: parent_md.to_string_lossy().to_string(),
+                content_hash: "h".into(),
+                source_signature: "".into(),
+                status: "success".into(),
+                image_assets: vec![],
+                last_synced_at: "2026-03-30T00:00:00Z".into(),
+            }],
+        };
+        crate::storage::save_manifest(&sync_root, &manifest).expect("save");
+
+        let n = prepare_force_repulled_documents_impl(sync_root.to_str().unwrap(), &[doc_id.into()])
+            .expect("prep");
+        assert_eq!(n, 1);
+        assert!(!parent_md.exists());
+        assert!(!child_md.exists());
+        assert!(!child_dir.exists());
 
         let _ = fs::remove_dir_all(&sync_root);
     }
