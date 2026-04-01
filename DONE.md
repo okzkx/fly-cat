@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-01] 优化：当我点击展开和关闭知识库时，表现动画不流畅 — `src/App.tsx` 在知识树懒加载完成后用 React `startTransition` 延后 `setLoadedSpaceTrees`，减少与展开/收起动画争抢主线程；主规格 `sync-focused-application-experience` 新增知识树展开收起流畅度要求；OpenSpec 变更 `kb-expand-animation-smoothness` 已归档，`npm run typecheck`、`npm test` 与 `openspec validate --specs` 通过。— 🐱 回环猫（界面魔法师·暹罗猫）
 - [2026-04-01] 展示文档里添加对于 https://github.com/okzkx/opencat-workflows 的致谢 — `README.md`、`README.zh-CN.md` 增加「致谢 opencat-workflows」目录与说明；主规格 `readme-documentation` 补充上游工作流致谢要求；OpenSpec 变更 `opencat-workflows-acknowledgement` 已归档，`openspec validate readme-documentation --type spec` 与 `openspec validate --all --no-interactive` 通过。— 🐱 星页猫（文档编织者·金吉拉）
 - [2026-04-01] 新增中文说明文档与 README 跳转 — 根目录新增 `README.zh-CN.md`（与 `README.md` 事实一致）；`README.md` 正文前部与目录增加指向 `README.zh-CN.md` 的相对链接；`README.zh-CN.md` 回链默认 `README.md`；主规格 `readme-documentation` 已增补中英文入口与中文文档一致性要求；OpenSpec 变更 `readme-zh-doc` 已归档；`openspec validate --changes readme-zh-doc` 在归档前通过。— 🐱 双页猫（知识书记官·波斯猫）
 - [2026-04-01] 优化飞猫助手 README 使其具有 GitHub 项目展示页风格 — 根目录 `README.md` 增加目录导航、功能亮点、界面素材说明、使用流程与分节快速开始；Releases 指向 `https://github.com/okzkx/fly-cat/releases`；主规格 `readme-documentation` 补充 Purpose/Requirements 与托管页展示要求；OpenSpec 归档 `2026-04-01-github-style-readme`；`openspec validate --changes`、`openspec validate readme-documentation` 通过。— 🐱 星页猫（文档编织者·金吉拉）
