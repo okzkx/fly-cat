@@ -61,9 +61,14 @@ fn compare_feishu_versions(local: &str, remote: &str) -> Ordering {
     local.cmp(remote)
 }
 
-fn should_align_local_version(freshness: &DocumentFreshnessResult) -> bool {
+fn should_align_local_version(freshness: &DocumentFreshnessResult, force: bool) -> bool {
     if freshness.status == "error" || freshness.error.is_some() {
         return false;
+    }
+
+    if force {
+        return freshness.local_version.trim() != freshness.remote_version.trim()
+            || freshness.local_update_time.trim() != freshness.remote_update_time.trim();
     }
 
     let local = freshness.local_version.trim();
@@ -84,8 +89,11 @@ fn should_align_local_version(freshness: &DocumentFreshnessResult) -> bool {
     false
 }
 
-fn aligned_freshness_result(freshness: &DocumentFreshnessResult) -> DocumentFreshnessResult {
-    if !should_align_local_version(freshness) {
+fn aligned_freshness_result(
+    freshness: &DocumentFreshnessResult,
+    force: bool,
+) -> DocumentFreshnessResult {
+    if !should_align_local_version(freshness, force) {
         return freshness.clone();
     }
 
@@ -100,6 +108,7 @@ fn aligned_freshness_result(freshness: &DocumentFreshnessResult) -> DocumentFres
 pub fn align_manifest_versions(
     sync_root: &Path,
     metadata: &HashMap<String, DocumentFreshnessResult>,
+    force: bool,
 ) -> Result<HashMap<String, DocumentFreshnessResult>, String> {
     if metadata.is_empty() {
         return Ok(HashMap::new());
@@ -114,11 +123,11 @@ pub fn align_manifest_versions(
             continue;
         };
 
-        if !should_align_local_version(freshness) {
+        if !should_align_local_version(freshness, force) {
             continue;
         }
 
-        let aligned = aligned_freshness_result(freshness);
+        let aligned = aligned_freshness_result(freshness, force);
         record.version = aligned.local_version.clone();
         record.update_time = aligned.local_update_time.clone();
         *freshness = aligned;
@@ -351,7 +360,7 @@ mod tests {
             },
         )]);
 
-        let aligned = align_manifest_versions(&sync_root, &metadata).expect("align manifest");
+        let aligned = align_manifest_versions(&sync_root, &metadata, false).expect("align manifest");
         let loaded = load_manifest(&sync_root).expect("load manifest");
 
         assert_eq!(loaded.records[0].version, "101");
@@ -359,5 +368,110 @@ mod tests {
         assert_eq!(aligned["doc-1"].status, "current");
         assert_eq!(aligned["doc-1"].local_version, "101");
         assert_eq!(aligned["doc-1"].local_update_time, "t2");
+    }
+
+    #[test]
+    fn keeps_local_version_when_normal_refresh_sees_older_remote() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time works")
+            .as_millis();
+        let sync_root = env::temp_dir().join(format!("feishu-sync-align-no-force-{unique}"));
+        let mut manifest = SyncManifest::default();
+        upsert_manifest_record(
+            &mut manifest,
+            ManifestRecord {
+                document_id: "doc-1".into(),
+                space_id: "kb-eng".into(),
+                space_name: "研发知识库".into(),
+                node_token: "node-doc-1".into(),
+                title: "Doc".into(),
+                version: "101".into(),
+                update_time: "t2".into(),
+                source_path: "研发知识库/Doc".into(),
+                path_segments: vec!["Doc".into()],
+                output_path: "a.md".into(),
+                content_hash: "hash".into(),
+                source_signature: "sig".into(),
+                status: "success".into(),
+                image_assets: vec![],
+                last_synced_at: "now".into(),
+            },
+        );
+        save_manifest(&sync_root, &manifest).expect("save manifest");
+
+        let metadata = HashMap::from([(
+            "doc-1".to_string(),
+            DocumentFreshnessResult {
+                status: "updated".into(),
+                local_version: "101".into(),
+                remote_version: "100".into(),
+                local_update_time: "t2".into(),
+                remote_update_time: "t1".into(),
+                error: None,
+            },
+        )]);
+
+        let aligned =
+            align_manifest_versions(&sync_root, &metadata, false).expect("align manifest");
+        let loaded = load_manifest(&sync_root).expect("load manifest");
+
+        assert_eq!(loaded.records[0].version, "101");
+        assert_eq!(loaded.records[0].update_time, "t2");
+        assert_eq!(aligned["doc-1"].status, "updated");
+        assert_eq!(aligned["doc-1"].local_version, "101");
+        assert_eq!(aligned["doc-1"].local_update_time, "t2");
+    }
+
+    #[test]
+    fn force_aligns_manifest_version_even_when_remote_is_older() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time works")
+            .as_millis();
+        let sync_root = env::temp_dir().join(format!("feishu-sync-align-force-{unique}"));
+        let mut manifest = SyncManifest::default();
+        upsert_manifest_record(
+            &mut manifest,
+            ManifestRecord {
+                document_id: "doc-1".into(),
+                space_id: "kb-eng".into(),
+                space_name: "研发知识库".into(),
+                node_token: "node-doc-1".into(),
+                title: "Doc".into(),
+                version: "101".into(),
+                update_time: "t2".into(),
+                source_path: "研发知识库/Doc".into(),
+                path_segments: vec!["Doc".into()],
+                output_path: "a.md".into(),
+                content_hash: "hash".into(),
+                source_signature: "sig".into(),
+                status: "success".into(),
+                image_assets: vec![],
+                last_synced_at: "now".into(),
+            },
+        );
+        save_manifest(&sync_root, &manifest).expect("save manifest");
+
+        let metadata = HashMap::from([(
+            "doc-1".to_string(),
+            DocumentFreshnessResult {
+                status: "updated".into(),
+                local_version: "101".into(),
+                remote_version: "100".into(),
+                local_update_time: "t2".into(),
+                remote_update_time: "t1".into(),
+                error: None,
+            },
+        )]);
+
+        let aligned = align_manifest_versions(&sync_root, &metadata, true).expect("align manifest");
+        let loaded = load_manifest(&sync_root).expect("load manifest");
+
+        assert_eq!(loaded.records[0].version, "100");
+        assert_eq!(loaded.records[0].update_time, "t1");
+        assert_eq!(aligned["doc-1"].status, "current");
+        assert_eq!(aligned["doc-1"].local_version, "100");
+        assert_eq!(aligned["doc-1"].local_update_time, "t1");
     }
 }

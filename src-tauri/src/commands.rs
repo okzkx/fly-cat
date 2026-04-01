@@ -3220,9 +3220,10 @@ pub async fn save_freshness_metadata(
 pub async fn align_document_sync_versions(
     sync_root: String,
     metadata: std::collections::HashMap<String, crate::model::DocumentFreshnessResult>,
+    force: bool,
 ) -> Result<std::collections::HashMap<String, crate::model::DocumentFreshnessResult>, String> {
     let path = std::path::Path::new(&sync_root);
-    crate::storage::align_manifest_versions(path, &metadata)
+    crate::storage::align_manifest_versions(path, &metadata, force)
 }
 
 #[tauri::command]

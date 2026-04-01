@@ -325,14 +325,16 @@ export async function saveFreshnessMetadata(
 
 export async function alignDocumentSyncVersions(
   syncRoot: string,
-  metadata: Record<string, DocumentFreshnessResult>
+  metadata: Record<string, DocumentFreshnessResult>,
+  force = false
 ): Promise<Record<string, DocumentFreshnessResult>> {
   if (!isTauriRuntime()) {
     return metadata;
   }
   return invoke<Record<string, DocumentFreshnessResult>>("align_document_sync_versions", {
     syncRoot,
-    metadata
+    metadata,
+    force
   });
 }
 

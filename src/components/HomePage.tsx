@@ -35,6 +35,8 @@ import {
 
 const { Text } = Typography;
 
+type BulkFreshnessAction = "refresh" | "force";
+
 type ScopeTreeDataNode = DataNode & {
   scopeValue?: SyncScope;
   spaceRef?: KnowledgeBaseSpace;
@@ -553,7 +555,7 @@ export default function HomePage({
 
   const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
-  const [refreshingAllFreshness, setRefreshingAllFreshness] = useState(false);
+  const [bulkFreshnessAction, setBulkFreshnessAction] = useState<BulkFreshnessAction | null>(null);
 
   const allSyncedIdsForFreshness = useMemo(
     () =>
@@ -690,23 +692,30 @@ export default function HomePage({
     }
   };
 
-  const handleRefreshAllFreshness = async (): Promise<void> => {
+  const handleBulkFreshnessAction = async (action: BulkFreshnessAction): Promise<void> => {
     if (!syncRoot || checkedSyncedDocumentIds.length === 0) {
       return;
     }
-    setRefreshingAllFreshness(true);
+    if (bulkFreshnessAction !== null) {
+      return;
+    }
+    setBulkFreshnessAction(action);
     try {
       const result = await checkDocumentFreshness(checkedSyncedDocumentIds, syncRoot);
-      const alignedResult = await alignDocumentSyncVersions(syncRoot, result);
+      const alignedResult = await alignDocumentSyncVersions(syncRoot, result, action === "force");
       setFreshnessMap((current) => ({ ...current, ...alignedResult }));
       await saveFreshnessMetadata(syncRoot, alignedResult);
       await onReloadDocumentSyncStatuses();
-      message.success(`已更新 ${checkedSyncedDocumentIds.length} 个所选文档版本状态`);
+      if (action === "force") {
+        message.success(`已强制更新 ${checkedSyncedDocumentIds.length} 个所选文档版本状态`);
+      } else {
+        message.success(`已刷新 ${checkedSyncedDocumentIds.length} 个所选文档远端状态`);
+      }
     } catch (error) {
       console.error("Failed to refresh all document freshness:", error);
       message.error("刷新远端状态失败，请检查网络或登录状态");
     } finally {
-      setRefreshingAllFreshness(false);
+      setBulkFreshnessAction(null);
     }
   };
 
@@ -839,12 +848,21 @@ export default function HomePage({
           <Space>
             <Button
               icon={<ReloadOutlined />}
-              disabled={!canRunSync || checkedSyncedDocumentIds.length === 0}
-              loading={refreshingAllFreshness}
+              disabled={!canRunSync || checkedSyncedDocumentIds.length === 0 || bulkFreshnessAction !== null}
+              loading={bulkFreshnessAction === "refresh"}
               data-testid="refresh-all-freshness"
-              onClick={() => void handleRefreshAllFreshness()}
+              onClick={() => void handleBulkFreshnessAction("refresh")}
             >
               全部刷新
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              disabled={!canRunSync || checkedSyncedDocumentIds.length === 0 || bulkFreshnessAction !== null}
+              loading={bulkFreshnessAction === "force"}
+              data-testid="force-update-selected-docs"
+              onClick={() => void handleBulkFreshnessAction("force")}
+            >
+              强制更新
             </Button>
             <Button
               danger
