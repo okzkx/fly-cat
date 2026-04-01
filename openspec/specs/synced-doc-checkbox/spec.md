@@ -25,39 +25,53 @@ When a user clicks the checkbox of a parent node (folder or document with descen
 #### State Transitions
 
 **From UNCHECKED:**
+
 - Transition to CHECKED: check self and all descendant nodes
 
 **From CHECKED:**
+
 - If ALL descendants are currently checked: transition to UNCHECKED (uncheck self and all descendants)
 - If SOME descendants are NOT all checked: transition to INDETERMINATE (leave each descendant in its current state; do not change any descendant's check state)
 
 **From INDETERMINATE:**
+
 - Transition to CHECKED: check self and all descendant nodes
 
 #### Simplified Two-State Optimization
+
 When a parent node and ALL of its descendants are in the same state (all checked OR all unchecked), the system SHALL only toggle between checked and unchecked, skipping the indeterminate state entirely.
 
-Parent-child display invariants SHALL hold: a fully checked parent node SHALL imply all of its descendant checkboxes that are not disabled by scope coverage are checked; a fully unchecked parent SHALL imply all descendants are unchecked; an indeterminate (half-checked) parent SHALL imply descendants are neither all checked nor all unchecked.
+Parent-child display invariants SHALL hold per product rules: a fully checked parent node SHALL imply every loaded descendant checkbox is rendered checked; a fully unchecked parent SHALL imply all descendants are unchecked; an indeterminate (half-checked) parent SHALL imply descendants are neither all checked nor all unchecked. Descendant checkboxes SHALL NOT be disabled solely because an ancestor scope covers them in `selectedSources`.
 
 #### Scenario: Checking a folder with no previously checked children
+
 - **WHEN** a folder node is unchecked with all descendants unchecked, and the user clicks its checkbox
 - **THEN** the folder and all descendant nodes become checked
 
 #### Scenario: Unchecking a folder where all descendants were checked
+
 - **WHEN** a folder node is checked with all descendants checked, and the user clicks its checkbox
 - **THEN** the folder and all descendant nodes become unchecked
 
 #### Scenario: Indeterminate state when mixed children
+
 - **WHEN** a folder node is checked but some descendants are unchecked, and the user clicks its checkbox
 - **THEN** the folder enters indeterminate state and each descendant retains its current checked/unchecked state unchanged
 
 #### Scenario: Checking from indeterminate state
+
 - **WHEN** a folder node is in indeterminate state and the user clicks its checkbox
 - **THEN** the folder and all descendant nodes become checked
 
 #### Scenario: Leaf document toggle unchanged
+
 - **WHEN** a leaf document node (no descendants) checkbox is clicked
 - **THEN** the document toggles between checked and unchecked as before
+
+#### Scenario: Parent checked shows all loaded children checked
+
+- **WHEN** a user selects a scope that covers descendants (space, folder, or document with `includesDescendants`) and those descendants are present in the loaded tree
+- **THEN** every loaded descendant checkbox is rendered checked and enabled (unless disabled for syncing/pending), not grayed out as non-interactive
 
 ### Requirement: Parent node half-checked state calculation
 The system SHALL compute half-checked keys from the actual checked keys set derived solely from `selectedSources`. The `checkedKeys` prop MUST contain truly checked keys and computed half-checked keys, using `checkStrictly` mode to prevent Ant Design's default cascade behavior.
@@ -65,19 +79,6 @@ The system SHALL compute half-checked keys from the actual checked keys set deri
 #### Scenario: Half-checked parent computed from children
 - **WHEN** a folder node has some but not all descendant keys in the checked keys set
 - **THEN** the folder node is rendered with an indeterminate (half-checked) visual state
-
-### Requirement: Tri-state respects scope-only keys for covered descendants
-
-When a node's `SyncScope` covers descendants (`space`, `folder`, or `document` with `includesDescendants`), the knowledge base tree MAY represent selection using only that node's key in the merged checked-key set (without listing every descendant key). For tri-state cycling on that node, the system SHALL treat this situation as **all checked** when every loaded descendant that is missing from the checked-key set has its checkbox disabled due to coverage by a selected ancestor. The system SHALL NOT treat it as mixed solely because descendant keys are omitted while the parent key is checked and descendants are covered-disabled.
-
-#### Scenario: User unchecks after checking a folder that covers loaded children
-- **WHEN** the user checks a folder whose descendants are present in the loaded tree and covered by the selection (descendant checkboxes disabled)
-- **AND** the merged checked keys contain the folder key but not the individual descendant keys
-- **THEN** the next checkbox or name-click toggle on that folder transitions to unchecked and updates `selectedSources` consistently
-
-#### Scenario: True mixed descendants still use indeterminate path
-- **WHEN** a parent node is checked and at least one loaded descendant remains interactive (checkbox not disabled) and is not in the checked-key set
-- **THEN** the tri-state logic SHALL NOT force **all checked** solely from the parent key; the user MUST still be able to reach the indeterminate transition per the existing mixed-descendant rules
 
 ### Requirement: Checkbox Selection Independent of Sync Status
 The system SHALL NOT merge document sync status from the manifest into the tree checkbox checked-key set. All checkboxes SHALL default to unchecked until the user checks nodes via the existing selection / tri-state interaction. Document sync state (synced, failed, pending, syncing, not synced) SHALL be communicated only through non-checkbox UI such as tags and indicators next to each node.
