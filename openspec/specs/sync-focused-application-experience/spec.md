@@ -66,6 +66,17 @@ The application MUST present synchronization as a primary workflow distinct from
 - **WHEN** a user checks a bitable node's checkbox in the source-selection tree
 - **THEN** the node becomes both checked and highlighted, producing the same visual and state result as if the user had clicked the node's name
 
+### Requirement: Source tree expand and collapse visual smoothness
+The application SHALL keep expand and collapse transitions for the source-selection knowledge tree visually smooth when asynchronous child loading completes, without changing one-level expansion semantics, lazy-load ordering, checkbox tri-state behavior, or selection highlighting rules.
+
+#### Scenario: Root “知识库” node toggled repeatedly
+- **WHEN** a user expands and collapses the root knowledge tree node multiple times
+- **THEN** the expand and collapse transitions remain visually continuous and the tree does not skip levels or show deeper descendants until the user expands the corresponding parent nodes
+
+#### Scenario: Space node children arrive after expand
+- **WHEN** a user expands a knowledge space node and the client finishes loading that space’s direct children
+- **THEN** the UI still presents only the immediate child level for that expansion and the transition is not visibly disrupted by a large synchronous UI update competing with the motion
+
 ### Requirement: Sync Lifecycle Status Visibility
 The application MUST expose synchronization lifecycle states and progress at document and tree-node level. When a sync task is active, individual document nodes within the task's discovered scope MUST display "同步中" status regardless of whether the original selection was a leaf document, a directory subtree, or a whole space.
 
