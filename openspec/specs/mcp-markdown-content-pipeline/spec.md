@@ -31,7 +31,7 @@ The system MUST fetch document content through MCP-mediated Feishu API access in
 - **THEN** the worker marks the document as failed and records a retriable error result
 
 ### Requirement: Canonical Markdown Generation
-The system MUST transform retrieved document content into deterministic Markdown output.
+The system MUST transform retrieved document content into deterministic Markdown output, and any document that is mapped to a local `.md` path MUST be rendered from structured content rather than copied from an exported binary office file.
 
 #### Scenario: Generate markdown for unchanged content model
 - **WHEN** two sync runs receive equivalent structured content for the same document
@@ -48,6 +48,10 @@ The system MUST transform retrieved document content into deterministic Markdown
 #### Scenario: Restart ordered numbering per nesting depth
 - **WHEN** the source document contains nested ordered list items at a deeper level than their parent list item
 - **THEN** the generated Markdown uses a separate incrementing index sequence for each nesting depth so child lists do not continue the parent list's global counter
+
+#### Scenario: Markdown-targeted documents do not use export binaries
+- **WHEN** the sync worker processes a normal Feishu document whose expected output path ends with `.md`
+- **THEN** it renders Markdown from the structured content pipeline instead of writing a binary export payload into that Markdown path
 
 ### Requirement: Stable Local File Mapping
 The system MUST map each synced document to a stable local output path according to deterministic rules that preserve the document's knowledge-base-relative directory structure and authoritative document naming.

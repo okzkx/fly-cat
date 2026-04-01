@@ -99,6 +99,11 @@ The system MUST discover, classify, present, and queue only syncable leaf items 
 - **WHEN** a single document in the sync queue finishes processing successfully
 - **THEN** the backend persists the manifest to disk immediately, before emitting the sync-progress event
 
+#### Scenario: Sync execution chooses export only for export-only object types
+- **WHEN** the sync worker executes a queued item whose object type is a normal document such as `doc` or `docx`
+- **THEN** it uses the Markdown content pipeline instead of the export download path
+- **AND** queued `sheet` and `bitable` items continue to use export downloads that preserve their native exported file format
+
 ### Requirement: Incremental Synchronization Planning
 The system MUST perform incremental synchronization using persisted sync state for the currently selected knowledge base sources, and MUST skip unchanged selected syncable leaves safely without re-queuing items outside the current source set.
 
