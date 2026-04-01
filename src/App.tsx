@@ -1,6 +1,6 @@
 import { LogoutOutlined, UserOutlined } from "@ant-design/icons";
 import { App as AntdApp, Avatar, ConfigProvider, Dropdown, Layout, Space, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import AuthPage from "@/components/AuthPage";
 import BrandMark from "@/components/BrandMark";
 import HomePage from "@/components/HomePage";
@@ -353,12 +353,14 @@ export default function App(): React.JSX.Element {
                     return;
                   }
                   const nodes = await listKnowledgeBaseNodes(spaceId, parentNodeToken);
-                  setLoadedSpaceTrees((current) => ({
-                    ...current,
-                    [spaceId]: parentNodeToken
-                      ? attachLoadedChildren(current[spaceId] ?? [], parentNodeToken, nodes)
-                      : nodes
-                  }));
+                  startTransition(() => {
+                    setLoadedSpaceTrees((current) => ({
+                      ...current,
+                      [spaceId]: parentNodeToken
+                        ? attachLoadedChildren(current[spaceId] ?? [], parentNodeToken, nodes)
+                        : nodes
+                    }));
+                  });
                 }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
