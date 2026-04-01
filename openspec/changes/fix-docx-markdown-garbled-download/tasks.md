@@ -10,5 +10,5 @@
 
 ## 3. Validate
 
-- [ ] 3.1 Run targeted Rust and project validation for the changed sync behavior
-- [ ] 3.2 Re-check the affected sample path behavior to confirm the fix direction
+- [x] 3.1 Run targeted Rust and project validation for the changed sync behavior
+- [x] 3.2 Re-check the affected sample path behavior to confirm the fix direction
