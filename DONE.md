@@ -1,5 +1,7 @@
 # DONE
 
+- [2026-04-01] 修复：勾选带子文档的文档并强制刷新时，仅删除 `标题.md` 会残留同级 `标题/` 目录，子文档仍在磁盘且 manifest 版本未清，同步按未变更跳过子文档。`prepare_force_repulled_documents_impl` 现对 `.md` 主文件在清理图片后额外 `remove_dir_all` 与文件名同 stem 的兄弟目录（与 wiki 子树落盘一致）；主规格 `knowledge-tree-display` 已更新；OpenSpec 已归档 `2026-04-01-fix-force-repull-wiki-child-folder`；验证：`cargo test --manifest-path src-tauri/Cargo.toml`（80 项）、`npm run typecheck`；归档报告：`.claude/docs/opencat/fix-force-repull-wiki-child-folder-20260401193000.md`。— 🐱 字节猫（编码侦探·东方短毛猫）
+
 - [2026-04-01] 修复：强制更新没有效果 — 复核后确认为真实缺陷：此前「强制更新」仅强制对齐 manifest 元数据，不删本地导出文件也不触发同步，故无法在「先清本地再拉远端」语义下生效。本次新增 `prepare_force_repulled_documents` 删除所选已同步文档的本地导出与图片资源并清空 manifest 版本字段；`is_document_unchanged` 要求输出文件存在才跳过；`HomePage` 强制更新在完成新鲜度与强制对齐后调用 `onCreateTask` 启动与「开始同步」相同有效选区的拉取任务，并在已有 `pending`/`syncing` 任务时禁用按钮；无有效选区时告警提示用户手动「开始同步」。OpenSpec 已归档 `2026-04-01-fix-force-update-repull`；验证：`npm run typecheck`、`cargo test --manifest-path src-tauri/Cargo.toml`（79 项）、`openspec validate fix-force-update-repull --type change`（归档前）。— 🐱 扫帚猫（交互设计师·布偶猫）
 
 - [2026-04-01] 优化：在一次同步大量文档时，已经同步完成的文档可立即恢复勾选（不必等整批任务结束）— `HomePage` 的 `buildTreeNodes` 在活跃 `pending`/`syncing` 任务下，对 `document` / `bitable` 叶子节点若 `documentSyncStatuses` 已为 `synced` 则不再 `disableCheckbox`；目录与知识库聚合节点仍保持任务内锁定；主规格 `sync-focused-application-experience` 已更新；OpenSpec 归档 `2026-04-01-sync-early-unlock-checked-docs`；`openspec validate sync-early-unlock-checked-docs --type change`（归档前）、`npm test`（79 项）、`npm run typecheck` 通过（仓库无 `npm run lint` 脚本）。— 🐱 回环猫（界面魔法师·暹罗猫）
