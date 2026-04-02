@@ -2,6 +2,8 @@
 
 - [2026-04-02] 规范：`.claude/docs/opencat` 历史 OpenCat 归档报告统一为 `YYYYMMDDHHmm-<kebab-change-name>.md`，修正 `DONE.md` 内链，新增主规格 `opencat-archive-reports`；OpenSpec 已归档 `normalize-opencat-archive-doc-names`；归档报告：`.claude/docs/opencat/202604021630-normalize-opencat-archive-doc-names.md`。— 🐱 星页猫（文档编织者·金吉拉）
 
+- [2026-04-02] 规范：按 `/opencat-work` 整理 `DONE.md` 单行格式与 2026-04-02 条目顺序，修复 `#19` 断行；新增规格 `project-done-log`；OpenSpec 已归档 `normalize-done-md`；归档报告：`.claude/docs/opencat/202604021640-normalize-done-md.md`。— 🐱 缩进猫（文档锻造师·沙特尔猫）
+
 - [2026-04-02] 修复：本地输出被删除后知识库树仍显示 `已同步` — 根因是 `get_document_sync_statuses` 仅依据 manifest 的历史 `success` 记录判定同步状态，没有核对 `output_path` 指向的本地文件是否仍存在，导致强制更新清理本地后、真正重拉前仍显示已同步。本次新增 `manifest_record_has_local_output(...)`，仅在成功记录仍有本地文件时返回 `synced`，让缺文件文档与聚合节点一起回退为 `未同步`；补充缺文件状态回退回归测试并同步主规格 `knowledge-tree-display`。OpenSpec 已归档 `2026-04-02-fix-missing-output-unsynced-status`；验证：`cargo test --manifest-path "src-tauri/Cargo.toml"`（81 项）、`openspec validate --changes "fix-missing-output-unsynced-status"`（归档前）；归档报告：`.claude/docs/opencat/202604021032-fix-missing-output-unsynced-status.md`。— 🐱 回环猫（界面魔法师·暹罗猫）
 
 - [2026-04-01] 修复：勾选带子文档的文档并强制刷新时，仅删除 `标题.md` 会残留同级 `标题/` 目录，子文档仍在磁盘且 manifest 版本未清，同步按未变更跳过子文档。`prepare_force_repulled_documents_impl` 现对 `.md` 主文件在清理图片后额外 `remove_dir_all` 与文件名同 stem 的兄弟目录（与 wiki 子树落盘一致）；主规格 `knowledge-tree-display` 已更新；OpenSpec 已归档 `2026-04-01-fix-force-repull-wiki-child-folder`；验证：`cargo test --manifest-path src-tauri/Cargo.toml`（80 项）、`npm run typecheck`；归档报告：`.claude/docs/opencat/202604011930-fix-force-repull-wiki-child-folder.md`。— 🐱 字节猫（编码侦探·东方短毛猫）
