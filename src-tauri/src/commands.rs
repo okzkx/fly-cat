@@ -2159,8 +2159,12 @@ fn is_document_unchanged(
             && record.update_time == document.update_time
             && record.source_path == document.source_path
             && record.output_path == expected_output_path
-            && Path::new(&record.output_path).is_file()
+            && manifest_record_has_local_output(record)
     })
+}
+
+fn manifest_record_has_local_output(record: &crate::model::ManifestRecord) -> bool {
+    Path::new(&record.output_path).is_file()
 }
 
 fn uses_export_download(document: &SyncSourceDocument, openapi_config_available: bool) -> bool {
@@ -2670,6 +2674,9 @@ pub fn get_document_sync_statuses(
     let manifest = crate::storage::load_manifest(path).unwrap_or_default();
     let mut result = std::collections::HashMap::new();
     for record in manifest.records {
+        if record.status == "success" && !manifest_record_has_local_output(&record) {
+            continue;
+        }
         let status = if record.status == "success" {
             "synced".to_string()
         } else {
@@ -3791,6 +3798,90 @@ mod tests {
         };
 
         assert!(!is_document_unchanged(&document, &sync_root, &manifest));
+        let _ = fs::remove_dir_all(&sync_root);
+    }
+
+    #[test]
+    fn document_sync_statuses_skip_success_rows_when_output_is_missing() {
+        let sync_root = std::env::temp_dir().join("feishu-sync-status-missing-output-test");
+        let _ = fs::remove_dir_all(&sync_root);
+        fs::create_dir_all(&sync_root).expect("mkdir");
+
+        let existing_output = sync_root.join("KB").join("Kept.md");
+        fs::create_dir_all(existing_output.parent().unwrap()).expect("mkdir parent");
+        fs::write(&existing_output, b"kept").expect("write kept output");
+
+        let missing_output = sync_root.join("KB").join("Missing.md");
+        let failed_output = sync_root.join("KB").join("Failed.md");
+
+        let manifest = crate::model::SyncManifest {
+            records: vec![
+                crate::model::ManifestRecord {
+                    document_id: "doc-kept".into(),
+                    space_id: "kb".into(),
+                    space_name: "KB".into(),
+                    node_token: "node-kept".into(),
+                    title: "Kept".into(),
+                    version: "v1".into(),
+                    update_time: "t1".into(),
+                    source_path: "KB/Kept".into(),
+                    path_segments: vec![],
+                    output_path: existing_output.to_string_lossy().to_string(),
+                    content_hash: "h1".into(),
+                    source_signature: "".into(),
+                    status: "success".into(),
+                    image_assets: vec![],
+                    last_synced_at: "2026-04-02T00:00:00Z".into(),
+                },
+                crate::model::ManifestRecord {
+                    document_id: "doc-missing".into(),
+                    space_id: "kb".into(),
+                    space_name: "KB".into(),
+                    node_token: "node-missing".into(),
+                    title: "Missing".into(),
+                    version: "v2".into(),
+                    update_time: "t2".into(),
+                    source_path: "KB/Missing".into(),
+                    path_segments: vec![],
+                    output_path: missing_output.to_string_lossy().to_string(),
+                    content_hash: "h2".into(),
+                    source_signature: "".into(),
+                    status: "success".into(),
+                    image_assets: vec![],
+                    last_synced_at: "2026-04-02T00:00:00Z".into(),
+                },
+                crate::model::ManifestRecord {
+                    document_id: "doc-failed".into(),
+                    space_id: "kb".into(),
+                    space_name: "KB".into(),
+                    node_token: "node-failed".into(),
+                    title: "Failed".into(),
+                    version: "v3".into(),
+                    update_time: "t3".into(),
+                    source_path: "KB/Failed".into(),
+                    path_segments: vec![],
+                    output_path: failed_output.to_string_lossy().to_string(),
+                    content_hash: "h3".into(),
+                    source_signature: "".into(),
+                    status: "failed".into(),
+                    image_assets: vec![],
+                    last_synced_at: "2026-04-02T00:00:00Z".into(),
+                },
+            ],
+        };
+        crate::storage::save_manifest(&sync_root, &manifest).expect("save manifest");
+
+        let statuses = get_document_sync_statuses(sync_root.to_string_lossy().to_string());
+        assert_eq!(
+            statuses.get("doc-kept").map(|entry| entry.status.as_str()),
+            Some("synced")
+        );
+        assert!(!statuses.contains_key("doc-missing"));
+        assert_eq!(
+            statuses.get("doc-failed").map(|entry| entry.status.as_str()),
+            Some("failed")
+        );
+
         let _ = fs::remove_dir_all(&sync_root);
     }
 
