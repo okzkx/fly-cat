@@ -1,64 +1,56 @@
 # DONE
 
-- [2026-04-02] 规范：`.claude/docs/opencat` 历史 OpenCat 归档报告统一为 `YYYYMMDDHHmm-<kebab-change-name>.md`，修正 `DONE.md` 内链，新增主规格 `opencat-archive-reports`；OpenSpec 已归档 `normalize-opencat-archive-doc-names`；归档报告：`.claude/docs/opencat/202604021630-normalize-opencat-archive-doc-names.md`。— 🐱 星页猫（文档编织者·金吉拉）
-
-- [2026-04-02] 规范：按 `/opencat-work` 整理 `DONE.md` 单行格式与 2026-04-02 条目顺序，修复 `#19` 断行；新增规格 `project-done-log`；OpenSpec 已归档 `normalize-done-md`；归档报告：`.claude/docs/opencat/202604021640-normalize-done-md.md`。— 🐱 缩进猫（文档锻造师·沙特尔猫）
-
-- [2026-04-02] 修复：本地输出被删除后知识库树仍显示 `已同步` — 根因是 `get_document_sync_statuses` 仅依据 manifest 的历史 `success` 记录判定同步状态，没有核对 `output_path` 指向的本地文件是否仍存在，导致强制更新清理本地后、真正重拉前仍显示已同步。本次新增 `manifest_record_has_local_output(...)`，仅在成功记录仍有本地文件时返回 `synced`，让缺文件文档与聚合节点一起回退为 `未同步`；补充缺文件状态回退回归测试并同步主规格 `knowledge-tree-display`。OpenSpec 已归档 `2026-04-02-fix-missing-output-unsynced-status`；验证：`cargo test --manifest-path "src-tauri/Cargo.toml"`（81 项）、`openspec validate --changes "fix-missing-output-unsynced-status"`（归档前）；归档报告：`.claude/docs/opencat/202604021032-fix-missing-output-unsynced-status.md`。— 🐱 回环猫（界面魔法师·暹罗猫）
-
-- [2026-04-01] 修复：勾选带子文档的文档并强制刷新时，仅删除 `标题.md` 会残留同级 `标题/` 目录，子文档仍在磁盘且 manifest 版本未清，同步按未变更跳过子文档。`prepare_force_repulled_documents_impl` 现对 `.md` 主文件在清理图片后额外 `remove_dir_all` 与文件名同 stem 的兄弟目录（与 wiki 子树落盘一致）；主规格 `knowledge-tree-display` 已更新；OpenSpec 已归档 `2026-04-01-fix-force-repull-wiki-child-folder`；验证：`cargo test --manifest-path src-tauri/Cargo.toml`（80 项）、`npm run typecheck`；归档报告：`.claude/docs/opencat/202604011930-fix-force-repull-wiki-child-folder.md`。— 🐱 字节猫（编码侦探·东方短毛猫）
-
-- [2026-04-01] 修复：强制更新没有效果 — 复核后确认为真实缺陷：此前「强制更新」仅强制对齐 manifest 元数据，不删本地导出文件也不触发同步，故无法在「先清本地再拉远端」语义下生效。本次新增 `prepare_force_repulled_documents` 删除所选已同步文档的本地导出与图片资源并清空 manifest 版本字段；`is_document_unchanged` 要求输出文件存在才跳过；`HomePage` 强制更新在完成新鲜度与强制对齐后调用 `onCreateTask` 启动与「开始同步」相同有效选区的拉取任务，并在已有 `pending`/`syncing` 任务时禁用按钮；无有效选区时告警提示用户手动「开始同步」。OpenSpec 已归档 `2026-04-01-fix-force-update-repull`；验证：`npm run typecheck`、`cargo test --manifest-path src-tauri/Cargo.toml`（79 项）、`openspec validate fix-force-update-repull --type change`（归档前）。— 🐱 扫帚猫（交互设计师·布偶猫）
-
-- [2026-04-01] 优化：在一次同步大量文档时，已经同步完成的文档可立即恢复勾选（不必等整批任务结束）— `HomePage` 的 `buildTreeNodes` 在活跃 `pending`/`syncing` 任务下，对 `document` / `bitable` 叶子节点若 `documentSyncStatuses` 已为 `synced` 则不再 `disableCheckbox`；目录与知识库聚合节点仍保持任务内锁定；主规格 `sync-focused-application-experience` 已更新；OpenSpec 归档 `2026-04-01-sync-early-unlock-checked-docs`；`openspec validate sync-early-unlock-checked-docs --type change`（归档前）、`npm test`（79 项）、`npm run typecheck` 通过（仓库无 `npm run lint` 脚本）。— 🐱 回环猫（界面魔法师·暹罗猫）
-
-- [2026-04-01] 新增：强制更新按钮功能应该为：对比所选中的按钮本地和远端版本，无论本地和远端版本是多少，都更新本地和远端一致 — 首页工具栏新增独立「强制更新」按钮；继续保留「全部刷新」的条件对齐规则；强制更新会对当前勾选且已同步的文档/多维表格叶子刷新远端元数据后，无论本地版本高低或缺失与否，都把 manifest 本地版本/时间强制对齐到远端；OpenSpec 变更 `add-force-update-selected-docs` 已归档，`npm run typecheck`、`cargo test aligns_manifest_version_when_remote_is_newer --manifest-path "src-tauri/Cargo.toml"`、`cargo test keeps_local_version_when_normal_refresh_sees_older_remote --manifest-path "src-tauri/Cargo.toml"`、`cargo test force_aligns_manifest_version_even_when_remote_is_older --manifest-path "src-tauri/Cargo.toml"` 与 `openspec validate --changes "add-force-update-selected-docs"` 通过。— 🐱 扫帚猫（交互设计师·布偶猫）
-
-- [2026-04-01] 修复：全部刷新按钮功能应该为：对比所选中的按钮本地和远端版本，如果本地比远端低，或者本地没有远端有，或者本地有远端没有。就更新本地的版本让其和远端一致。— 将首页「全部刷新」改为只处理当前勾选且已同步的文档/多维表格；刷新后通过新 Tauri 命令把 manifest 本地版本/时间按规则对齐到远端，并立即刷新树上的本地/远端版本显示；OpenSpec 变更 `fix-refresh-selected-version-alignment` 已归档，`npm run typecheck`、`cargo test aligns_manifest_version_when_remote_is_newer --manifest-path "src-tauri/Cargo.toml"` 与 `openspec validate --changes "fix-refresh-selected-version-alignment"` 通过。— 🐱 回环猫（界面魔法师·暹罗猫）
-- [2026-04-01] 新增批量刷新按钮 — 复核当前实现确认这是陈旧重复任务：`src/components/HomePage.tsx` 已存在 `全部刷新` 按钮、`handleRefreshAllFreshness()` 批量检查并持久化全部已同步文档的新鲜度，且 `DONE.md` 与已归档的 `2026-04-01-refresh-all-freshness` 变更均已记录；本次仅清理 TODO 队列状态，`npm run typecheck` 通过。— 🐱 回环猫（界面魔法师·暹罗猫）
-- [2026-04-01] 修复：下载乱码 比如：C:\Users\zengkaixiang\Documents\synced-docs\Unity\资源管理\unity 5 资源打包控制.md — 根因并非中文路径名损坏，而是普通 `doc/docx` 在可用 OpenAPI 配置下误走了 export 下载通道，导致 `docx/zip` 二进制内容被直接写入 `.md`；本次新增 `uses_export_download()`，仅让 `sheet` / `bitable` 走导出下载，其余文档继续走结构化内容渲染为 Markdown 的链路；OpenSpec 变更 `fix-docx-markdown-garbled-download` 已归档，`cargo test`（74 项）与 `openspec validate "fix-docx-markdown-garbled-download" --type change` 通过。— 🐱 字节猫（编码侦探·东方短毛猫）
-- [2026-04-01] 优化：当我点击展开和关闭知识库时，表现动画不流畅 — `src/App.tsx` 在知识树懒加载完成后用 React `startTransition` 延后 `setLoadedSpaceTrees`，减少与展开/收起动画争抢主线程；主规格 `sync-focused-application-experience` 新增知识树展开收起流畅度要求；OpenSpec 变更 `kb-expand-animation-smoothness` 已归档，`npm run typecheck`、`npm test` 与 `openspec validate --specs` 通过。— 🐱 回环猫（界面魔法师·暹罗猫）
-- [2026-04-01] 展示文档里添加对于 https://github.com/okzkx/opencat-workflows 的致谢 — `README.md`、`README.zh-CN.md` 增加「致谢 opencat-workflows」目录与说明；主规格 `readme-documentation` 补充上游工作流致谢要求；OpenSpec 变更 `opencat-workflows-acknowledgement` 已归档，`openspec validate readme-documentation --type spec` 与 `openspec validate --all --no-interactive` 通过。— 🐱 星页猫（文档编织者·金吉拉）
-- [2026-04-01] 新增中文说明文档与 README 跳转 — 根目录新增 `README.zh-CN.md`（与 `README.md` 事实一致）；`README.md` 正文前部与目录增加指向 `README.zh-CN.md` 的相对链接；`README.zh-CN.md` 回链默认 `README.md`；主规格 `readme-documentation` 已增补中英文入口与中文文档一致性要求；OpenSpec 变更 `readme-zh-doc` 已归档；`openspec validate --changes readme-zh-doc` 在归档前通过。— 🐱 双页猫（知识书记官·波斯猫）
-- [2026-04-01] 优化飞猫助手 README 使其具有 GitHub 项目展示页风格 — 根目录 `README.md` 增加目录导航、功能亮点、界面素材说明、使用流程与分节快速开始；Releases 指向 `https://github.com/okzkx/fly-cat/releases`；主规格 `readme-documentation` 补充 Purpose/Requirements 与托管页展示要求；OpenSpec 归档 `2026-04-01-github-style-readme`；`openspec validate --changes`、`openspec validate readme-documentation` 通过。— 🐱 星页猫（文档编织者·金吉拉）
-- [2026-04-01] 知识库「全部刷新」按钮 — 首页卡片工具栏新增「全部刷新」：对当前所有 `synced` 文档调用既有 `checkDocumentFreshness` 与 `saveFreshnessMetadata`，与防抖自动检查一致；`canRunSync` 或无已同步文档时禁用；OpenSpec 归档 `2026-04-01-refresh-all-freshness`，主规格 `knowledge-tree-display` 已更新。— 🐱 回环猫（界面魔法师·暹罗猫）
-- [2026-03-29 20:10] #1 知识库目录同步完文档默认打勾，可取消打勾删除 — 已同步文档默认勾选，可取消打勾标记删除；点击开始同步时自动清理未勾选文档；同步中/等待中文档checkbox禁用。Rust后端新增remove_synced_documents命令，前端通过uncheckedSyncedDocKeys追踪状态，经三检查点提交合并到master。
-- [2026-03-29 22:00] #2 知识库目录多选框与文档名字点击同步 — handleSelect改为toggle模式（点击已选中项自动取消勾选），点击文档名字和多选框行为完全一致，uncheckedSyncedDocKeys在handleSelect中同步更新。经propose→apply→archive三阶段完成。
-- [2026-03-29 22:15] #3 配置页面转向知识库目录页面卡住修复 — get_app_bootstrap改为异步函数，前端回调先执行页面切换再异步加载bootstrap数据，实现非阻塞页面切换。经opencat-task完整流程完成。
-- [2026-03-29 22:35] #4 知识库目录三态复选框 — 移除Tree组件checkStrictly属性，启用Ant Design原生父子关联，当部分子节点选中时父节点显示减号（indeterminate）状态。经opencat-task完整流程完成。
-- [2026-03-29 19:20] #5 端口占用问题修复（初步） — 将 vite.config.ts 中 strictPort 从 true 改为 false，当应用被强制关闭后再次启动时，Vite 会自动尝试下一个可用端口。
-- [2026-03-30 00:40] #6 端口占用问题修复（彻底） — 双层防御：启动时自动检测并清理孤儿 Node.js 进程（findPortOwnerPid + isNodeProcess + killOrphanedDevProcesses），仅杀死 node.exe 进程避免误杀；配合 strictPort:false 兜底。全部56项测试通过（含13项新增）。
-- [2026-03-30 01:00] #7 修复编译时的 Rust warning — 消除13个编译警告至零。commands.rs 加 #[cfg(test)] 和 #[allow(dead_code)]，sync.rs 同理，mcp.rs 补充字段注解。cargo check 和 cargo test（29项）均无 warning 通过。
-- [2026-03-30 01:20] #8 知识库文档三态复选框行为优化 — 实现精确三态循环切换：勾选（自身+子文档全选）→ 方块（保持子文档当前状态）→ 取消（全部取消勾选）。全选/全不选时仅两态切换。新增 treeSelection.ts 工具函数和15项单元测试，HomePage.tsx 使用 checkStrictly + 手动 halfChecked 计算。全部21项测试通过。
-- [2026-03-30 01:50] #9 文档新鲜度检查（元数据记录） — Rust 后端新增 DocumentFreshnessResult 模型和 check_document_freshness 命令，对比 manifest 中的版本/更新时间与飞书 API 返回值，返回 current/updated/new/error 四种状态。前端新增 TypeScript 类型定义。cargo check 和 cargo test（29项）均通过。
-- [2026-03-29 22:40] #10 文档新鲜度持久化存储与前端显示 — SQLite 数据库(.freshness-metadata.db)存储新鲜度元数据； 新增 load_freshness_metadata/save_freshness_metadata/clear_freshness_metadata 命令; 前端 HomePage 在已同步文档后显示新鲜度状态图标(绿色对勾/黄色感叹号/蓝色同步/红色错误)。 经 opencat-task 完整 worktree 流程完成。
-- [2026-03-29 23:47] #11 工作区打开按钮 — HomePage 顶部工具栏新增"打开工作区"按钮（FolderOutlined 图标），点击后通过 Tauri Command 打开本地工作区目录。新增 open_workspace_folder Rust 命令，使用 opener crate 跨平台打开文件夹。经 opencat-task 完整 worktree 流程完成。
-- [2026-03-30 00:28] #12 文档浏览器打开按钮 — 知识库目录每个文档节点后添加"在浏览器打开"按钮（ExportOutlined 图标），点击调用 openDocumentInBrowser 函数打开飞书云文档。按钮仅在文档类型节点显示，点击时阻止事件冒泡。经 opencat-task 完整 worktree 流程完成。
-- [2026-03-30 00:52] #13 文档图片显示修复 — 改用飞书块 API 替代 raw_content API，解析 block_type:28 图片块，提取 image.token 作为 media_id 调用现有 download_image() 方法下载图片，渲染为正确的 Markdown 图片语法。经 opencat-task 完整 worktree 流程完成。
-- [2026-03-30 01:05] #14 归档 openspec changes — 归档 4 个已完成的 change：document-freshness-check、document-freshness-persistence、fix-image-filename-png、workspace-open-button。生成中文归档报告并移动到 archive 目录。
-- [2026-03-30 01:10] #15 清理已合并分支 — 删除 6 个已合并的工作分支：opencat/fix-image-filename-png、opencat/knowledge-doc-open-in-browser、opencat/knowledge-doc-open-in-browser-new、opencat/knowledge-doc-open-in-browser-work、opencat/workspace-open-button、workspace-open-button。worktree 保留在 temp/worktree-master 分支。
-- [2026-03-30 03:05] #16 修复 opener 权限错误 — 在 src-tauri/capabilities/default.json 中添加 "opener:allow-open-path" 权限，解决点击"打开工作区"按钮报错问题。
-- [2026-03-30 03:15] #17 文档浏览器打开按钮 — 在 HomePage 树形节点中添加"在浏览器打开"按钮（ExportOutlined 图标），仅文档类型节点显示，点击调用 openDocumentInBrowser 打开飞书云文档。
-- [2026-03-30 03:30] #18 修复表格在浏览器打开按钮 — 扩展"在浏览器打开"按钮支持，现在 bitable（多维表格）节点也能在浏览器打开，跳转到 https://feishu.cn/base/{nodeToken}。
-- [2026-03-30 03:45] #19 修复取消勾选同步未删除文件夹 — 重写 collectDocumentIdsByTreeKeys 函数，当取消勾选文件夹时递归收集所有子孙文档的 ID；此前仅收集直接匹配 key 的节点。
-- [2026-03-30 10:45] 修复：打开实际写入目录报错 — 对照当前实现、OpenSpec 归档与 DONE #16，确认该任务已由 opener 权限修复完成；本次同步清理 TODO 队列状态。
-- [2026-03-30 11:04] 修复：删除美术模块文件夹时出现失败，报错：本次失败主要发生在发现阶段（1项）。获取文档信息失败(code=99991400): request trigger frequency limit — 增加 cleanup-only 路径：删除取消勾选的已同步文档后，在没有显式同步源时不再创建后续同步任务，也不再触发 discovery；已补充 OpenSpec 归档、中文报告和回归测试。
-- [2026-03-30 11:06] 修复：点击在在网页中浏览的按钮没有反应 — 对照当前实现确认已完成：文档/多维表格“在浏览器打开”已改用 `openUrl(...)`，首页也会在打开失败时展示错误提示；本次同步清理 TODO 队列状态并切换到下一个 P2 任务。
-- [2026-03-30 12:20] 修复：知识库目录文档在网页中打开结果是该页面不存在 — 对照现有实现确认这是未完成的真实缺陷：知识树文档节点打开浏览器时误用了 `nodeToken` 拼接 `docx` 链接，导致目录型/可展开文档节点落到不存在页面。本次改为文档节点使用 `documentId` 生成 Feishu 文档 URL，bitable 继续使用 `nodeToken`，并补充 URL 生成回归测试与 OpenSpec 归档。
-- [2026-03-30 12:30] 修复：表格需要同步成为 Excel — 对照当前实现与已归档的 `adopt-export-task-api` 变更确认该能力早已完成：`sheet` / `bitable` 已走 Export Task API 并导出 `.xlsx`；本次仅清理陈旧 TODO 队列状态并补充首条队列措辞对应的验证记录。
-- [2026-03-30 14:35] 修复：知识库内的表格不支持同步 — 重新核对当前实现确认这仍是未完成的真实缺陷：虽然后端已支持 `sheet` / `bitable` 导出 `.xlsx`，但知识库树仍把 bitable 排除在选择、发现与状态展示之外。本次已让 bitable 节点可直接勾选，也会随父级目录/文档分支一起进入同步队列，并修正 `.xlsx` 输出路径的增量判定；前端 41 项聚焦测试、Rust `cargo test`(30 项) 与 `cargo check` 均通过。
-- [2026-03-30 16:02] 修复：图片下载看不到的问题，比如 C:\Users\zengkaixiang\Documents\synced-docs\ProjectStorm\美术模块\动画\死锁动画.md — 重新核对样例输出确认当前 Markdown 完全缺少图片语法且 manifest 的 `imageAssets` 为空；本次补齐飞书块树的递归图片遍历、将 OpenAPI 图片真实下载到本地 `_assets` 并改写为相对 Markdown 链接。经 `openspec validate`、`cargo check` 与 `cargo test`（32 项）验证通过，已完成 propose/apply/archive/merge/cleanup 全流程。
-- [2026-03-31] 文档同步质量修复 — 扩展 RawBlock/CanonicalBlock 枚举，新增 OrderedList、BulletList、CodeBlock、Quote、Table、Divider、Todo 共 7 种块类型；修复有序列表(type 4)、无序列表(type 3)渲染；支持代码块(type 14)、引用块(type 24)、表格(type 22)、分割线、待办列表(type 17)。render_markdown 输出对应 Markdown 语法。新增 17 个测试，总计 50 个测试全部通过。经 opencat-task 完整 worktree 流程完成。
-- [2026-03-31] 文本样式保留 — 新增 RichSegment/RichText 结构体替代纯 String，重构 extract_text_from_elements 保留粗体/斜体/删除线/链接/行内代码等样式信息；render_markdown 输出对应 Markdown 内联语法 (**bold*, *italic*, ~~strike~~, [link](url), `code`)。CanonicalBlock 变体全部迁移至 RichText。新增 13 个测试，总计 63 个测试全部通过。经 opencat-task 完整 worktree 流程完成。
-- [2026-03-31] 内容缺失修复 — T11: fetch_document_blocks 实现分页遍历，检查 has_more/page_token 循环获取所有子块，修复超 500 块文档被截断问题。T12: 新增 fetch_single_block_json_with_retry 方法，6 次重试 / 500ms 初始退避（指数退避至 8s），通过错误码 99991400 检测限频，跳过时记录警告。cargo check 与 63 项测试全部通过。经 opencat-task 完整 worktree 流程完成。
-- [2026-03-31] 修复同步文档内容缺失问题 — 核心根因：block_type 枚举映射完全错误（1=page非text, 2=text非heading, 3-11=heading1-9非bullet/ordered, 12=bullet, 13=ordered, 15=quote, 22=divider, 31=table）。修正全部映射、标题改用 headingN 键提取、todo done 改为 style.done boolean、新增 merge_consecutive_list_blocks 合并连续列表。全部 63 项测试通过。经 opencat-task 完整流程完成。— 🐱 排版匠（文档锻造师·沙特尔猫）
-- [2026-03-31] 修复表格同步失败 — 根因：bitable/sheet 导出失败后回退到 docx API 导致 1770002 not found。修复：export-only 类型不再回退到 docx 路径；export 类型文档跳过 docx 新鲜度检查。新增 1 项测试，64 项全部通过。经 opencat-task 完整流程完成。— 🐱 追影（代码侦探·暹罗猫）
-- [2026-03-31 18:17] 同步列表页面新加按钮：清空所有的同步任务 — 同步任务列表增加“清空所有任务”按钮（二次确认），Tauri/浏览器均持久化清空并可继续新建同步。— 🐱 扫帚猫（交互设计师·布偶猫）
-- [2026-03-31 18:26] 知识库页面每个文档后加一个刷新符号按钮：可以重新同步该文档 — 知识库树中文档/多维表格行新增“重新同步”按钮，单篇清理本地记录后创建并启动仅含该 scope 的同步任务。— 🐱 回环猫（界面魔法师·暹罗猫）
-- [2026-03-31 18:35] 排版还有一点小问题，有序列表以及二级有序列表的缩进没有做。二级列表的和一级列表排在一列了 — 修复同步 Markdown 中有序/无序列表嵌套：块树深度写入 `ListItem.indent`，渲染时逐级缩进且子有序列表独立编号；规格已归档 `2026-03-31-fix-nested-list-indent`。— 🐱 缩进猫（文档锻造师·沙特尔猫）
-- [2026-03-31] 修复表格同步 export_tasks missing ticket — 根因：飞书导出任务 OpenAPI 响应需解析 `data.ticket` 与 `data.result`，原实现错误读取根级字段导致误报缺少 ticket。已补充导出任务信封解析、非零 `code` 错误透传与 5 项相关测试；OpenSpec 已归档 `2026-03-31-fix-export-task-api-envelope`。经 opencat-task propose/apply/archive/merge/cleanup 完成。— 🐱 票据猫（接口锻造师·俄罗斯蓝猫）
-- [2026-03-31] 修复：知识库打勾后无法取消 — 父级 scope 仅写入父 key、子节点因覆盖禁用未单独入 checked 集时，三态判断误判为 `mixed`，导致无法进入取消分支。已在 `HomePage` 的勾选切换逻辑中把“缺失子 key 仅因覆盖禁用”纠正为 `all-checked`；OpenSpec 已归档 `2026-03-31-fix-knowledge-base-checkbox-uncheck`，`npm test` 82 项通过。— 🐱 勾勾猫（交互设计师·美国短毛猫）
-- [2026-03-31 20:00] 修复：知识库打勾，然后同步失败： 本次失败主要发生在发现阶段（1项）。获取文档信息失败(code=99991400): request trigger frequency limit — 根因是 discovery 阶段对文档详情接口 `fetch_document_summary()` 未处理 Feishu `99991400` 限频，命中后直接整次失败；本次新增文档信息限频识别与指数退避重试 helper，discovery 改走重试路径，非限频错误仍快速失败，并补充 2 条 Rust 回归测试。`cargo test --lib` 74 项通过，`openspec validate --changes "fix-discovery-document-summary-rate-limit"` 通过。— 🐱 票据猫（接口锻造师·俄罗斯蓝猫）
-- [2026-03-31 20:36] 知识库文档后面要显示 本地的飞书版本号 / 远端的飞书版本号，以便于判断是否需要同步 — 知识库树中文档与多维表格行增加「本地 / 远端」飞书修订号展示：本地来自 manifest，远端优先新鲜度检查结果、否则 wiki 子节点列表版本；已合并 `master` 并完成 OpenSpec 归档。— 🐱 回环猫（界面魔法师·暹罗猫）
-- [2026-03-31 20:52] 根据 .claude\docs\gou.md 来优化复选框逻辑 — 知识库树复选框与同步状态脱钩（默认不勾，状态只看标签）；开始同步只处理已勾选源、不再按未勾选删本地；新增「批量删除」清除已勾选且已同步文档；三态父子联动保留。OpenSpec 已归档并同步主规格。— 🐱 勾勾猫（交互设计师·美国短毛猫）
-- [2026-04-01] 修复：根据 gou.md，父级打勾时子复选框须全部显示为打勾且可交互 — 用 `expandedCheckedKeys`（`selectedSources` key ∪ `collectCoveredDescendantKeys`）驱动 Tree 勾选与三态计算；去掉「覆盖范围」导致的子节点 `disableCheckbox`；取消勾选被祖先覆盖的节点时通过 `trySubtractCoveredDescendant` 拆分 `selectedSources`。变更 `kb-checkbox-gou-parent-children-checked`，worktree `feishu_docs_sync-worktree`，`npm test` 79 项通过。OpenSpec 已归档 `2026-04-01-kb-checkbox-gou-parent-children-checked`。— 🐱 勾勾猫（交互设计师·美国短毛猫）
+- [2026-04-02 16:30] 规范 OpenCat 归档报告命名 — normalize-opencat-archive-doc-names
+- [2026-04-02 16:40] 规范化 DONE.md — normalize-done-md
+- [2026-04-02 10:32] 修复：本地输出被删除后知识库树仍显示 `已同步` — fix-missing-output-unsynced-status
+- [2026-04-01 19:30] 修复：勾选带子文档的文档并强制刷新时会残留同级目录 — fix-force-repull-wiki-child-folder
+- [2026-04-01 18:45] 修复：强制更新没有效果 — fix-force-update-repull
+- [2026-04-01 16:45] 优化：同步中已完成文档可立即恢复勾选 — sync-early-unlock-checked-docs
+- [2026-04-01 15:30] 新增：强制更新按钮对齐本地和远端版本 — add-force-update-selected-docs
+- [2026-04-01 15:14] 修复：全部刷新按钮按差异对齐版本 — fix-refresh-selected-version-alignment
+- [2026-04-01 14:40] 修复：下载乱码 — fix-docx-markdown-garbled-download
+- [2026-04-01 00:00] 优化：知识库展开关闭动画流畅性 — kb-expand-animation-smoothness
+- [2026-04-01 16:00] README 添加 opencat-workflows 致谢 — opencat-workflows-acknowledgement
+- [2026-04-01 12:00] 新增中文说明文档与 README 跳转 — readme-zh-doc
+- [2026-04-01 14:30] 优化飞猫助手 README GitHub 展示页风格 — github-style-readme
+- [2026-04-01 10:30] 新增：知识库全部刷新按钮 — refresh-all-freshness
+- [2026-03-29 20:10] #1 知识库目录同步完文档默认打勾，可取消打勾删除 — knowledge-doc-checkbox
+- [2026-03-29 22:00] #2 知识库目录多选框与文档名字点击同步 — sync-knowledge-name-click-toggle
+- [2026-03-29 22:15] #3 配置页面转向知识库目录页面卡住修复 — async-blocking-commands
+- [2026-03-29 22:35] #4 知识库目录三态复选框 — knowledge-base-tri-state-checkbox
+- [2026-03-29 19:20] #5 端口占用问题修复（初步） — fix-port-occupation
+- [2026-03-30 00:40] #6 端口占用问题修复（彻底） — fix-port-occupation-hardening
+- [2026-03-30 01:00] #7 修复编译时的 Rust warning — fix-rust-warnings
+- [2026-03-30 01:20] #8 知识库文档三态复选框行为优化 — sync-knowledge-checkbox-selection
+- [2026-03-30 01:50] #9 文档新鲜度检查（元数据记录） — document-freshness-check
+- [2026-03-29 22:40] #10 文档新鲜度持久化存储与前端显示 — document-freshness-persistence
+- [2026-03-29 23:47] #11 工作区打开按钮 — workspace-open-button
+- [2026-03-30 00:28] #12 文档浏览器打开按钮 — knowledge-doc-open-in-browser
+- [2026-03-30 00:52] #13 文档图片显示修复 — fix-image-filename-png
+- [2026-03-30 01:05] #14 归档 openspec changes — archive-openspec-changes
+- [2026-03-30 01:10] #15 清理已合并分支 — cleanup-merged-branches
+- [2026-03-30 03:05] #16 修复 opener 权限错误 — fix-opener-permission
+- [2026-03-30 03:15] #17 文档浏览器打开按钮 — knowledge-doc-open-in-browser
+- [2026-03-30 03:30] #18 修复表格在浏览器打开按钮 — bitable-open-in-browser-support
+- [2026-03-30 03:45] #19 修复取消勾选同步未删除文件夹 — fix-unchecked-folder-sync-cleanup
+- [2026-03-30 10:45] 修复：打开实际写入目录报错 — cleanup-open-write-dir-task-status
+- [2026-03-30 11:04] 修复：删除美术模块文件夹时出现失败 — skip-discovery-after-cleanup-only
+- [2026-03-30 11:06] 修复：点击在网页中浏览的按钮没有反应 — fix-open-in-browser-button
+- [2026-03-30 12:20] 修复：知识库目录文档在网页中打开结果是该页面不存在 — fix-knowledge-doc-browser-url
+- [2026-03-30 12:30] 修复：表格需要同步成为 Excel — adopt-export-task-api
+- [2026-03-30 14:35] 修复：知识库内的表格不支持同步 — fix-knowledge-table-sync
+- [2026-03-30 16:02] 修复：图片下载看不到 — fix-synced-markdown-image-visibility
+- [2026-03-31 00:00] 文档同步质量修复 — fix-content-formatting
+- [2026-03-31 00:00] 文本样式保留 — preserve-rich-text-styles
+- [2026-03-31 00:00] 内容缺失修复 — fix-document-block-pagination-and-retry
+- [2026-03-31 00:00] 修复同步文档内容缺失问题 — fix-sync-document-content-missing
+- [2026-03-31 00:00] 修复表格同步失败 — fix-bitable-export-fallback
+- [2026-03-31 18:17] 同步列表页面新加按钮：清空所有的同步任务 — add-clear-all-sync-tasks-button
+- [2026-03-31 18:26] 知识库页面每个文档后加一个刷新符号按钮：可以重新同步该文档 — knowledge-doc-resync-button
+- [2026-03-31 18:35] 排版还有一点小问题，有序列表以及二级有序列表的缩进没有做 — fix-nested-list-indent
+- [2026-03-31 00:00] 修复表格同步 export_tasks missing ticket — fix-export-task-api-envelope
+- [2026-03-31 00:00] 修复：知识库打勾后无法取消 — fix-knowledge-base-checkbox-uncheck
+- [2026-03-31 20:00] 修复：知识库打勾，然后同步失败 — fix-discovery-document-summary-rate-limit
+- [2026-03-31 20:36] 知识库文档后面要显示本地的飞书版本号 / 远端的飞书版本号 — kb-doc-feishu-version-labels
+- [2026-03-31 20:52] 根据 gou.md 来优化复选框逻辑 — kb-checkbox-decouple-batch
+- [2026-04-01 10:25] 修复：根据 gou.md，父级打勾时子复选框须全部显示为打勾且可交互 — kb-checkbox-gou-parent-children-checked
