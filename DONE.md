@@ -1,5 +1,9 @@
 # DONE
 
+- [2026-04-02] 规范：`.claude/docs/opencat` 历史 OpenCat 归档报告统一为 `YYYYMMDDHHmm-<kebab-change-name>.md`，修正 `DONE.md` 内链，新增主规格 `opencat-archive-reports`；OpenSpec 已归档 `normalize-opencat-archive-doc-names`；归档报告：`.claude/docs/opencat/202604021630-normalize-opencat-archive-doc-names.md`。— 🐱 星页猫（文档编织者·金吉拉）
+
+- [2026-04-02] 修复：本地输出被删除后知识库树仍显示 `已同步` — 根因是 `get_document_sync_statuses` 仅依据 manifest 的历史 `success` 记录判定同步状态，没有核对 `output_path` 指向的本地文件是否仍存在，导致强制更新清理本地后、真正重拉前仍显示已同步。本次新增 `manifest_record_has_local_output(...)`，仅在成功记录仍有本地文件时返回 `synced`，让缺文件文档与聚合节点一起回退为 `未同步`；补充缺文件状态回退回归测试并同步主规格 `knowledge-tree-display`。OpenSpec 已归档 `2026-04-02-fix-missing-output-unsynced-status`；验证：`cargo test --manifest-path "src-tauri/Cargo.toml"`（81 项）、`openspec validate --changes "fix-missing-output-unsynced-status"`（归档前）；归档报告：`.claude/docs/opencat/202604021032-fix-missing-output-unsynced-status.md`。— 🐱 回环猫（界面魔法师·暹罗猫）
+
 - [2026-04-01] 修复：勾选带子文档的文档并强制刷新时，仅删除 `标题.md` 会残留同级 `标题/` 目录，子文档仍在磁盘且 manifest 版本未清，同步按未变更跳过子文档。`prepare_force_repulled_documents_impl` 现对 `.md` 主文件在清理图片后额外 `remove_dir_all` 与文件名同 stem 的兄弟目录（与 wiki 子树落盘一致）；主规格 `knowledge-tree-display` 已更新；OpenSpec 已归档 `2026-04-01-fix-force-repull-wiki-child-folder`；验证：`cargo test --manifest-path src-tauri/Cargo.toml`（80 项）、`npm run typecheck`；归档报告：`.claude/docs/opencat/202604011930-fix-force-repull-wiki-child-folder.md`。— 🐱 字节猫（编码侦探·东方短毛猫）
 
 - [2026-04-01] 修复：强制更新没有效果 — 复核后确认为真实缺陷：此前「强制更新」仅强制对齐 manifest 元数据，不删本地导出文件也不触发同步，故无法在「先清本地再拉远端」语义下生效。本次新增 `prepare_force_repulled_documents` 删除所选已同步文档的本地导出与图片资源并清空 manifest 版本字段；`is_document_unchanged` 要求输出文件存在才跳过；`HomePage` 强制更新在完成新鲜度与强制对齐后调用 `onCreateTask` 启动与「开始同步」相同有效选区的拉取任务，并在已有 `pending`/`syncing` 任务时禁用按钮；无有效选区时告警提示用户手动「开始同步」。OpenSpec 已归档 `2026-04-01-fix-force-update-repull`；验证：`npm run typecheck`、`cargo test --manifest-path src-tauri/Cargo.toml`（79 项）、`openspec validate fix-force-update-repull --type change`（归档前）。— 🐱 扫帚猫（交互设计师·布偶猫）
@@ -34,7 +38,7 @@
 - [2026-03-30 03:05] #16 修复 opener 权限错误 — 在 src-tauri/capabilities/default.json 中添加 "opener:allow-open-path" 权限，解决点击"打开工作区"按钮报错问题。
 - [2026-03-30 03:15] #17 文档浏览器打开按钮 — 在 HomePage 树形节点中添加"在浏览器打开"按钮（ExportOutlined 图标），仅文档类型节点显示，点击调用 openDocumentInBrowser 打开飞书云文档。
 - [2026-03-30 03:30] #18 修复表格在浏览器打开按钮 — 扩展"在浏览器打开"按钮支持，现在 bitable（多维表格）节点也能在浏览器打开，跳转到 https://feishu.cn/base/{nodeToken}。
-- [2026-03-30 03:45] #19 修复取消勾选同步未删除文件夹 — 重写 collectDocumentIdsByTreeKeys 函数，当取消勾选文件夹时递归收集所有子孙文档的 ID，之前只收集直接匹配 key 的节点，
+- [2026-03-30 03:45] #19 修复取消勾选同步未删除文件夹 — 重写 collectDocumentIdsByTreeKeys 函数，当取消勾选文件夹时递归收集所有子孙文档的 ID；此前仅收集直接匹配 key 的节点。
 - [2026-03-30 10:45] 修复：打开实际写入目录报错 — 对照当前实现、OpenSpec 归档与 DONE #16，确认该任务已由 opener 权限修复完成；本次同步清理 TODO 队列状态。
 - [2026-03-30 11:04] 修复：删除美术模块文件夹时出现失败，报错：本次失败主要发生在发现阶段（1项）。获取文档信息失败(code=99991400): request trigger frequency limit — 增加 cleanup-only 路径：删除取消勾选的已同步文档后，在没有显式同步源时不再创建后续同步任务，也不再触发 discovery；已补充 OpenSpec 归档、中文报告和回归测试。
 - [2026-03-30 11:06] 修复：点击在在网页中浏览的按钮没有反应 — 对照当前实现确认已完成：文档/多维表格“在浏览器打开”已改用 `openUrl(...)`，首页也会在打开失败时展示错误提示；本次同步清理 TODO 队列状态并切换到下一个 P2 任务。
@@ -56,4 +60,3 @@
 - [2026-03-31 20:36] 知识库文档后面要显示 本地的飞书版本号 / 远端的飞书版本号，以便于判断是否需要同步 — 知识库树中文档与多维表格行增加「本地 / 远端」飞书修订号展示：本地来自 manifest，远端优先新鲜度检查结果、否则 wiki 子节点列表版本；已合并 `master` 并完成 OpenSpec 归档。— 🐱 回环猫（界面魔法师·暹罗猫）
 - [2026-03-31 20:52] 根据 .claude\docs\gou.md 来优化复选框逻辑 — 知识库树复选框与同步状态脱钩（默认不勾，状态只看标签）；开始同步只处理已勾选源、不再按未勾选删本地；新增「批量删除」清除已勾选且已同步文档；三态父子联动保留。OpenSpec 已归档并同步主规格。— 🐱 勾勾猫（交互设计师·美国短毛猫）
 - [2026-04-01] 修复：根据 gou.md，父级打勾时子复选框须全部显示为打勾且可交互 — 用 `expandedCheckedKeys`（`selectedSources` key ∪ `collectCoveredDescendantKeys`）驱动 Tree 勾选与三态计算；去掉「覆盖范围」导致的子节点 `disableCheckbox`；取消勾选被祖先覆盖的节点时通过 `trySubtractCoveredDescendant` 拆分 `selectedSources`。变更 `kb-checkbox-gou-parent-children-checked`，worktree `feishu_docs_sync-worktree`，`npm test` 79 项通过。OpenSpec 已归档 `2026-04-01-kb-checkbox-gou-parent-children-checked`。— 🐱 勾勾猫（交互设计师·美国短毛猫）
-- [2026-04-02] 修复：本地输出被删除后知识库树仍显示 `已同步` — 根因是 `get_document_sync_statuses` 仅依据 manifest 的历史 `success` 记录判定同步状态，没有核对 `output_path` 指向的本地文件是否仍存在，导致强制更新清理本地后、真正重拉前仍显示已同步。本次新增 `manifest_record_has_local_output(...)`，仅在成功记录仍有本地文件时返回 `synced`，让缺文件文档与聚合节点一起回退为 `未同步`；补充缺文件状态回退回归测试并同步主规格 `knowledge-tree-display`。OpenSpec 已归档 `2026-04-02-fix-missing-output-unsynced-status`；验证：`cargo test --manifest-path "src-tauri/Cargo.toml"`（81 项）、`openspec validate --changes "fix-missing-output-unsynced-status"`（归档前）；归档报告：`.claude/docs/opencat/202604021032-fix-missing-output-unsynced-status.md`。— 🐱 回环猫（界面魔法师·暹罗猫）
