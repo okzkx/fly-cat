@@ -6,4 +6,4 @@
 
 ## 2. 规格落地
 
-- [ ] 2.1 将 `openspec/changes/normalize-done-md/specs/project-done-log/spec.md` 合并入 `openspec/specs/project-done-log/spec.md`（archive 阶段同步）
+- [x] 2.1 将 `openspec/changes/normalize-done-md/specs/project-done-log/spec.md` 合并入 `openspec/specs/project-done-log/spec.md`（archive 阶段同步）
