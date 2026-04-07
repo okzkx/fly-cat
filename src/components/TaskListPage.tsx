@@ -188,11 +188,6 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
         )
       },
       {
-        title: "输出目录",
-        dataIndex: "outputPath",
-        key: "outputPath"
-      },
-      {
         title: "进度",
         key: "progress",
         render: (_: unknown, record: SyncTask) => {
@@ -310,7 +305,6 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
                       : ""}
                   </Text>
                 )}
-                <Text>输出目录：{record.outputPath}</Text>
                 {record.failureSummary && (
                   <Alert
                     type="warning"
