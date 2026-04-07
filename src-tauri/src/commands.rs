@@ -2695,6 +2695,32 @@ pub fn get_document_sync_statuses(
 }
 
 #[tauri::command]
+pub fn read_synced_markdown_preview(
+    sync_root: String,
+    document_id: String,
+) -> Result<crate::model::SyncedMarkdownPreview, String> {
+    let root = Path::new(&sync_root);
+    let manifest = crate::storage::load_manifest(root)?;
+    let record = manifest
+        .records
+        .into_iter()
+        .find(|r| r.document_id == document_id)
+        .ok_or_else(|| "未找到该文档的同步记录".to_string())?;
+    if record.status != "success" {
+        return Err("该文档尚未成功同步，无法预览".to_string());
+    }
+    if !manifest_record_has_local_output(&record) {
+        return Err("本地 Markdown 文件不存在，请先完成同步".to_string());
+    }
+    let markdown = fs::read_to_string(&record.output_path).map_err(|e| e.to_string())?;
+    Ok(crate::model::SyncedMarkdownPreview {
+        markdown,
+        output_path: record.output_path,
+        title: record.title,
+    })
+}
+
+#[tauri::command]
 pub fn get_runtime_info() -> RuntimeInfo {
     RuntimeInfo {
         runtime: "tauri",

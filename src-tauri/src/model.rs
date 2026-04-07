@@ -161,6 +161,15 @@ pub struct DocumentSyncStatusEntry {
     pub local_feishu_version: String,
 }
 
+/// Payload for read-only Markdown preview in the knowledge base UI.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncedMarkdownPreview {
+    pub markdown: String,
+    pub output_path: String,
+    pub title: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentFreshnessResult {

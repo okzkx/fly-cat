@@ -1,0 +1,66 @@
+/** Parent directory of a file path (slashes normalized to `/`). */
+export function dirnameNormalized(filePath: string): string {
+  const n = filePath.replace(/\\/g, "/");
+  const i = n.lastIndexOf("/");
+  if (i <= 0) {
+    return n;
+  }
+  return n.slice(0, i);
+}
+
+/**
+ * Resolve a markdown image `src` against the `.md` file path (handles `..` and `.`).
+ */
+export function resolveAgainstMdFile(mdFilePath: string, src: string): string {
+  if (/^https?:\/\//i.test(src) || src.startsWith("data:")) {
+    return src;
+  }
+  const normalizedSrc = src.replace(/\\/g, "/");
+  if (normalizedSrc.startsWith("/") || /^[a-zA-Z]:\//.test(normalizedSrc)) {
+    return normalizedSrc;
+  }
+  const mdDir = dirnameNormalized(mdFilePath);
+  const baseSegs = mdDir.split("/").filter((s) => s.length > 0);
+  for (const part of normalizedSrc.split("/")) {
+    if (part === "" || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      baseSegs.pop();
+    } else {
+      baseSegs.push(part);
+    }
+  }
+  return baseSegs.join("/");
+}
+
+/**
+ * Rewrite relative `img[src]` in preview HTML to Tauri `convertFileSrc` URLs.
+ */
+export function rewritePreviewImagesForTauri(
+  html: string,
+  mdOutputPath: string,
+  convertFileSrc: (filePath: string) => string
+): string {
+  const wrapped = `<div data-md-preview-root="1">${html}</div>`;
+  const doc = new DOMParser().parseFromString(wrapped, "text/html");
+  const root = doc.querySelector("[data-md-preview-root]");
+  if (!root) {
+    return html;
+  }
+  for (const img of root.querySelectorAll("img")) {
+    const src = img.getAttribute("src");
+    if (!src || /^https?:\/\//i.test(src) || src.startsWith("data:")) {
+      continue;
+    }
+    const absolutePosix = resolveAgainstMdFile(mdOutputPath, src);
+    const osPath = absolutePosix.replace(/\//g, "\\");
+    try {
+      const forTauri = /^[a-zA-Z]:\\/.test(osPath) ? osPath : absolutePosix;
+      img.setAttribute("src", convertFileSrc(forTauri));
+    } catch {
+      // keep original src
+    }
+  }
+  return root.innerHTML;
+}
