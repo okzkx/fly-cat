@@ -747,6 +747,27 @@ fn extract_text_from_block(block: &Value) -> RichText {
     }
 }
 
+/// When Feishu returns a fully percent-encoded absolute web URL, decode it once for Markdown.
+/// Leaves normal `http://` / `https://` strings unchanged so path/query percent-escapes stay intact.
+fn normalize_feishu_hyperlink_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return trimmed.to_string();
+    }
+    if !trimmed.contains('%') {
+        return trimmed.to_string();
+    }
+    let Ok(decoded) = urlencoding::decode(trimmed) else {
+        return trimmed.to_string();
+    };
+    let decoded = decoded.into_owned();
+    if decoded.starts_with("http://") || decoded.starts_with("https://") {
+        decoded
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Extract rich text from an array of text elements, preserving inline styles.
 fn extract_text_from_elements(elements: &[Value]) -> RichText {
     let segments: Vec<RichSegment> = elements
@@ -772,7 +793,7 @@ fn extract_text_from_elements(elements: &[Value]) -> RichText {
                 .and_then(|s| s.get("link"))
                 .and_then(|l| l.get("url"))
                 .and_then(|u| u.as_str())
-                .map(|u| u.to_string());
+                .map(normalize_feishu_hyperlink_url);
 
             Some(RichSegment {
                 content,
@@ -2265,6 +2286,38 @@ mod tests {
         })];
         let rich = extract_text_from_elements(&elements);
         assert_eq!(rich.segments[0].link.as_deref(), Some("https://example.com"));
+    }
+
+    #[test]
+    fn decodes_percent_encoded_https_link_url() {
+        let encoded = "https%3A%2F%2Fjorenjoestar.github.io%2Fpost%2Fserialization_for_games%2F";
+        let elements = vec![json!({
+            "text_run": {
+                "content": "read this",
+                "text_element_style": {
+                    "link": { "url": encoded }
+                }
+            }
+        })];
+        let rich = extract_text_from_elements(&elements);
+        assert_eq!(
+            rich.segments[0].link.as_deref(),
+            Some("https://jorenjoestar.github.io/post/serialization_for_games/")
+        );
+    }
+
+    #[test]
+    fn preserves_https_url_with_percent_in_path() {
+        let elements = vec![json!({
+            "text_run": {
+                "content": "x",
+                "text_element_style": {
+                    "link": { "url": "https://example.com/x%20y" }
+                }
+            }
+        })];
+        let rich = extract_text_from_elements(&elements);
+        assert_eq!(rich.segments[0].link.as_deref(), Some("https://example.com/x%20y"));
     }
 
     #[test]
