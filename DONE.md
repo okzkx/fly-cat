@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-07 11:12] 新增：点击文档可以在右侧知识库右侧新开一个区域预览文档 — knowledge-doc-preview-pane
 - [2026-04-07 10:18] 飞猫助手任务列表 不需要显示输出目录 — task-list-hide-output-directory
 - [2026-04-02 16:30] 规范 OpenCat 归档报告命名 — normalize-opencat-archive-doc-names
 - [2026-04-02 16:40] 规范化 DONE.md — normalize-done-md
