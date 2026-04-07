@@ -1018,15 +1018,25 @@ export default function HomePage({
       <Card
         style={{ flex: "1 1 400px", minWidth: 280 }}
         styles={{
+          header: {
+            flexDirection: "column",
+            alignItems: "stretch",
+            gap: 12
+          },
           title: {
-            flex: 1,
+            flex: "none",
+            width: "100%",
             minWidth: 0,
             overflow: "visible",
             whiteSpace: "normal"
           },
           extra: {
             flexShrink: 0,
-            marginInlineStart: 12
+            marginInlineStart: 0,
+            width: "100%",
+            display: "flex",
+            justifyContent: "flex-end",
+            flexWrap: "wrap"
           }
         }}
         title={

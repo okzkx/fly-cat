@@ -247,9 +247,31 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card
+        styles={{
+          header: {
+            flexDirection: "column",
+            alignItems: "stretch",
+            gap: 12
+          },
+          title: {
+            flex: "none",
+            width: "100%",
+            minWidth: 0,
+            overflow: "visible",
+            whiteSpace: "normal"
+          },
+          extra: {
+            flexShrink: 0,
+            marginInlineStart: 0,
+            width: "100%",
+            display: "flex",
+            justifyContent: "flex-end",
+            flexWrap: "wrap"
+          }
+        }}
         title="飞猫助手任务列表"
         extra={
-          <Space>
+          <Space wrap size={[8, 8]}>
             <Popconfirm
               title="确定清空所有同步任务吗？"
               description="仅移除任务记录，不会删除已同步到本地的文件。"
