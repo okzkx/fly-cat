@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapDocumentPath, mapFolderPath } from "@/services/path-mapper";
+import { buildPathCollisionSuffix, mapDocumentPath, mapFolderPath } from "@/services/path-mapper";
 
 describe("path mapper", () => {
   it("mirrors knowledge-base-relative directory structure", () => {
@@ -54,5 +54,32 @@ describe("path mapper", () => {
   it("sanitizes folder paths consistently with documents", () => {
     const folderPath = mapFolderPath("/sync-root", "研发:知识库", "kb-eng", ["架构|设计", "子目录"]);
     expect(folderPath.replace(/\\/g, "/")).toBe("/sync-root/研发_知识库/架构_设计/子目录");
+  });
+
+  it("preserves windows-style separators for local paths", () => {
+    const outputPath = mapDocumentPath("C:\\sync-root", {
+      id: "doc-win",
+      spaceId: "kb-eng",
+      spaceName: "研发知识库",
+      nodeToken: "node-doc-win",
+      title: "Windows 文档",
+      version: "v1",
+      updateTime: "t1",
+      pathSegments: ["研发规范", "Windows 文档"],
+      sourcePath: "研发知识库/研发规范/Windows 文档"
+    });
+
+    expect(outputPath).toBe("C:\\sync-root\\研发知识库\\研发规范\\Windows 文档.md");
+  });
+
+  it("builds deterministic collision suffixes without node crypto", () => {
+    const first = buildPathCollisionSuffix("doc-123");
+    const second = buildPathCollisionSuffix("doc-123");
+    const different = buildPathCollisionSuffix("doc-456");
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[0-9a-f]{8}$/);
+    expect(different).toMatch(/^[0-9a-f]{8}$/);
+    expect(different).not.toBe(first);
   });
 });
