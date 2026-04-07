@@ -76,8 +76,17 @@ export function getSupportedExternalPreviewUrl(href: string | null): string | nu
     return null;
   }
 
+  const trimmed = href.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  // Protocol-relative URLs (//host/path) cannot be parsed by `new URL()` without a base;
+  // treat them as https so valid external links still open in the system browser.
+  const toParse = trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
+
   try {
-    const parsed = new URL(href);
+    const parsed = new URL(toParse);
     if (!SUPPORTED_EXTERNAL_PREVIEW_PROTOCOLS.has(parsed.protocol)) {
       return null;
     }

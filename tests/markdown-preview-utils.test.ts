@@ -22,6 +22,8 @@ describe("markdownPreview path helpers", () => {
   it("accepts supported external preview URLs", () => {
     expect(getSupportedExternalPreviewUrl("https://feishu.cn/docx/abc")).toBe("https://feishu.cn/docx/abc");
     expect(getSupportedExternalPreviewUrl("mailto:test@example.com")).toBe("mailto:test@example.com");
+    expect(getSupportedExternalPreviewUrl("//feishu.cn/docx/abc")).toBe("https://feishu.cn/docx/abc");
+    expect(getSupportedExternalPreviewUrl("  https://feishu.cn/x  ")).toBe("https://feishu.cn/x");
   });
 
   it("rejects unsupported or relative preview URLs", () => {
