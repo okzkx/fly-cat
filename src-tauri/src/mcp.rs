@@ -738,6 +738,7 @@ fn extract_text_from_block(block: &Value) -> RichText {
         .or_else(|| block.get("quote").and_then(|q| q.get("elements")))
         .or_else(|| block.get("quote1").and_then(|q| q.get("elements")))
         .or_else(|| block.get("callout").and_then(|c| c.get("elements")))
+        .or_else(|| block.get("code").and_then(|c| c.get("elements")))
         .and_then(|e| e.as_array());
 
     match elements {
@@ -825,6 +826,144 @@ fn merge_consecutive_list_blocks(blocks: Vec<RawBlock>) -> Vec<RawBlock> {
     merged
 }
 
+/// Join non-empty rich text fragments with a plain-text separator (for table cells, etc.).
+fn join_rich_text_with_separator(parts: Vec<RichText>, sep: &str) -> RichText {
+    let sep_seg = RichSegment {
+        content: sep.to_string(),
+        bold: false,
+        italic: false,
+        strikethrough: false,
+        link: None,
+    };
+    let mut segments: Vec<RichSegment> = Vec::new();
+    let mut first = true;
+    for p in parts {
+        if p.is_empty() {
+            continue;
+        }
+        if !first {
+            segments.push(sep_seg.clone());
+        }
+        segments.extend(p.segments);
+        first = false;
+    }
+    RichText { segments }
+}
+
+fn json_int_usize(value: Option<&Value>) -> usize {
+    value
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|i| i.max(0) as u64)))
+        .unwrap_or(0) as usize
+}
+
+/// Collect inline text from a table cell subtree (OpenAPI: cell blocks reference nested content).
+fn accumulate_rich_text_for_table_cell<F>(
+    block: &Value,
+    fetch_block: &mut F,
+    visited: &mut HashSet<String>,
+) -> Result<RichText, McpError>
+where
+    F: FnMut(&str) -> Result<Value, McpError>,
+{
+    let bid = block
+        .get("block_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !bid.is_empty() && !visited.insert(bid.to_string()) {
+        return Ok(RichText::default());
+    }
+
+    let block_type = block.get("block_type").and_then(|v| v.as_i64()).unwrap_or(0);
+    if block_type == 31 {
+        return Ok(RichText::plain("[表格]"));
+    }
+
+    let mut pieces: Vec<RichText> = Vec::new();
+
+    if block_type == 27 {
+        pieces.push(RichText::plain("[图片]"));
+    } else {
+        let t = extract_text_from_block(block);
+        if !t.is_empty() {
+            pieces.push(t);
+        }
+    }
+
+    for child_id in extract_block_children_ids(block) {
+        let child = fetch_block(&child_id)?;
+        let sub = accumulate_rich_text_for_table_cell(&child, fetch_block, visited)?;
+        if !sub.is_empty() {
+            pieces.push(sub);
+        }
+    }
+
+    Ok(join_rich_text_with_separator(pieces, " "))
+}
+
+fn collect_table_cell_rich_text<F>(cell_block_id: &str, fetch_block: &mut F) -> Result<RichText, McpError>
+where
+    F: FnMut(&str) -> Result<Value, McpError>,
+{
+    let mut visited = HashSet::new();
+    let root = fetch_block(cell_block_id)?;
+    accumulate_rich_text_for_table_cell(&root, fetch_block, &mut visited)
+}
+
+/// OpenAPI table blocks list cell block IDs in `table.cells` (strings), not embedded element grids.
+fn try_parse_openapi_table_block<F>(block: &Value, fetch_block: &mut F) -> Result<Option<RawBlock>, McpError>
+where
+    F: FnMut(&str) -> Result<Value, McpError>,
+{
+    let table_block = match block.get("table") {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    let cells = match table_block.get("cells").and_then(|c| c.as_array()) {
+        Some(c) if !c.is_empty() => c,
+        _ => return Ok(None),
+    };
+    if !cells[0].is_string() {
+        return Ok(None);
+    }
+
+    let property = table_block.get("property");
+    let mut col_size = json_int_usize(property.and_then(|p| p.get("column_size")));
+    let row_size = json_int_usize(property.and_then(|p| p.get("row_size")));
+    if col_size == 0 && row_size > 0 && cells.len() % row_size == 0 {
+        col_size = cells.len() / row_size;
+    }
+    if col_size == 0 && !cells.is_empty() {
+        col_size = cells.len();
+    }
+    if col_size == 0 {
+        return Ok(None);
+    }
+
+    let mut rows: Vec<Vec<RichText>> = Vec::new();
+    let mut idx = 0usize;
+    while idx < cells.len() {
+        let end = (idx + col_size).min(cells.len());
+        let mut row: Vec<RichText> = Vec::new();
+        for cell_val in &cells[idx..end] {
+            let cell_id = cell_val.as_str().ok_or_else(|| {
+                McpError::InvalidResponse("Table cell id must be a string".into())
+            })?;
+            row.push(collect_table_cell_rich_text(cell_id, fetch_block)?);
+        }
+        while row.len() < col_size {
+            row.push(RichText::default());
+        }
+        rows.push(row);
+        idx = end;
+    }
+
+    if rows.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(RawBlock::Table { rows }))
+    }
+}
+
 fn extract_block_children_ids(block: &Value) -> Vec<String> {
     block
         .get("children")
@@ -856,6 +995,25 @@ where
             .get("block_type")
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
+
+        // Feishu OpenAPI represents tables as block IDs in `table.cells`. Without this branch,
+        // parsing yields no Table block and cell children flatten into plain paragraphs.
+        if block_type == 31 {
+            match try_parse_openapi_table_block(&block, fetch_block) {
+                Ok(Some(tb)) => {
+                    blocks.push(tb);
+                    continue;
+                }
+                Ok(None) => {}
+                Err(e) => return Err(e),
+            }
+            if let Some(parsed) = parse_block_from_json(&block, list_depth) {
+                blocks.push(parsed);
+                continue;
+            }
+            continue;
+        }
+
         if let Some(parsed) = parse_block_from_json(&block, list_depth) {
             blocks.push(parsed);
         }
@@ -1697,6 +1855,131 @@ mod tests {
         assert!(matches!(blocks[0], RawBlock::Heading { .. }));
         assert!(matches!(blocks[1], RawBlock::Image { .. }));
         assert!(matches!(blocks[2], RawBlock::Paragraph { .. }));
+    }
+
+    /// OpenAPI `table.cells` is a flat list of TableCell block IDs (strings), not embedded grids.
+    #[test]
+    fn flattens_openapi_table_into_single_table_block() {
+        let blocks_by_id = HashMap::from([
+            (
+                "table-1".to_string(),
+                json!({
+                    "block_id": "table-1",
+                    "block_type": 31,
+                    "table": {
+                        "property": { "row_size": 2, "column_size": 2 },
+                        "cells": ["cell-a1", "cell-a2", "cell-b1", "cell-b2"]
+                    },
+                    "children": ["cell-a1", "cell-a2", "cell-b1", "cell-b2"]
+                }),
+            ),
+            (
+                "cell-a1".to_string(),
+                json!({
+                    "block_id": "cell-a1",
+                    "block_type": 32,
+                    "table_cell": {},
+                    "children": ["text-a1"]
+                }),
+            ),
+            (
+                "text-a1".to_string(),
+                json!({
+                    "block_id": "text-a1",
+                    "block_type": 2,
+                    "text": {
+                        "elements": [{ "text_run": { "content": "H1" } }]
+                    }
+                }),
+            ),
+            (
+                "cell-a2".to_string(),
+                json!({
+                    "block_id": "cell-a2",
+                    "block_type": 32,
+                    "table_cell": {},
+                    "children": ["text-a2"]
+                }),
+            ),
+            (
+                "text-a2".to_string(),
+                json!({
+                    "block_id": "text-a2",
+                    "block_type": 2,
+                    "text": {
+                        "elements": [{ "text_run": { "content": "H2" } }]
+                    }
+                }),
+            ),
+            (
+                "cell-b1".to_string(),
+                json!({
+                    "block_id": "cell-b1",
+                    "block_type": 32,
+                    "table_cell": {},
+                    "children": ["text-b1"]
+                }),
+            ),
+            (
+                "text-b1".to_string(),
+                json!({
+                    "block_id": "text-b1",
+                    "block_type": 2,
+                    "text": {
+                        "elements": [{ "text_run": { "content": "C1" } }]
+                    }
+                }),
+            ),
+            (
+                "cell-b2".to_string(),
+                json!({
+                    "block_id": "cell-b2",
+                    "block_type": 32,
+                    "table_cell": {},
+                    "children": ["text-b2"]
+                }),
+            ),
+            (
+                "text-b2".to_string(),
+                json!({
+                    "block_id": "text-b2",
+                    "block_type": 2,
+                    "text": {
+                        "elements": [{ "text_run": { "content": "C2" } }]
+                    }
+                }),
+            ),
+        ]);
+
+        let mut fetch_block = |block_id: &str| {
+            blocks_by_id
+                .get(block_id)
+                .cloned()
+                .ok_or_else(|| McpError::InvalidResponse(format!("missing block `{block_id}`")))
+        };
+        let mut visited = HashSet::new();
+        let mut blocks = Vec::new();
+
+        flatten_block_tree(
+            &["table-1".to_string()],
+            &mut fetch_block,
+            &mut visited,
+            &mut blocks,
+            0,
+        )
+        .expect("flatten should succeed");
+
+        assert_eq!(blocks.len(), 1, "expected one Table block, not flattened cell paragraphs");
+        match &blocks[0] {
+            RawBlock::Table { rows } => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0][0].to_plain_text(), "H1");
+                assert_eq!(rows[0][1].to_plain_text(), "H2");
+                assert_eq!(rows[1][0].to_plain_text(), "C1");
+                assert_eq!(rows[1][1].to_plain_text(), "C2");
+            }
+            other => panic!("expected Table block, got {other:?}"),
+        }
     }
 
     #[test]
