@@ -21,6 +21,11 @@ export interface RuntimeInfo {
   version: string;
 }
 
+export interface ExternalOpenResult {
+  success: boolean;
+  error?: string;
+}
+
 const BROWSER_SETTINGS_KEY = "feishu_sync_settings";
 const BROWSER_USER_KEY = "feishu_sync_user";
 
@@ -398,6 +403,32 @@ export async function openWorkspaceFolder(path: string): Promise<{ success: bool
 }
 
 /**
+ * Open an external URL with the operating system handler.
+ */
+export async function openExternalUrl(url: string): Promise<ExternalOpenResult> {
+  if (!isTauriRuntime()) {
+    try {
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (opened === null) {
+        return { success: false, error: "浏览器拦截了新窗口，请允许弹窗后重试" };
+      }
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  try {
+    await openUrl(url);
+    return { success: true };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
  * Open a document in the browser.
  * Uses the Tauri opener plugin to open the URL.
  * @param target The browser-open target
@@ -409,20 +440,7 @@ export async function openDocumentInBrowser(
   if (!url) {
     return { success: false, error: error || "无法在浏览器中打开当前内容" };
   }
-
-  if (!isTauriRuntime()) {
-    // In browser mode, just open in a new tab
-    window.open(url, "_blank");
-    return { success: true };
-  }
-
-  try {
-    await openUrl(url);
-    return { success: true };
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    return { success: false, error: errorMessage };
-  }
+  return openExternalUrl(url);
 }
 
 export { TASK_EVENTS };

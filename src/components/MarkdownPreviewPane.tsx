@@ -1,10 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Card, Empty, Spin, Typography } from "antd";
+import { App, Card, Empty, Spin, Typography } from "antd";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { useMemo } from "react";
-import { isTauriRuntime } from "@/utils/tauriRuntime";
-import { rewritePreviewImagesForTauri } from "@/utils/markdownPreview";
+import { useMemo, type MouseEvent } from "react";
+import { getSupportedExternalPreviewUrl, rewritePreviewImagesForTauri } from "@/utils/markdownPreview";
+import { isTauriRuntime, openExternalUrl } from "@/utils/tauriRuntime";
 
 const { Text } = Typography;
 
@@ -33,12 +33,41 @@ export default function MarkdownPreviewPane({
   markdown,
   mdOutputPath
 }: MarkdownPreviewPaneProps): React.JSX.Element {
+  const { message } = App.useApp();
   const html = useMemo(() => {
     if (!markdown) {
       return "";
     }
     return renderMarkdownHtml(markdown, mdOutputPath);
   }, [markdown, mdOutputPath]);
+
+  const handlePreviewClick = (event: MouseEvent<HTMLDivElement>): void => {
+    const target = event.target;
+    const anchor =
+      target instanceof Element
+        ? target.closest("a")
+        : target instanceof Node
+          ? target.parentElement?.closest("a") ?? null
+          : null;
+
+    if (!(anchor instanceof HTMLAnchorElement)) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const url = getSupportedExternalPreviewUrl(anchor.getAttribute("href"));
+    if (!url) {
+      void message.info("当前预览仅支持打开 http、https 或 mailto 外部链接。");
+      return;
+    }
+
+    void openExternalUrl(url).then((result) => {
+      if (!result.success) {
+        void message.error(result.error || "链接打开失败，请稍后重试。");
+      }
+    });
+  };
 
   const body = (() => {
     if (!isTauriRuntime()) {
@@ -70,6 +99,7 @@ export default function MarkdownPreviewPane({
     return (
       <div
         className="markdown-preview-body"
+        onClick={handlePreviewClick}
         style={{
           maxHeight: "min(70vh, 720px)",
           overflow: "auto",
