@@ -1023,6 +1023,7 @@ export default function HomePage({
       }}
     >
       <Card
+        className="home-kb-sync-card"
         style={{ flex: "1 1 400px", minWidth: 280 }}
         styles={{
           header: {

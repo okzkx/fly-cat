@@ -13,6 +13,13 @@ body {
   min-height: 100vh;
 }
 
+/* Home knowledge-base sync Card: stack title row and extra actions (Ant Design keeps head-wrapper as row by default). */
+.home-kb-sync-card .ant-card-head-wrapper {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
 .center-page {
   min-height: calc(100vh - 112px);
   display: flex;
