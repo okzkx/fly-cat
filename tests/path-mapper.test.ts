@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildPathCollisionSuffix, mapDocumentPath, mapFolderPath } from "@/services/path-mapper";
+import {
+  buildPathCollisionSuffix,
+  mapDocumentPath,
+  mapFolderPath,
+  mapSyncedMarkdownPathFromScope
+} from "@/services/path-mapper";
+import type { SyncScope } from "@/types/sync";
 
 describe("path mapper", () => {
   it("mirrors knowledge-base-relative directory structure", () => {
@@ -70,6 +76,32 @@ describe("path mapper", () => {
     });
 
     expect(outputPath).toBe("C:\\sync-root\\研发知识库\\研发规范\\Windows 文档.md");
+  });
+
+  it("maps document SyncScope to the same path as mapDocumentPath", () => {
+    const scope: SyncScope = {
+      kind: "document",
+      spaceId: "kb-eng",
+      spaceName: "研发知识库",
+      title: "研发API概览",
+      displayPath: "",
+      nodeToken: "n",
+      documentId: "doc-1",
+      pathSegments: ["研发规范", "研发API概览"]
+    };
+    const fromScope = mapSyncedMarkdownPathFromScope("/sync-root", scope);
+    const fromDoc = mapDocumentPath("/sync-root", {
+      id: "doc-1",
+      spaceId: "kb-eng",
+      spaceName: "研发知识库",
+      nodeToken: "n",
+      title: "研发API概览",
+      version: "",
+      updateTime: "",
+      pathSegments: ["研发规范", "研发API概览"],
+      sourcePath: ""
+    });
+    expect(fromScope?.replace(/\\/g, "/")).toBe(fromDoc.replace(/\\/g, "/"));
   });
 
   it("builds deterministic collision suffixes without node crypto", () => {

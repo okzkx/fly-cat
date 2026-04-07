@@ -1,4 +1,4 @@
-import type { SourceDocument } from "@/types/sync";
+import type { SourceDocument, SyncScope } from "@/types/sync";
 
 function sanitizePathSegment(input: string): string {
   const normalized = input
@@ -46,6 +46,25 @@ export function mapDocumentPath(syncRoot: string, document: SourceDocument): str
   const folderSegments = document.pathSegments.slice(0, -1).map(sanitizePathSegment);
   const fileName = `${sanitizePathSegment(document.title)}.md`;
   return joinLocalPath(syncRoot, safeSpaceName, ...folderSegments, fileName);
+}
+
+/** Local Markdown path for a document or bitable tree scope (same rules as sync output). */
+export function mapSyncedMarkdownPathFromScope(syncRoot: string, scope: SyncScope): string | null {
+  if (scope.kind !== "document" && scope.kind !== "bitable") {
+    return null;
+  }
+  const doc: SourceDocument = {
+    id: scope.documentId ?? "",
+    spaceId: scope.spaceId,
+    spaceName: scope.spaceName,
+    nodeToken: scope.nodeToken ?? "",
+    title: scope.title,
+    updateTime: "",
+    version: "",
+    pathSegments: scope.pathSegments,
+    sourcePath: ""
+  };
+  return mapDocumentPath(syncRoot, doc);
 }
 
 /** Directory on disk for a wiki folder node (same segment sanitization as markdown output). */

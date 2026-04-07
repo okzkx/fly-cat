@@ -25,7 +25,7 @@ import {
   computeTriState
 } from "@/utils/treeSelection";
 import MarkdownPreviewPane from "@/components/MarkdownPreviewPane";
-import { mapFolderPath } from "@/services/path-mapper";
+import { mapFolderPath, mapSyncedMarkdownPathFromScope } from "@/services/path-mapper";
 import {
   alignDocumentSyncVersions,
   checkDocumentFreshness,
@@ -907,31 +907,40 @@ export default function HomePage({
     }
   };
 
-  const handleOpenFolderDefaultApp = async (scope: SyncScope): Promise<void> => {
-    if (scope.kind !== "folder") {
-      return;
-    }
+  const handleOpenLocalWithDefaultApp = async (scope: SyncScope): Promise<void> => {
     if (!syncRoot) {
       message.warning("未设置同步目录");
       return;
     }
-    const folderPath = mapFolderPath(syncRoot, scope.spaceName, scope.spaceId, scope.pathSegments);
+    let targetPath: string;
+    if (scope.kind === "folder") {
+      targetPath = mapFolderPath(syncRoot, scope.spaceName, scope.spaceId, scope.pathSegments);
+    } else if (scope.kind === "document" || scope.kind === "bitable") {
+      const filePath = mapSyncedMarkdownPathFromScope(syncRoot, scope);
+      if (!filePath) {
+        return;
+      }
+      targetPath = filePath;
+    } else {
+      return;
+    }
     try {
-      const result = await openWorkspaceFolder(folderPath);
+      const result = await openWorkspaceFolder(targetPath);
       if (!result.success) {
-        if (result.error?.includes("not found") || result.error?.includes("path not found")) {
-          message.error("本地目录不存在，请先同步该目录");
-        } else if (result.error?.includes("not a directory")) {
-          message.error("目标路径不是目录");
-        } else if (result.error?.includes("permission") || result.error?.includes("权限")) {
-          message.error("无法访问该目录，请检查权限");
+        const err = result.error ?? "";
+        if (err.includes("not found") || err.includes("path not found")) {
+          message.error(scope.kind === "folder" ? "本地目录不存在，请先同步该目录" : "本地文件不存在，请先同步该文档");
+        } else if (err.includes("not a directory") || err.includes("not a file or directory")) {
+          message.error(scope.kind === "folder" ? "目标路径不是目录" : "目标路径不是有效文件");
+        } else if (err.includes("permission") || err.includes("权限")) {
+          message.error("无法访问该路径，请检查权限");
         } else {
-          message.error(result.error || "无法打开目录");
+          message.error(result.error || "无法打开");
         }
       }
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
-      message.error(messageText || "打开目录失败");
+      message.error(messageText || "打开失败");
     }
   };
 
@@ -1279,6 +1288,21 @@ export default function HomePage({
                         style={{ padding: "0 4px" }}
                       />
                     )}
+                    {(treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable") && treeNode.scopeValue && (
+                      <Tooltip title="使用默认应用打开">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
+                          aria-label="使用默认应用打开"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleOpenLocalWithDefaultApp(treeNode.scopeValue!);
+                          }}
+                          style={{ padding: "0 4px" }}
+                        />
+                      </Tooltip>
+                    )}
                     {treeNode.nodeKind === "folder" && treeNode.scopeValue && (
                       <Tooltip title="使用默认应用打开">
                         <Button
@@ -1288,7 +1312,7 @@ export default function HomePage({
                           aria-label="使用默认应用打开"
                           onClick={(e) => {
                             e.stopPropagation();
-                            void handleOpenFolderDefaultApp(treeNode.scopeValue!);
+                            void handleOpenLocalWithDefaultApp(treeNode.scopeValue!);
                           }}
                           style={{ padding: "0 4px" }}
                         />

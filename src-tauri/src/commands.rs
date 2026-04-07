@@ -3341,13 +3341,13 @@ pub fn open_workspace_folder(app: AppHandle, path: String) -> Result<(), String>
     if !workspace_path.exists() {
         return Err(format!("path not found: {path}"));
     }
-    if !workspace_path.is_dir() {
-        return Err(format!("path is not a directory: {path}"));
+    if !workspace_path.is_file() && !workspace_path.is_dir() {
+        return Err(format!("path is not a file or directory: {path}"));
     }
 
     app.opener()
         .open_path(workspace_path.to_string_lossy().into_owned(), None::<&str>)
-        .map_err(|err| format!("failed to open workspace folder: {err}"))
+        .map_err(|err| format!("failed to open workspace path: {err}"))
 }
 
 /// Remove empty directories bottom-up within the sync root.
