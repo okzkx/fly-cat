@@ -1972,6 +1972,31 @@ fn list_space_source_tree_from_openapi(
     )
 }
 
+fn wiki_node_has_discovery_metadata(node: &crate::mcp::FeishuWikiNode) -> bool {
+    !node.title.trim().is_empty()
+        && !node.version.trim().is_empty()
+        && !node.update_time.trim().is_empty()
+}
+
+fn build_sync_document_from_wiki_node(
+    space_name: &str,
+    path_segments: &[String],
+    node: &crate::mcp::FeishuWikiNode,
+) -> SyncSourceDocument {
+    SyncSourceDocument {
+        document_id: node.obj_token.clone(),
+        space_id: node.space_id.clone(),
+        space_name: space_name.to_string(),
+        node_token: node.node_token.clone(),
+        title: node.title.clone(),
+        version: node.version.clone(),
+        update_time: node.update_time.clone(),
+        source_path: join_display_path(space_name, path_segments).replace(" / ", "/"),
+        path_segments: path_segments.to_vec(),
+        obj_type: node.obj_type.clone(),
+    }
+}
+
 fn discover_documents_from_openapi(
     selected_scope: &SelectedSyncScope,
     settings: &AppSettings,
@@ -1998,22 +2023,30 @@ fn discover_documents_from_openapi(
             let is_expandable = is_expandable_node(&kind, node.has_child);
 
             if kind == "document" {
-                let summary = client
-                    .fetch_document_summary_with_retry(&node.obj_token)
-                    .map_err(|err| err.to_string())?;
-                documents.push(SyncSourceDocument {
-                    document_id: node.obj_token.clone(),
-                    space_id: node.space_id.clone(),
-                    space_name: scope.space_name.clone(),
-                    node_token: node.node_token.clone(),
-                    title: summary.title,
-                    version: summary.version,
-                    update_time: summary.update_time,
-                    source_path: join_display_path(&scope.space_name, &path_segments)
-                        .replace(" / ", "/"),
-                    path_segments: path_segments.clone(),
-                    obj_type: node.obj_type.clone(),
-                });
+                if wiki_node_has_discovery_metadata(&node) {
+                    documents.push(build_sync_document_from_wiki_node(
+                        &scope.space_name,
+                        &path_segments,
+                        &node,
+                    ));
+                } else {
+                    let summary = client
+                        .fetch_document_summary_with_retry(&node.obj_token)
+                        .map_err(|err| err.to_string())?;
+                    documents.push(SyncSourceDocument {
+                        document_id: node.obj_token.clone(),
+                        space_id: node.space_id.clone(),
+                        space_name: scope.space_name.clone(),
+                        node_token: node.node_token.clone(),
+                        title: summary.title,
+                        version: summary.version,
+                        update_time: summary.update_time,
+                        source_path: join_display_path(&scope.space_name, &path_segments)
+                            .replace(" / ", "/"),
+                        path_segments: path_segments.clone(),
+                        obj_type: node.obj_type.clone(),
+                    });
+                }
             } else if kind == "bitable" {
                 documents.push(SyncSourceDocument {
                     document_id: node.obj_token.clone(),
@@ -3724,6 +3757,50 @@ mod tests {
             "产品知识库/方案库/产品方案总览/需求池"
         );
         assert_eq!(documents[3].obj_type, "bitable");
+    }
+
+    #[test]
+    fn wiki_node_metadata_is_sufficient_for_discovery_queue() {
+        let node = crate::mcp::FeishuWikiNode {
+            space_id: "kb-product".into(),
+            node_token: "node-doc-product-overview".into(),
+            obj_token: "doc-product-overview".into(),
+            obj_type: "docx".into(),
+            title: "Product Overview".into(),
+            has_child: false,
+            version: "v3".into(),
+            update_time: "2026-03-27T11:00:00Z".into(),
+        };
+
+        assert!(wiki_node_has_discovery_metadata(&node));
+
+        let document = build_sync_document_from_wiki_node(
+            "产品知识库",
+            &["方案库".into(), "Product Overview".into()],
+            &node,
+        );
+
+        assert_eq!(document.document_id, "doc-product-overview");
+        assert_eq!(document.title, "Product Overview");
+        assert_eq!(document.version, "v3");
+        assert_eq!(document.update_time, "2026-03-27T11:00:00Z");
+        assert_eq!(document.source_path, "产品知识库/方案库/Product Overview");
+    }
+
+    #[test]
+    fn incomplete_wiki_node_metadata_requires_summary_fallback() {
+        let node = crate::mcp::FeishuWikiNode {
+            space_id: "kb-product".into(),
+            node_token: "node-doc-product-overview".into(),
+            obj_token: "doc-product-overview".into(),
+            obj_type: "docx".into(),
+            title: "Product Overview".into(),
+            has_child: false,
+            version: String::new(),
+            update_time: "2026-03-27T11:00:00Z".into(),
+        };
+
+        assert!(!wiki_node_has_discovery_metadata(&node));
     }
 
     #[test]
