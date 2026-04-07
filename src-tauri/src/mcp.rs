@@ -102,11 +102,6 @@ where
             Err(McpError::Transport(message)) => {
                 let is_throttled = is_feishu_rate_limited_message(&message);
                 if is_throttled && attempt + 1 < attempts {
-                    eprintln!(
-                        "[warn] {label} 被限频，第 {}/{} 次重试，等待 {backoff_ms}ms",
-                        attempt + 1,
-                        attempts,
-                    );
                     if backoff_ms > 0 {
                         thread::sleep(Duration::from_millis(backoff_ms));
                         backoff_ms *= 2;
