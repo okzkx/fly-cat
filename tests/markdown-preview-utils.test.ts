@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { dirnameNormalized, resolveAgainstMdFile } from "@/utils/markdownPreview";
+import {
+  dirnameNormalized,
+  getSupportedExternalPreviewUrl,
+  resolveAgainstMdFile
+} from "@/utils/markdownPreview";
 
 describe("markdownPreview path helpers", () => {
   it("dirnameNormalized handles backslashes", () => {
@@ -13,5 +17,16 @@ describe("markdownPreview path helpers", () => {
 
   it("resolveAgainstMdFile leaves http URLs", () => {
     expect(resolveAgainstMdFile("F:/a/b.md", "https://x/y.png")).toBe("https://x/y.png");
+  });
+
+  it("accepts supported external preview URLs", () => {
+    expect(getSupportedExternalPreviewUrl("https://feishu.cn/docx/abc")).toBe("https://feishu.cn/docx/abc");
+    expect(getSupportedExternalPreviewUrl("mailto:test@example.com")).toBe("mailto:test@example.com");
+  });
+
+  it("rejects unsupported or relative preview URLs", () => {
+    expect(getSupportedExternalPreviewUrl("../other.md")).toBeNull();
+    expect(getSupportedExternalPreviewUrl("javascript:alert(1)")).toBeNull();
+    expect(getSupportedExternalPreviewUrl(null)).toBeNull();
   });
 });

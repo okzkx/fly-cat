@@ -64,3 +64,25 @@ export function rewritePreviewImagesForTauri(
   }
   return root.innerHTML;
 }
+
+const SUPPORTED_EXTERNAL_PREVIEW_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+
+/**
+ * Normalize a preview link href into a supported external URL.
+ * Relative links intentionally return null so the app does not navigate itself.
+ */
+export function getSupportedExternalPreviewUrl(href: string | null): string | null {
+  if (!href) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(href);
+    if (!SUPPORTED_EXTERNAL_PREVIEW_PROTOCOLS.has(parsed.protocol)) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
