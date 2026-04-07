@@ -24,10 +24,13 @@ describe("markdownPreview path helpers", () => {
     expect(getSupportedExternalPreviewUrl("mailto:test@example.com")).toBe("mailto:test@example.com");
     expect(getSupportedExternalPreviewUrl("//feishu.cn/docx/abc")).toBe("https://feishu.cn/docx/abc");
     expect(getSupportedExternalPreviewUrl("  https://feishu.cn/x  ")).toBe("https://feishu.cn/x");
+    expect(getSupportedExternalPreviewUrl("www.feishu.cn/docx/abc")).toBe("https://www.feishu.cn/docx/abc");
+    expect(getSupportedExternalPreviewUrl("feishu.cn/docx/abc")).toBe("https://feishu.cn/docx/abc");
   });
 
   it("rejects unsupported or relative preview URLs", () => {
     expect(getSupportedExternalPreviewUrl("../other.md")).toBeNull();
+    expect(getSupportedExternalPreviewUrl("guide/page.md")).toBeNull();
     expect(getSupportedExternalPreviewUrl("javascript:alert(1)")).toBeNull();
     expect(getSupportedExternalPreviewUrl(null)).toBeNull();
   });

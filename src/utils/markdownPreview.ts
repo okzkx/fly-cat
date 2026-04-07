@@ -68,6 +68,26 @@ export function rewritePreviewImagesForTauri(
 const SUPPORTED_EXTERNAL_PREVIEW_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 /**
+ * When markdown uses a host without a scheme (e.g. `feishu.cn/x`), `new URL(href)` fails.
+ * Try https only for strings that do not look like relative file paths.
+ */
+function tryHttpsSchemelessExternal(trimmed: string): URL | null {
+  if (/^[./#?\\]/.test(trimmed) || /\s/.test(trimmed)) {
+    return null;
+  }
+  try {
+    const parsed = new URL(`https://${trimmed}`);
+    const host = parsed.hostname;
+    if (!(host.includes(".") || host === "localhost")) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Normalize a preview link href into a supported external URL.
  * Relative links intentionally return null so the app does not navigate itself.
  */
@@ -85,13 +105,19 @@ export function getSupportedExternalPreviewUrl(href: string | null): string | nu
   // treat them as https so valid external links still open in the system browser.
   const toParse = trimmed.startsWith("//") ? `https:${trimmed}` : trimmed;
 
+  let parsed: URL;
   try {
-    const parsed = new URL(toParse);
-    if (!SUPPORTED_EXTERNAL_PREVIEW_PROTOCOLS.has(parsed.protocol)) {
+    parsed = new URL(toParse);
+  } catch {
+    const fallback = tryHttpsSchemelessExternal(trimmed);
+    if (!fallback) {
       return null;
     }
-    return parsed.toString();
-  } catch {
+    parsed = fallback;
+  }
+
+  if (!SUPPORTED_EXTERNAL_PREVIEW_PROTOCOLS.has(parsed.protocol)) {
     return null;
   }
+  return parsed.toString();
 }
