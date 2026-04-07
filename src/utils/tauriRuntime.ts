@@ -381,9 +381,8 @@ export async function clearFreshnessMetadata(
 }
 
 /**
- * Open a folder in the system file manager.
- * Returns true if successful, false otherwise.
- * @param path The path to open
+ * Open a directory or file with the system default application (file manager for folders, OS association for files).
+ * @param path Absolute path to an existing directory or file under the sync root
  */
 export async function openWorkspaceFolder(path: string): Promise<{ success: boolean; error?: string }> {
   if (!isTauriRuntime()) {
