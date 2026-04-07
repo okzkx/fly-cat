@@ -18,6 +18,18 @@ export function mapDocumentPath(syncRoot: string, document: SourceDocument): str
   return join(syncRoot, safeSpaceName, ...folderSegments, fileName);
 }
 
+/** Directory on disk for a wiki folder node (same segment sanitization as markdown output). */
+export function mapFolderPath(
+  syncRoot: string,
+  spaceName: string,
+  spaceId: string,
+  pathSegments: string[]
+): string {
+  const safeSpaceName = sanitizePathSegment(spaceName || spaceId);
+  const folderSegments = pathSegments.map(sanitizePathSegment);
+  return join(syncRoot, safeSpaceName, ...folderSegments);
+}
+
 export function buildPathCollisionSuffix(documentId: string): string {
   return createHash("sha1").update(documentId).digest("hex").slice(0, 8);
 }
