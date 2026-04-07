@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-07 11:28] 飞猫助手知识库同步目录，正在同步的文档要显示同步中标签。如果是父文档，需要显示其子文档的同步进度。参考库目录的同步进度样式 — kb-tree-sync-progress-labels
 - [2026-04-07 11:12] 新增：点击文档可以在右侧知识库右侧新开一个区域预览文档 — knowledge-doc-preview-pane
 - [2026-04-07 10:18] 飞猫助手任务列表 不需要显示输出目录 — task-list-hide-output-directory
 - [2026-04-02 16:30] 规范 OpenCat 归档报告命名 — normalize-opencat-archive-doc-names
