@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapDocumentPath } from "@/services/path-mapper";
+import { mapDocumentPath, mapFolderPath } from "@/services/path-mapper";
 
 describe("path mapper", () => {
   it("mirrors knowledge-base-relative directory structure", () => {
@@ -32,5 +32,27 @@ describe("path mapper", () => {
     });
 
     expect(outputPath.replace(/\\/g, "/")).toBe("/sync-root/研发_知识库/架构_设计/方案_评审_记录.md");
+  });
+
+  it("maps nested folder paths under space matching markdown directory layout", () => {
+    const folderPath = mapFolderPath("/sync-root", "研发知识库", "kb-eng", ["研发规范", "子文件夹"]);
+    expect(folderPath.replace(/\\/g, "/")).toBe("/sync-root/研发知识库/研发规范/子文件夹");
+    const docPath = mapDocumentPath("/sync-root", {
+      id: "doc-1",
+      spaceId: "kb-eng",
+      spaceName: "研发知识库",
+      nodeToken: "n1",
+      title: "某文档",
+      version: "v1",
+      updateTime: "t1",
+      pathSegments: ["研发规范", "子文件夹", "某文档"],
+      sourcePath: ""
+    });
+    expect(docPath.replace(/\\/g, "/").startsWith(folderPath.replace(/\\/g, "/") + "/")).toBe(true);
+  });
+
+  it("sanitizes folder paths consistently with documents", () => {
+    const folderPath = mapFolderPath("/sync-root", "研发:知识库", "kb-eng", ["架构|设计", "子目录"]);
+    expect(folderPath.replace(/\\/g, "/")).toBe("/sync-root/研发_知识库/架构_设计/子目录");
   });
 });
