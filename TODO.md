@@ -4,7 +4,6 @@
 
 ## P2 >
 
-- > 功能变更：点击文档名字不要勾选复选框，只做预览。同样，勾选复选框不要等同于点击文档名字，不要出现预览界面
-- Console 出现 [warn] 文档 `VjTHdd31DoP7OYxKWXOcbFoQnOf` 信息 被限频，第 1/6 次重试，等待 500ms 警告，是否要修复
+- > Console 出现 [warn] 文档 `VjTHdd31DoP7OYxKWXOcbFoQnOf` 信息 被限频，第 1/6 次重试，等待 500ms 警告，是否要修复
 
 ## P3
