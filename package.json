@@ -19,11 +19,14 @@
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "antd": "^6.3.4",
+    "dompurify": "^3.3.3",
+    "marked": "^17.0.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.2",
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",

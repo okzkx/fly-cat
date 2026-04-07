@@ -253,6 +253,22 @@ export async function clearAllSyncTasks(): Promise<void> {
   await invoke("clear_all_sync_tasks");
 }
 
+export interface SyncedMarkdownPreviewPayload {
+  markdown: string;
+  outputPath: string;
+  title: string;
+}
+
+export async function readSyncedMarkdownPreview(
+  syncRoot: string,
+  documentId: string
+): Promise<SyncedMarkdownPreviewPayload> {
+  if (!isTauriRuntime()) {
+    throw new Error("当前运行时不支持读取本地同步文件");
+  }
+  return invoke<SyncedMarkdownPreviewPayload>("read_synced_markdown_preview", { syncRoot, documentId });
+}
+
 export async function getSyncedDocumentIds(syncRoot: string): Promise<Set<string>> {
   if (!isTauriRuntime()) {
     return new Set();

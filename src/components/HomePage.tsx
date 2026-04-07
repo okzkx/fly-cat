@@ -24,13 +24,16 @@ import {
   computeCascadedCheckedKeys,
   computeTriState
 } from "@/utils/treeSelection";
+import MarkdownPreviewPane from "@/components/MarkdownPreviewPane";
 import {
   alignDocumentSyncVersions,
   checkDocumentFreshness,
+  isTauriRuntime,
   loadFreshnessMetadata,
   openDocumentInBrowser,
   openWorkspaceFolder,
   prepareForceRepulledDocuments,
+  readSyncedMarkdownPreview,
   saveFreshnessMetadata
 } from "@/utils/tauriRuntime";
 
@@ -573,6 +576,11 @@ export default function HomePage({
   const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
   const [bulkFreshnessAction, setBulkFreshnessAction] = useState<BulkFreshnessAction | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewMarkdown, setPreviewMarkdown] = useState<string | null>(null);
+  const [previewOutputPath, setPreviewOutputPath] = useState<string | null>(null);
+  const [previewDisplayTitle, setPreviewDisplayTitle] = useState<string | null>(null);
 
   const allSyncedIdsForFreshness = useMemo(
     () =>
@@ -623,6 +631,86 @@ export default function HomePage({
 
     return () => clearTimeout(timeoutId);
   }, [allSyncedIdsForFreshness, syncRoot]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      setPreviewLoading(false);
+      setPreviewError(null);
+      setPreviewMarkdown(null);
+      setPreviewOutputPath(null);
+      setPreviewDisplayTitle(selectedScope?.title ?? null);
+      return;
+    }
+
+    if (!syncRoot || !selectedScope) {
+      setPreviewLoading(false);
+      setPreviewError(null);
+      setPreviewMarkdown(null);
+      setPreviewOutputPath(null);
+      setPreviewDisplayTitle(null);
+      return;
+    }
+
+    setPreviewDisplayTitle(selectedScope.title);
+
+    if (selectedScope.kind === "bitable") {
+      setPreviewLoading(false);
+      setPreviewMarkdown(null);
+      setPreviewOutputPath(null);
+      setPreviewError("多维表格等导出文件请直接在同步目录查看；此处仅支持 Markdown 文档预览。");
+      return;
+    }
+
+    if (selectedScope.kind !== "document" || !selectedScope.documentId) {
+      setPreviewLoading(false);
+      setPreviewError(null);
+      setPreviewMarkdown(null);
+      setPreviewOutputPath(null);
+      return;
+    }
+
+    const docId = selectedScope.documentId;
+    const st = documentSyncStatuses[docId];
+    if (!st || st.status !== "synced") {
+      setPreviewLoading(false);
+      setPreviewMarkdown(null);
+      setPreviewOutputPath(null);
+      setPreviewError("该文档尚未同步或本地文件不可用，请先同步后再预览。");
+      return;
+    }
+
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError(null);
+
+    void readSyncedMarkdownPreview(syncRoot, docId)
+      .then((res) => {
+        if (cancelled) {
+          return;
+        }
+        setPreviewMarkdown(res.markdown);
+        setPreviewOutputPath(res.outputPath);
+        setPreviewError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        setPreviewMarkdown(null);
+        setPreviewOutputPath(null);
+        setPreviewError(msg || "加载预览失败");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPreviewLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedScope, syncRoot, documentSyncStatuses]);
 
   // Collect document IDs that are already synced successfully
   const syncedDocumentIds = useMemo(() => {
@@ -872,8 +960,17 @@ export default function HomePage({
   };
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 16,
+        alignItems: "stretch",
+        width: "100%"
+      }}
+    >
       <Card
+        style={{ flex: "1 1 400px", minWidth: 280 }}
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span>飞猫助手知识库同步</span>
@@ -1111,6 +1208,16 @@ export default function HomePage({
           )}
         </Space>
       </Card>
-    </Space>
+
+      <div style={{ flex: "1 1 360px", minWidth: 280, maxWidth: "100%" }}>
+        <MarkdownPreviewPane
+          displayTitle={previewDisplayTitle}
+          loading={previewLoading}
+          error={previewError}
+          markdown={previewMarkdown}
+          mdOutputPath={previewOutputPath}
+        />
+      </div>
+    </div>
   );
 }
