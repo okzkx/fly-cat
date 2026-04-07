@@ -988,16 +988,41 @@ export default function HomePage({
     >
       <Card
         style={{ flex: "1 1 400px", minWidth: 280 }}
+        styles={{
+          title: {
+            flex: 1,
+            minWidth: 0,
+            overflow: "visible",
+            whiteSpace: "normal"
+          },
+          extra: {
+            flexShrink: 0,
+            marginInlineStart: 12
+          }
+        }}
         title={
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 12,
+              minWidth: 0
+            }}
+          >
             <span>飞猫助手知识库同步</span>
-            <Button type="text" onClick={onOpenTasks} data-testid="open-task-list">
+            <Button
+              type="text"
+              onClick={onOpenTasks}
+              data-testid="open-task-list"
+              style={{ whiteSpace: "normal", height: "auto", textAlign: "start" }}
+            >
               {activeTaskSummary}
             </Button>
           </div>
         }
         extra={
-          <Space>
+          <Space wrap size={[8, 8]}>
             <Button
               icon={<ReloadOutlined />}
               disabled={!canRunSync || checkedSyncedDocumentIds.length === 0 || bulkFreshnessAction !== null}
