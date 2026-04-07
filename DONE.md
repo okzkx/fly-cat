@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-07 21:00] Console 出现 [warn] 文档 `VjTHdd31DoP7OYxKWXOcbFoQnOf` 信息 被限频，第 1/6 次重试，等待 500ms 警告，是否要修复 — reduce-document-info-rate-limit-warnings
 - [2026-04-07 18:00] 功能变更：点击文档名字不要勾选复选框，只做预览。同样，勾选复选框不要等同于点击文档名字，不要出现预览界面 — decouple-document-preview-from-checkbox-selection
 - [2026-04-07 13:00] 修复：没有出现以默认应用打开文档的图标 — restore-default-app-open-icon
 - [2026-04-07 12:33] 修复：任务列表页面没有返回首页按钮了，开始同步等按钮全部都不见了！ — restore-task-list-toolbar-actions
