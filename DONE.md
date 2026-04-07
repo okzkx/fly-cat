@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-07 21:17] 修复：点击点击预览上的链接还是显示 “当前预览仅支持打开 http、https 或 mailto 外部链接。”无法打开浏览器 — fix-markdown-preview-schemeless-external-links
 - [2026-04-07 21:07] 修复：飞书上的表格需要同步成 md 的表格，当前只同步了表格的内容，没生成 md 的表格样式 — fix-feishu-openapi-docx-table-markdown
 - [2026-04-07 20:59] 修复：点击预览的链接后显示 “当前预览仅支持打开 http、https 或 mailto 外部链接。”没有直接在浏览器中打开 — fix-markdown-preview-protocol-relative-external-links
 
