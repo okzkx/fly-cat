@@ -21,7 +21,6 @@ import { buildSelectionSummary, getEffectiveSelectedSources, scopeKey } from "@/
 import {
   buildScopeFromNode,
   collectCoveredDescendantKeys,
-  computeCascadedCheckedKeys,
   computeTriState
 } from "@/utils/treeSelection";
 import MarkdownPreviewPane from "@/components/MarkdownPreviewPane";
@@ -972,12 +971,6 @@ export default function HomePage({
     const nodeKey = String(node.key);
     const descendantKeys = collectTreeDataDescendantKeys(treeData, nodeKey);
     const currentState = computeTriState(expandedCheckedKeys, nodeKey, descendantKeys);
-    const newCheckedKeys = computeCascadedCheckedKeys(expandedCheckedKeys, nodeKey, descendantKeys, currentState);
-
-    // Synchronize highlight: checking also selects/highlights the node
-    if (newCheckedKeys.has(nodeKey)) {
-      onScopeChange(node.scopeValue);
-    }
 
     // Update selectedSources to reflect the cascade
     if (currentState === "all-checked") {
@@ -1004,14 +997,19 @@ export default function HomePage({
     }
   };
 
-  const handleSelect = (_keys: React.Key[], info: { node: EventDataNode<DataNode> }): void => {
+  const handleSelect = (
+    _keys: React.Key[],
+    info: { node: EventDataNode<DataNode>; nativeEvent?: MouseEvent }
+  ): void => {
+    const target = info.nativeEvent?.target;
+    if (target instanceof Element && target.closest(".ant-tree-checkbox")) {
+      return;
+    }
     const node = info.node as ScopeTreeDataNode;
     if (!node.scopeValue) {
       return;
     }
     onScopeChange(node.scopeValue);
-    // Tri-state toggle on name click
-    handleTriStateToggle(node);
   };
 
   return (
