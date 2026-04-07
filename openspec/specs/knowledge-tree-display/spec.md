@@ -27,7 +27,9 @@ Tree nodes MUST display the node title alongside a type icon only. The system SH
 - **THEN** it shows a table icon and the bitable title, with no "多维表格" tag
 
 ### Requirement: Metadata display on non-document tree nodes
-The system SHALL display sync metadata status tags on ALL tree node types (space, folder, document, bitable), not only document nodes. Space and folder nodes MUST continue to show aggregate status, while document and bitable leaf nodes MUST show their own per-item sync state. When a sync task is active and syncable leaves have been discovered, individual leaf nodes that are in the discovered set but not yet synced MUST display "等待同步" to distinguish them from leaves outside the current sync scope. Aggregate tags on parent nodes (folder, space) MUST reflect the overall sync progress including discovered-but-unsynced leaves.
+The system SHALL display sync metadata status tags on ALL tree node types (space, folder, document, bitable), not only document nodes. Space and folder nodes MUST continue to show aggregate status, while document and bitable leaf nodes MUST show their own per-item sync state. When a sync task is active and syncable leaves have been discovered, individual leaf nodes that are in the discovered set but not yet synced MUST display a **processing**-style tag **「同步中 X/Y」** where X and Y are the active task `counters.processed` and `counters.total`, matching folder aggregate tags during sync. Aggregate tags on parent nodes (folder, space) MUST reflect the overall sync progress including discovered-but-unsynced leaves.
+
+**Document or bitable nodes that have loaded child nodes in the tree** MUST use the same aggregate tagging rules as folder nodes for that subtree (counting descendant document ids, including the parent’s own document id when present), so parent wiki branches show child sync progress consistently with directory nodes.
 
 #### Scenario: Space node with synced and unsynced children
 - **WHEN** a space node contains 3 synced and 7 unsynced documents
@@ -51,7 +53,7 @@ The system SHALL display sync metadata status tags on ALL tree node types (space
 
 #### Scenario: Bitable node with active sync on sibling documents
 - **WHEN** a sync task is active with discovery completed and a bitable node is in the discovered set but has no manifest status entry yet
-- **THEN** the bitable node shows a neutral "等待同步" tag
+- **THEN** the bitable node shows a processing tag "同步中 X/Y" using the active task counters
 
 #### Scenario: Bitable node transitions to synced
 - **WHEN** a previously discovered bitable node completes synchronization successfully
@@ -63,14 +65,14 @@ The system SHALL display sync metadata status tags on ALL tree node types (space
 
 #### Scenario: Document node discovered but not yet synced
 - **WHEN** a sync task is active with document discovery completed and a document node is in the discovered set but has no manifest status entry
-- **THEN** the document node shows a tag "等待同步" in a default/neutral style
+- **THEN** the document node shows a processing tag "同步中 X/Y" where X and Y are `counters.processed` and `counters.total` of the active task
 
-#### Scenario: Document node transitions from waiting to synced
-- **WHEN** a document previously shown as "等待同步" completes syncing and the manifest is updated
+#### Scenario: Document node transitions from syncing to synced
+- **WHEN** a document previously shown as "同步中 X/Y" completes syncing and the manifest is updated
 - **THEN** the document node shows a tag "已同步" with the sync timestamp
 
-#### Scenario: Document node transitions from waiting to failed
-- **WHEN** a document previously shown as "等待同步" fails syncing
+#### Scenario: Document node transitions from syncing to failed
+- **WHEN** a document previously in the active discovered set fails syncing
 - **THEN** the document node shows a tag "同步失败" in an error style
 
 #### Scenario: Folder node shows syncing progress when children are discovered
@@ -80,6 +82,10 @@ The system SHALL display sync metadata status tags on ALL tree node types (space
 #### Scenario: Folder node all children waiting to sync
 - **WHEN** a sync task is active with discovery completed but no descendant documents of a folder node have been synced yet
 - **THEN** the folder node shows a tag "同步中 0/Y" reflecting that 0 of Y discovered documents have been processed
+
+#### Scenario: Parent document with loaded children uses aggregate progress
+- **WHEN** a document node has one or more loaded child nodes in the tree and a sync task is active affecting descendants in the discovered set
+- **THEN** the document node shows the same aggregate sync tag behavior as a folder node (including "同步中 X/Y" when any descendant is in the syncing set)
 
 ### Requirement: Document and bitable nodes show local and remote Feishu revision labels
 

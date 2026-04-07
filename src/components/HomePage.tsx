@@ -177,7 +177,13 @@ function DocumentSyncStatusTag({
     return <Tag color="error" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>同步失败</Tag>;
   }
   if (syncingIds.has(documentId)) {
-    return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>等待同步</Tag>;
+    const processed = activeTask?.counters.processed ?? 0;
+    const total = activeTask?.counters.total ?? 0;
+    return (
+      <Tag color="processing" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>
+        同步中 {processed}/{total}
+      </Tag>
+    );
   }
   return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>未同步</Tag>;
 }
@@ -279,6 +285,17 @@ function NodeSyncStatusTag({
     return null;
   }
   if (nodeKind === "document" || nodeKind === "bitable") {
+    const hasLoadedSubtree = Boolean(treeNode.children && treeNode.children.length > 0);
+    if (hasLoadedSubtree) {
+      return (
+        <AggregateSyncStatusTag
+          treeNode={treeNode}
+          syncStatuses={syncStatuses}
+          syncingIds={syncingIds}
+          activeTask={activeTask}
+        />
+      );
+    }
     return (
       <DocumentSyncStatusTag
         documentId={treeNode.scopeValue?.documentId}
