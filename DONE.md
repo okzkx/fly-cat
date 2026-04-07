@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-07 10:18] 飞猫助手任务列表 不需要显示输出目录 — task-list-hide-output-directory
 - [2026-04-02 16:30] 规范 OpenCat 归档报告命名 — normalize-opencat-archive-doc-names
 - [2026-04-02 16:40] 规范化 DONE.md — normalize-done-md
 - [2026-04-02 10:32] 修复：本地输出被删除后知识库树仍显示 `已同步` — fix-missing-output-unsynced-status
