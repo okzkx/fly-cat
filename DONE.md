@@ -1,5 +1,6 @@
 # DONE
 
+- [2026-04-07 13:00] 修复：没有出现以默认应用打开文档的图标 — restore-default-app-open-icon
 - [2026-04-07 12:33] 修复：任务列表页面没有返回首页按钮了，开始同步等按钮全部都不见了！ — restore-task-list-toolbar-actions
 - [2026-04-07 17:30] 飞猫助手知识库同步和任务列表排版太丑了，最好和右边的按钮不在同一行 — kb-sync-card-stacked-toolbar
 - [2026-04-07 11:53] 目录文档要新增图标：使用默认应用打开 — kb-tree-folder-open-default-app
