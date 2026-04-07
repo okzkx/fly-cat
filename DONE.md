@@ -64,3 +64,4 @@
 - [2026-03-31 20:36] 知识库文档后面要显示本地的飞书版本号 / 远端的飞书版本号 — kb-doc-feishu-version-labels
 - [2026-03-31 20:52] 根据 gou.md 来优化复选框逻辑 — kb-checkbox-decouple-batch
 - [2026-04-01 10:25] 修复：根据 gou.md，父级打勾时子复选框须全部显示为打勾且可交互 — kb-checkbox-gou-parent-children-checked
+- [2026-04-07 22:00] 修复：首页里开始同步，强制刷新等按钮不见了！ — fix-home-sync-action-buttons
