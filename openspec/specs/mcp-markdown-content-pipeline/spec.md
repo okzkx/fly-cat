@@ -4,7 +4,7 @@
 TBD - created by archiving change create-feishu-knowledge-base-sync-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: MCP-Based Document Content Retrieval
-The system MUST fetch document content through MCP-mediated Feishu API access in a way that preserves the structured block types required for Markdown rendering, including image blocks returned by the active Feishu block API, and MUST tolerate transient child-block frequency-limit responses before reporting a content-fetch failure.
+The system MUST fetch document content through MCP-mediated Feishu API access in a way that preserves the structured block types required for Markdown rendering, including image blocks returned by the active Feishu block API, and MUST tolerate transient document-summary and child-block frequency-limit responses before reporting a content-fetch failure.
 
 #### Scenario: Retrieve structured content through MCP
 - **WHEN** the sync worker processes a queued knowledge base document
@@ -17,6 +17,10 @@ The system MUST fetch document content through MCP-mediated Feishu API access in
 #### Scenario: Preserve compatibility with legacy image block type
 - **WHEN** the parser encounters the previously assumed legacy image `block_type`
 - **THEN** it still preserves that block as an image block instead of dropping it
+
+#### Scenario: Retry transient document-summary frequency limits during content fetch
+- **WHEN** the content pipeline fetches document summary metadata and the Feishu response returns `code=99991400`
+- **THEN** it retries that document-summary request within a bounded retry budget before failing the document
 
 #### Scenario: Retry transient child-block frequency limits
 - **WHEN** a child-block request returns Feishu frequency-limit response `code=99991400` during block traversal
