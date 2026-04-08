@@ -1,5 +1,7 @@
 # DONE
 
+- [2026-04-08 15:02] 修复：经常出现报错 本次失败主要发生在内容抓取阶段（7项）。获取文档信息失败(code=99991400): request trigger frequency limit — fix-content-fetch-document-summary-rate-limit
+
 - [2026-04-07 21:36] 飞书上的链接同步下来是错的 类似这样https%3A%2F%2Fjorenjoestar.github.io%2Fpost%2Fserialization_for_games%2F — fix-synced-feishu-link-url-encoding
 
 - [2026-04-07 21:17] 修复：点击点击预览上的链接还是显示 “当前预览仅支持打开 http、https 或 mailto 外部链接。”无法打开浏览器 — fix-markdown-preview-schemeless-external-links
