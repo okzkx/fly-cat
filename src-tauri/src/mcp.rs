@@ -1333,7 +1333,7 @@ impl FeishuOpenApiClient {
 
     pub fn fetch_document(&self, document_id: &str) -> Result<RawDocument, McpError> {
         let token = self.access_token()?;
-        let summary = self.fetch_document_summary(document_id)?;
+        let summary = self.fetch_document_summary_with_retry(document_id)?;
 
         // Use Block API instead of raw_content API to get structured content including images
         let blocks = self.fetch_document_blocks(document_id, token)?;
@@ -1662,6 +1662,85 @@ pub fn fetch_openapi_with_retry(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use std::thread;
+
+    fn spawn_document_summary_throttle_server() -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("server address");
+        let summary_attempts = Arc::new(AtomicUsize::new(0));
+        let summary_attempts_for_server = Arc::clone(&summary_attempts);
+
+        let handle = thread::spawn(move || {
+            for incoming in listener.incoming().take(4) {
+                let mut stream = incoming.expect("accept test request");
+                let mut buffer = [0_u8; 4096];
+                let bytes_read = stream.read(&mut buffer).expect("read request");
+                let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+                let path = request
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("/");
+
+                let body = if path.starts_with("/docx/v1/documents/doc-123/blocks/doc-123") {
+                    json!({
+                        "code": 0,
+                        "msg": "ok",
+                        "data": {
+                            "block": {
+                                "block_id": "doc-123",
+                                "children": []
+                            },
+                            "has_more": false
+                        }
+                    })
+                } else if path.starts_with("/docx/v1/documents/doc-123") {
+                    let attempt = summary_attempts_for_server.fetch_add(1, Ordering::SeqCst) + 1;
+                    if attempt < 3 {
+                        json!({
+                            "code": 99991400,
+                            "msg": "request trigger frequency limit"
+                        })
+                    } else {
+                        json!({
+                            "code": 0,
+                            "msg": "ok",
+                            "data": {
+                                "document": {
+                                    "title": "Retried Doc",
+                                    "revision_id": "v1",
+                                    "obj_edit_time": "1234567890"
+                                }
+                            }
+                        })
+                    }
+                } else {
+                    json!({
+                        "code": 404,
+                        "msg": format!("unexpected path: {path}")
+                    })
+                };
+
+                let body_text = body.to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body_text.len(),
+                    body_text
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .expect("write response");
+            }
+        });
+
+        (format!("http://{address}"), summary_attempts, handle)
+    }
 
     #[test]
     fn fetches_fixture_document_successfully() {
@@ -1751,6 +1830,24 @@ mod tests {
 
         assert_eq!(result, "ok");
         assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn fetch_document_retries_rate_limited_summary_before_loading_blocks() {
+        let (endpoint, summary_attempts, server) = spawn_document_summary_throttle_server();
+        let client = FeishuOpenApiClient::new(FeishuOpenApiConfig {
+            endpoint,
+            access_token: "test-token".into(),
+        });
+
+        let document = client
+            .fetch_document("doc-123")
+            .expect("content fetch should recover after throttled summary retries");
+        server.join().expect("join test server");
+
+        assert_eq!(document.title, "Retried Doc");
+        assert!(document.blocks.is_empty());
+        assert_eq!(summary_attempts.load(Ordering::SeqCst), 3);
     }
 
     #[test]
