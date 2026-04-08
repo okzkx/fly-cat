@@ -11,8 +11,8 @@ import {
   SyncOutlined,
   TableOutlined
 } from "@ant-design/icons";
-import { Alert, App, Button, Card, Empty, Space, Tag, Tooltip, Tree, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
 import type { DocumentFreshnessResult, DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
@@ -40,6 +40,7 @@ import {
 const { Text } = Typography;
 
 type BulkFreshnessAction = "refresh" | "force";
+const TREE_VIEWPORT_HEIGHT = 520;
 
 type ScopeTreeDataNode = DataNode & {
   scopeValue?: SyncScope;
@@ -165,6 +166,7 @@ function DocumentSyncStatusTag({
   syncingIds: Set<string>;
   activeTask: HomePageProps["activeSyncTask"];
 }): React.JSX.Element | null {
+  const tagStyle = { fontSize: 11, lineHeight: "18px", marginRight: 0 };
   if (!documentId) {
     return null;
   }
@@ -172,38 +174,39 @@ function DocumentSyncStatusTag({
   if (mapped) {
     if (mapped.status === "synced") {
       const time = formatSyncTime(mapped.lastSyncedAt);
-      return <Tag color="success" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>已同步 {time}</Tag>;
+      return <Tag color="success" style={tagStyle}>已同步 {time}</Tag>;
     }
-    return <Tag color="error" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>同步失败</Tag>;
+    return <Tag color="error" style={tagStyle}>同步失败</Tag>;
   }
   if (syncingIds.has(documentId)) {
     const processed = activeTask?.counters.processed ?? 0;
     const total = activeTask?.counters.total ?? 0;
     return (
-      <Tag color="processing" style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>
+      <Tag color="processing" style={tagStyle}>
         同步中 {processed}/{total}
       </Tag>
     );
   }
-  return <Tag style={{ fontSize: 11, lineHeight: "18px", marginRight: 0 }}>未同步</Tag>;
+  return <Tag style={tagStyle}>未同步</Tag>;
 }
 
 function DocumentFeishuRevisionLine({
   documentId,
   wikiListVersion,
-  syncStatuses,
-  freshnessMap
+  syncStatus,
+  freshnessMap,
+  showRevisionLine
 }: {
   documentId: string | undefined;
   wikiListVersion?: string;
-  syncStatuses: Record<string, DocumentSyncStatus>;
+  syncStatus: DocumentSyncStatus | undefined;
   freshnessMap: Record<string, DocumentFreshnessResult>;
+  showRevisionLine: boolean;
 }): React.JSX.Element | null {
-  if (Object.keys(syncStatuses).length === 0 || !documentId) {
+  if (!showRevisionLine || !documentId) {
     return null;
   }
-  const sync = syncStatuses[documentId];
-  const localRaw = sync?.localFeishuVersion?.trim();
+  const localRaw = syncStatus?.localFeishuVersion?.trim();
   const local = localRaw && localRaw.length > 0 ? localRaw : "—";
   const fr = freshnessMap[documentId];
   const remoteFromFresh = fr?.remoteVersion?.trim();
@@ -215,7 +218,7 @@ function DocumentFeishuRevisionLine({
         ? remoteFromList
         : "—";
   return (
-    <Text type="secondary" style={{ fontSize: 11, lineHeight: "18px", whiteSpace: "nowrap" }}>
+    <Text type="secondary" className="knowledge-tree-revision">
       本地 {local} / 远端 {remote}
     </Text>
   );
@@ -242,27 +245,25 @@ function FreshnessIndicator({
   switch (freshness.status) {
     case "current":
       return (
-        <Tooltip title="文档已是最新版本">
-          <CheckCircleOutlined style={{ color: "#52c41a", marginLeft: 4, fontSize: 12 }} />
-        </Tooltip>
+        <CheckCircleOutlined title="文档已是最新版本" style={{ color: "#52c41a", fontSize: 12 }} />
       );
     case "updated":
       return (
-        <Tooltip title={`有更新: 远程版本 ${freshness.remoteVersion}`}>
-          <ExclamationCircleOutlined style={{ color: "#faad14", marginLeft: 4, fontSize: 12 }} />
-        </Tooltip>
+        <ExclamationCircleOutlined
+          title={`有更新: 远程版本 ${freshness.remoteVersion}`}
+          style={{ color: "#faad14", fontSize: 12 }}
+        />
       );
     case "new":
       return (
-        <Tooltip title="远程新增文档">
-          <SyncOutlined style={{ color: "#1677ff", marginLeft: 4, fontSize: 12 }} />
-        </Tooltip>
+        <SyncOutlined title="远程新增文档" style={{ color: "#1677ff", fontSize: 12 }} />
       );
     case "error":
       return (
-        <Tooltip title={`检查失败: ${freshness.error || "未知错误"}`}>
-          <ExclamationCircleOutlined style={{ color: "#ff4d4f", marginLeft: 4, fontSize: 12 }} />
-        </Tooltip>
+        <ExclamationCircleOutlined
+          title={`检查失败: ${freshness.error || "未知错误"}`}
+          style={{ color: "#ff4d4f", fontSize: 12 }}
+        />
       );
     default:
       return null;
@@ -271,17 +272,19 @@ function FreshnessIndicator({
 
 function NodeSyncStatusTag({
   treeNode,
+  hasSyncStatuses,
   syncStatuses,
   syncingIds,
   activeTask
 }: {
   treeNode: ScopeTreeDataNode;
+  hasSyncStatuses: boolean;
   syncStatuses: Record<string, DocumentSyncStatus>;
   syncingIds: Set<string>;
   activeTask: HomePageProps["activeSyncTask"];
 }): React.JSX.Element | null {
   const nodeKind = treeNode.nodeKind;
-  if (!nodeKind || Object.keys(syncStatuses).length === 0) {
+  if (!nodeKind || !hasSyncStatuses) {
     return null;
   }
   if (nodeKind === "document" || nodeKind === "bitable") {
@@ -420,7 +423,6 @@ function buildTreeNodes(
 function buildTreeData(
   spaces: HomePageProps["spaces"],
   loadedSpaceTrees: HomePageProps["loadedSpaceTrees"],
-  selectedSources: SyncScope[],
   syncingKeys: Set<string>,
   syncedDocumentIds: Set<string>
 ): ScopeTreeDataNode[] {
@@ -444,6 +446,166 @@ function buildTreeData(
     }
   ];
 }
+
+type KnowledgeTreeNodeTitleProps = {
+  treeNode: ScopeTreeDataNode;
+  hasSyncStatuses: boolean;
+  syncStatus: DocumentSyncStatus | undefined;
+  syncStatuses: Record<string, DocumentSyncStatus>;
+  syncingIds: Set<string>;
+  activeTask: HomePageProps["activeSyncTask"];
+  freshnessMap: Record<string, DocumentFreshnessResult>;
+  canRunSync: boolean;
+  resyncingScopeKey: string | null;
+  onResync: (scope: SyncScope, scopeKeyValue: string) => void;
+  onOpenInBrowser: (
+    nodeToken: string | undefined,
+    documentId: string | undefined,
+    kind: "document" | "bitable"
+  ) => void;
+  onOpenLocal: (scope: SyncScope) => void;
+};
+
+const KnowledgeTreeNodeTitle = memo(function KnowledgeTreeNodeTitle({
+  treeNode,
+  hasSyncStatuses,
+  syncStatus,
+  syncStatuses,
+  syncingIds,
+  activeTask,
+  freshnessMap,
+  canRunSync,
+  resyncingScopeKey,
+  onResync,
+  onOpenInBrowser,
+  onOpenLocal
+}: KnowledgeTreeNodeTitleProps): React.JSX.Element {
+  if (treeNode.key === "wiki-root") {
+    return (
+      <span className="knowledge-tree-row">
+        <CloudSyncOutlined style={{ color: "#722ed1" }} />
+        <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
+      </span>
+    );
+  }
+
+  const nodeKind = treeNode.nodeKind ?? treeNode.scopeValue?.kind ?? "space";
+  const icon =
+    nodeKind === "document" ? (
+      <FileTextOutlined style={{ color: "#1677ff" }} />
+    ) : nodeKind === "folder" ? (
+      <FolderOutlined style={{ color: "#fa8c16" }} />
+    ) : nodeKind === "bitable" ? (
+      <TableOutlined style={{ color: "#13a8a8" }} />
+    ) : (
+      <CloudSyncOutlined style={{ color: "#722ed1" }} />
+    );
+  const scope = treeNode.scopeValue;
+  const isDocumentLike = treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable";
+  const scopeKeyValue = scope ? scopeKey(scope) : null;
+  const resyncDisabled =
+    !scopeKeyValue ||
+    !canRunSync ||
+    (scope?.documentId !== undefined && scope.documentId !== "" && syncingIds.has(scope.documentId)) ||
+    resyncingScopeKey === scopeKeyValue;
+
+  return (
+    <span className="knowledge-tree-row">
+      <span className="knowledge-tree-main">
+        {icon}
+        <span className="knowledge-tree-title" data-testid={`tree-label-${String(treeNode.key)}`}>
+          {String(treeNode.title)}
+        </span>
+        {isDocumentLike && (
+          <DocumentFeishuRevisionLine
+            documentId={scope?.documentId}
+            wikiListVersion={treeNode.wikiListVersion}
+            syncStatus={syncStatus}
+            freshnessMap={freshnessMap}
+            showRevisionLine={hasSyncStatuses}
+          />
+        )}
+      </span>
+      <span className="knowledge-tree-meta">
+        <NodeSyncStatusTag
+          treeNode={treeNode}
+          hasSyncStatuses={hasSyncStatuses}
+          syncStatuses={syncStatuses}
+          syncingIds={syncingIds}
+          activeTask={activeTask}
+        />
+        <FreshnessIndicator
+          documentId={scope?.documentId}
+          syncStatus={syncStatus}
+          freshnessMap={freshnessMap}
+        />
+      </span>
+      <span className="knowledge-tree-actions">
+        {isDocumentLike && scope && scopeKeyValue && (
+          <Button
+            type="text"
+            size="small"
+            icon={<ReloadOutlined style={{ fontSize: 12 }} />}
+            title="重新同步"
+            disabled={resyncDisabled}
+            loading={resyncingScopeKey === scopeKeyValue}
+            aria-label="重新同步"
+            onClick={(e) => {
+              e.stopPropagation();
+              onResync(scope, scopeKeyValue);
+            }}
+            style={{ padding: "0 4px" }}
+          />
+        )}
+        {isDocumentLike && treeNode.nodeToken && (
+          <Button
+            type="text"
+            size="small"
+            icon={<ExportOutlined style={{ fontSize: 12 }} />}
+            title="在浏览器打开"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenInBrowser(
+                treeNode.nodeToken,
+                scope?.documentId,
+                treeNode.nodeKind === "bitable" ? "bitable" : "document"
+              );
+            }}
+            style={{ padding: "0 4px" }}
+          />
+        )}
+        {isDocumentLike && scope && (
+          <Button
+            type="text"
+            size="small"
+            icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
+            title="使用默认应用打开"
+            aria-label="使用默认应用打开"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenLocal(scope);
+            }}
+            style={{ padding: "0 4px" }}
+          />
+        )}
+        {treeNode.nodeKind === "folder" && scope && (
+          <Button
+            type="text"
+            size="small"
+            icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
+            title="使用默认应用打开"
+            aria-label="使用默认应用打开"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenLocal(scope);
+            }}
+            style={{ padding: "0 4px" }}
+          />
+        )}
+      </span>
+    </span>
+  );
+});
 
 function getScopeLabel(scope: SyncScope | null): string {
   if (!scope) {
@@ -740,26 +902,30 @@ export default function HomePage({
     return ids;
   }, [documentSyncStatuses]);
 
-  const checkedSourceKeys = selectedSources.map((source) => scopeKey(source));
+  const hasSyncStatuses = useMemo(() => Object.keys(documentSyncStatuses).length > 0, [documentSyncStatuses]);
+
+  const checkedSourceKeys = useMemo(() => selectedSources.map((source) => scopeKey(source)), [selectedSources]);
 
   // Build syncingKeys based on actual active task's discovered documents
   const syncingKeys = useMemo(() => {
     if (!activeSyncTask) {
       return new Set<string>();
     }
+    const discoveredIds =
+      activeSyncTask.discoveredDocumentIds && activeSyncTask.discoveredDocumentIds.length > 0
+        ? new Set(activeSyncTask.discoveredDocumentIds)
+        : null;
+    if (!discoveredIds) {
+      return new Set(checkedSourceKeys);
+    }
     const keys = new Set<string>();
-    if (activeSyncTask.discoveredDocumentIds && activeSyncTask.discoveredDocumentIds.length > 0) {
-      for (const spaceId of Object.keys(loadedSpaceTrees)) {
-        const tree = loadedSpaceTrees[spaceId];
-        if (tree) {
-          const discoveredIds = new Set(activeSyncTask.discoveredDocumentIds);
-          for (const key of collectSyncedDocKeysFromTree(tree, discoveredIds)) {
-            keys.add(key);
-          }
+    for (const spaceId of Object.keys(loadedSpaceTrees)) {
+      const tree = loadedSpaceTrees[spaceId];
+      if (tree) {
+        for (const key of collectSyncedDocKeysFromTree(tree, discoveredIds)) {
+          keys.add(key);
         }
       }
-    } else {
-      return new Set(checkedSourceKeys);
     }
     return keys;
   }, [activeSyncTask, loadedSpaceTrees, checkedSourceKeys]);
@@ -792,8 +958,8 @@ export default function HomePage({
 
   // Build tree data once (needed for tri-state cascade logic)
   const treeData = useMemo(
-    () => buildTreeData(spaces, loadedSpaceTrees, selectedSources, syncingKeys, syncedDocumentIds),
-    [spaces, loadedSpaceTrees, selectedSources, syncingKeys, syncedDocumentIds]
+    () => buildTreeData(spaces, loadedSpaceTrees, syncingKeys, syncedDocumentIds),
+    [spaces, loadedSpaceTrees, syncingKeys, syncedDocumentIds]
   );
 
   // Compute half-checked keys for proper visual indeterminate display
@@ -961,6 +1127,21 @@ export default function HomePage({
       const messageText = error instanceof Error ? error.message : String(error);
       message.error(messageText || "打开浏览器失败");
     }
+  };
+
+  const handleResync = (scope: SyncScope, scopeKeyValue: string): void => {
+    setResyncingScopeKey(scopeKeyValue);
+    void (async () => {
+      try {
+        await onResyncDocumentScope(scope);
+        message.success("已开始重新同步");
+      } catch (err) {
+        console.error(err);
+        message.error("重新同步失败");
+      } finally {
+        setResyncingScopeKey((current) => (current === scopeKeyValue ? null : current));
+      }
+    })();
   };
 
   const handleTriStateToggle = (node: ScopeTreeDataNode): void => {
@@ -1163,164 +1344,55 @@ export default function HomePage({
           )}
 
           {spaces.length > 0 ? (
-            <div data-testid="knowledge-base-tree">
+            <div data-testid="knowledge-base-tree" className="knowledge-tree-viewport">
               <Tree
-              checkable
-              checkStrictly
-              defaultExpandedKeys={["wiki-root"]}
-              selectedKeys={selectedKey(selectedScope)}
-              checkedKeys={{ checked: Array.from(expandedCheckedKeys), halfChecked: halfCheckedKeys }}
-              treeData={treeData}
-              loadData={async (treeNode) => {
-                const node = treeNode as ScopeTreeDataNode;
-                if (node.spaceRef && !loadedSpaceTrees[node.spaceRef.id]) {
-                  await onLoadTreeChildren(node.spaceRef.id);
-                  return;
-                }
-                if (!node.scopeValue || !node.spaceId || !node.nodeToken || node.children || node.isLeaf) {
-                  return;
-                }
-                await onLoadTreeChildren(node.spaceId, node.nodeToken);
-              }}
-              onCheck={(_checkedKeys, info) => {
-                const changedNode = info.node as ScopeTreeDataNode;
-                handleTriStateToggle(changedNode);
-              }}
-              onSelect={handleSelect}
-              titleRender={(node) => {
-                const treeNode = node as ScopeTreeDataNode;
-                if (treeNode.key === "wiki-root") {
+                checkable
+                checkStrictly
+                height={TREE_VIEWPORT_HEIGHT}
+                defaultExpandedKeys={["wiki-root"]}
+                selectedKeys={selectedKey(selectedScope)}
+                checkedKeys={{ checked: Array.from(expandedCheckedKeys), halfChecked: halfCheckedKeys }}
+                treeData={treeData}
+                loadData={async (treeNode) => {
+                  const node = treeNode as ScopeTreeDataNode;
+                  if (node.spaceRef && !loadedSpaceTrees[node.spaceRef.id]) {
+                    await onLoadTreeChildren(node.spaceRef.id);
+                    return;
+                  }
+                  if (!node.scopeValue || !node.spaceId || !node.nodeToken || node.children || node.isLeaf) {
+                    return;
+                  }
+                  await onLoadTreeChildren(node.spaceId, node.nodeToken);
+                }}
+                onCheck={(_checkedKeys, info) => {
+                  const changedNode = info.node as ScopeTreeDataNode;
+                  handleTriStateToggle(changedNode);
+                }}
+                onSelect={handleSelect}
+                titleRender={(node) => {
+                  const treeNode = node as ScopeTreeDataNode;
                   return (
-                    <Space>
-                      <CloudSyncOutlined style={{ color: "#722ed1" }} />
-                      <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
-                    </Space>
-                  );
-                }
-
-                const nodeKind = treeNode.nodeKind ?? treeNode.scopeValue?.kind ?? "space";
-                const icon =
-                  nodeKind === "document" ? (
-                    <FileTextOutlined style={{ color: "#1677ff" }} />
-                  ) : nodeKind === "folder" ? (
-                    <FolderOutlined style={{ color: "#fa8c16" }} />
-                  ) : nodeKind === "bitable" ? (
-                    <TableOutlined style={{ color: "#13a8a8" }} />
-                  ) : (
-                    <CloudSyncOutlined style={{ color: "#722ed1" }} />
-                  );
-
-                return (
-                  <Space size={4} wrap>
-                    {icon}
-                    <span data-testid={`tree-label-${String(treeNode.key)}`}>{String(treeNode.title)}</span>
-                    {(nodeKind === "document" || nodeKind === "bitable") && (
-                      <DocumentFeishuRevisionLine
-                        documentId={treeNode.scopeValue?.documentId}
-                        wikiListVersion={treeNode.wikiListVersion}
-                        syncStatuses={documentSyncStatuses}
-                        freshnessMap={freshnessMap}
-                      />
-                    )}
-                    <NodeSyncStatusTag
+                    <KnowledgeTreeNodeTitle
                       treeNode={treeNode}
+                      hasSyncStatuses={hasSyncStatuses}
+                      syncStatus={documentSyncStatuses[treeNode.scopeValue?.documentId || ""]}
                       syncStatuses={documentSyncStatuses}
                       syncingIds={syncingIds}
                       activeTask={activeSyncTask}
-                    />
-                    <FreshnessIndicator
-                      documentId={treeNode.scopeValue?.documentId}
-                      syncStatus={documentSyncStatuses[treeNode.scopeValue?.documentId || ""]}
                       freshnessMap={freshnessMap}
+                      canRunSync={canRunSync}
+                      resyncingScopeKey={resyncingScopeKey}
+                      onResync={handleResync}
+                      onOpenInBrowser={(nodeToken, documentId, kind) => {
+                        void handleOpenInBrowser(nodeToken, documentId, kind);
+                      }}
+                      onOpenLocal={(scope) => {
+                        void handleOpenLocalWithDefaultApp(scope);
+                      }}
                     />
-                    {(treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable") && treeNode.scopeValue && (() => {
-                      const scope = treeNode.scopeValue;
-                      const sk = scopeKey(scope);
-                      const docId = scope.documentId;
-                      const resyncDisabled =
-                        !canRunSync ||
-                        (docId !== undefined && docId !== "" && syncingIds.has(docId)) ||
-                        resyncingScopeKey === sk;
-                      return (
-                        <Tooltip title="重新同步">
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<ReloadOutlined style={{ fontSize: 12 }} />}
-                            disabled={resyncDisabled}
-                            loading={resyncingScopeKey === sk}
-                            aria-label="重新同步"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setResyncingScopeKey(sk);
-                              void (async () => {
-                                try {
-                                  await onResyncDocumentScope(scope);
-                                  message.success("已开始重新同步");
-                                } catch (err) {
-                                  console.error(err);
-                                  message.error("重新同步失败");
-                                } finally {
-                                  setResyncingScopeKey((current) => (current === sk ? null : current));
-                                }
-                              })();
-                            }}
-                            style={{ padding: "0 4px" }}
-                          />
-                        </Tooltip>
-                      );
-                    })()}
-                    {(treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable") && treeNode.nodeToken && (
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<ExportOutlined style={{ fontSize: 12 }} />}
-                        title="在浏览器打开"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleOpenInBrowser(
-                            treeNode.nodeToken,
-                            treeNode.scopeValue?.documentId,
-                            treeNode.nodeKind === "bitable" ? "bitable" : "document"
-                          );
-                        }}
-                        style={{ padding: "0 4px" }}
-                      />
-                    )}
-                    {(treeNode.nodeKind === "document" || treeNode.nodeKind === "bitable") && treeNode.scopeValue && (
-                      <Tooltip title="使用默认应用打开">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
-                          aria-label="使用默认应用打开"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleOpenLocalWithDefaultApp(treeNode.scopeValue!);
-                          }}
-                          style={{ padding: "0 4px" }}
-                        />
-                      </Tooltip>
-                    )}
-                    {treeNode.nodeKind === "folder" && treeNode.scopeValue && (
-                      <Tooltip title="使用默认应用打开">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
-                          aria-label="使用默认应用打开"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleOpenLocalWithDefaultApp(treeNode.scopeValue!);
-                          }}
-                          style={{ padding: "0 4px" }}
-                        />
-                      </Tooltip>
-                    )}
-                  </Space>
-                );
-              }}
-            />
+                  );
+                }}
+              />
             </div>
           ) : (
             <Empty description="暂无知识空间可供选择" />
