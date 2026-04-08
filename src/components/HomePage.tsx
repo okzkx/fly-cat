@@ -1,5 +1,6 @@
 import {
   CheckCircleOutlined,
+  ClockCircleOutlined,
   CloudSyncOutlined,
   DeleteOutlined,
   ExclamationCircleOutlined,
@@ -7,12 +8,13 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   FolderOutlined,
+  LoadingOutlined,
   ReloadOutlined,
   SyncOutlined,
   TableOutlined
 } from "@ant-design/icons";
 import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
 import type { DocumentFreshnessResult, DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
@@ -227,11 +229,13 @@ function DocumentFeishuRevisionLine({
 function FreshnessIndicator({
   documentId,
   syncStatus,
-  freshnessMap
+  freshnessMap,
+  freshnessCheckActive
 }: {
   documentId: string | undefined;
   syncStatus: DocumentSyncStatus | undefined;
   freshnessMap: Record<string, DocumentFreshnessResult>;
+  freshnessCheckActive: boolean;
 }): React.JSX.Element | null {
   if (!documentId || !syncStatus || syncStatus.status !== "synced") {
     return null;
@@ -239,7 +243,18 @@ function FreshnessIndicator({
 
   const freshness = freshnessMap[documentId];
   if (!freshness) {
-    return null;
+    if (freshnessCheckActive) {
+      return (
+        <LoadingOutlined
+          spin
+          title="正在检查远端版本…"
+          style={{ color: "#1677ff", fontSize: 12 }}
+        />
+      );
+    }
+    return (
+      <ClockCircleOutlined title="待检查远端版本" style={{ color: "#8c8c8c", fontSize: 12 }} />
+    );
   }
 
   switch (freshness.status) {
@@ -455,6 +470,7 @@ type KnowledgeTreeNodeTitleProps = {
   syncingIds: Set<string>;
   activeTask: HomePageProps["activeSyncTask"];
   freshnessMap: Record<string, DocumentFreshnessResult>;
+  freshnessCheckActive: boolean;
   canRunSync: boolean;
   resyncingScopeKey: string | null;
   onResync: (scope: SyncScope, scopeKeyValue: string) => void;
@@ -474,6 +490,7 @@ const KnowledgeTreeNodeTitle = memo(function KnowledgeTreeNodeTitle({
   syncingIds,
   activeTask,
   freshnessMap,
+  freshnessCheckActive,
   canRunSync,
   resyncingScopeKey,
   onResync,
@@ -538,6 +555,7 @@ const KnowledgeTreeNodeTitle = memo(function KnowledgeTreeNodeTitle({
           documentId={scope?.documentId}
           syncStatus={syncStatus}
           freshnessMap={freshnessMap}
+          freshnessCheckActive={freshnessCheckActive}
         />
       </span>
       <span className="knowledge-tree-actions">
@@ -753,6 +771,8 @@ export default function HomePage({
     activeSyncTask?.status === "pending" || activeSyncTask?.status === "syncing";
 
   const [freshnessMap, setFreshnessMap] = useState<Record<string, DocumentFreshnessResult>>({});
+  const [freshnessCheckActive, setFreshnessCheckActive] = useState(false);
+  const freshnessCheckChainRef = useRef(Promise.resolve());
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
   const [bulkFreshnessAction, setBulkFreshnessAction] = useState<BulkFreshnessAction | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -766,6 +786,12 @@ export default function HomePage({
       Object.keys(documentSyncStatuses).filter((id) => documentSyncStatuses[id]?.status === "synced"),
     [documentSyncStatuses]
   );
+
+  const enqueueFreshnessCheck = useCallback((work: () => Promise<void>) => {
+    const next = freshnessCheckChainRef.current.then(work);
+    freshnessCheckChainRef.current = next.then(() => undefined).catch(() => undefined);
+    return next;
+  }, []);
 
   // Load freshness metadata when sync root changes
   useEffect(() => {
@@ -792,24 +818,26 @@ export default function HomePage({
       return;
     }
 
+    const idsSnapshot = [...allSyncedIdsForFreshness];
+    const rootSnapshot = syncRoot;
     // Debounce the freshness check to avoid too frequent API calls
     const timeoutId = setTimeout(() => {
-      const checkFreshness = async () => {
+      void enqueueFreshnessCheck(async () => {
+        setFreshnessCheckActive(true);
         try {
-          const result = await checkDocumentFreshness(allSyncedIdsForFreshness, syncRoot);
+          const result = await checkDocumentFreshness(idsSnapshot, rootSnapshot);
           setFreshnessMap(result);
-          // Save to persistence
-          await saveFreshnessMetadata(syncRoot, result);
+          await saveFreshnessMetadata(rootSnapshot, result);
         } catch (error) {
           console.error("Failed to check document freshness:", error);
+        } finally {
+          setFreshnessCheckActive(false);
         }
-      };
-
-      checkFreshness();
+      });
     }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [allSyncedIdsForFreshness, syncRoot]);
+  }, [allSyncedIdsForFreshness, syncRoot, enqueueFreshnessCheck]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -997,10 +1025,17 @@ export default function HomePage({
         }
         await prepareForceRepulledDocuments(syncRoot, checkedSyncedDocumentIds);
       }
-      const result = await checkDocumentFreshness(checkedSyncedDocumentIds, syncRoot);
-      const alignedResult = await alignDocumentSyncVersions(syncRoot, result, action === "force");
-      setFreshnessMap((current) => ({ ...current, ...alignedResult }));
-      await saveFreshnessMetadata(syncRoot, alignedResult);
+      await enqueueFreshnessCheck(async () => {
+        setFreshnessCheckActive(true);
+        try {
+          const result = await checkDocumentFreshness(checkedSyncedDocumentIds, syncRoot);
+          const alignedResult = await alignDocumentSyncVersions(syncRoot, result, action === "force");
+          setFreshnessMap((current) => ({ ...current, ...alignedResult }));
+          await saveFreshnessMetadata(syncRoot, alignedResult);
+        } finally {
+          setFreshnessCheckActive(false);
+        }
+      });
       await onReloadDocumentSyncStatuses();
       if (action === "force") {
         if (effectiveSelectedSources.length === 0) {
@@ -1380,6 +1415,7 @@ export default function HomePage({
                       syncingIds={syncingIds}
                       activeTask={activeSyncTask}
                       freshnessMap={freshnessMap}
+                      freshnessCheckActive={freshnessCheckActive}
                       canRunSync={canRunSync}
                       resyncingScopeKey={resyncingScopeKey}
                       onResync={handleResync}

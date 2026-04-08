@@ -16,6 +16,8 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
     sync::Mutex,
+    thread,
+    time::Duration,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -3220,8 +3222,12 @@ pub async fn check_document_freshness(
     let manifest =
         crate::storage::load_manifest(std::path::Path::new(&sync_root)).unwrap_or_default();
 
+    // Minimum pause between starting consecutive docx document-summary OpenAPI calls.
+    const FRESHNESS_DOCX_REQUEST_GAP_MS: u64 = 400;
+
     let result = tokio::task::spawn_blocking(move || {
         let mut freshness_map = std::collections::HashMap::new();
+        let mut gap_before_next_docx_call = false;
 
         for document_id in &document_ids {
             let local_record = manifest
@@ -3254,7 +3260,11 @@ pub async fn check_document_freshness(
                 continue;
             }
 
-            match client.fetch_document_summary(document_id) {
+            if gap_before_next_docx_call {
+                thread::sleep(Duration::from_millis(FRESHNESS_DOCX_REQUEST_GAP_MS));
+            }
+
+            match client.fetch_document_summary_with_retry(document_id) {
                 Ok(summary) => {
                     let (
                         status,
@@ -3322,6 +3332,7 @@ pub async fn check_document_freshness(
                     );
                 }
             }
+            gap_before_next_docx_call = true;
         }
 
         freshness_map
