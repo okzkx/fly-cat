@@ -1,5 +1,7 @@
 # DONE
 
+- [2026-04-08 17:39] 知识库目录下的文件总是出现限频报错，降低检查并发并增加待检查图标 — serial-document-freshness-check-pending-icon
+
 - [2026-04-08 15:23] 优化：知识库树展开/收起动画卡顿 — improve-knowledge-tree-expand-animation
 
 - [2026-04-08 15:02] 修复：经常出现报错 本次失败主要发生在内容抓取阶段（7项）。获取文档信息失败(code=99991400): request trigger frequency limit — fix-content-fetch-document-summary-rate-limit
