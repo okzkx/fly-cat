@@ -20,6 +20,49 @@ body {
   gap: 12px;
 }
 
+.knowledge-tree-viewport {
+  max-width: 100%;
+}
+
+.knowledge-tree-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.knowledge-tree-main,
+.knowledge-tree-meta,
+.knowledge-tree-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.knowledge-tree-title,
+.knowledge-tree-revision {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-tree-title {
+  max-width: 280px;
+}
+
+.knowledge-tree-revision {
+  max-width: 220px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.knowledge-tree-actions {
+  gap: 0;
+}
+
 .center-page {
   min-height: calc(100vh - 112px);
   display: flex;
