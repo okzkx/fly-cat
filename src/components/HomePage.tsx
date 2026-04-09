@@ -13,7 +13,7 @@ import {
   SyncOutlined,
   TableOutlined
 } from "@ant-design/icons";
-import { Alert, App, Button, Card, Empty, Space, Tag, Tree, Typography } from "antd";
+import { Alert, App, Button, Card, Empty, Space, Tag, Tooltip, Tree, Typography } from "antd";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DataNode, EventDataNode } from "antd/es/tree";
 import type { HomePageProps } from "@/types/app";
@@ -578,65 +578,72 @@ const KnowledgeTreeNodeTitle = memo(function KnowledgeTreeNodeTitle({
       </span>
       <span className="knowledge-tree-actions">
         {isDocumentLike && scope && scopeKeyValue && (
-          <Button
-            type="text"
-            size="small"
-            icon={<ReloadOutlined style={{ fontSize: 12 }} />}
-            title="重新同步"
-            disabled={resyncDisabled}
-            loading={resyncingScopeKey === scopeKeyValue}
-            aria-label="重新同步"
-            onClick={(e) => {
-              e.stopPropagation();
-              onResync(scope, scopeKeyValue);
-            }}
-            style={{ padding: "0 4px" }}
-          />
+          <Tooltip title="重新同步该篇文档或表格（会走同步任务）">
+            <span style={{ display: "inline-flex" }}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ReloadOutlined style={{ fontSize: 12 }} />}
+                disabled={resyncDisabled}
+                loading={resyncingScopeKey === scopeKeyValue}
+                aria-label="重新同步"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onResync(scope, scopeKeyValue);
+                }}
+                style={{ padding: "0 4px" }}
+              />
+            </span>
+          </Tooltip>
         )}
         {isDocumentLike && treeNode.nodeToken && (
-          <Button
-            type="text"
-            size="small"
-            icon={<ExportOutlined style={{ fontSize: 12 }} />}
-            title="在浏览器打开"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenInBrowser(
-                treeNode.nodeToken,
-                scope?.documentId,
-                treeNode.nodeKind === "bitable" ? "bitable" : "document"
-              );
-            }}
-            style={{ padding: "0 4px" }}
-          />
+          <Tooltip title="在浏览器中打开飞书在线页面">
+            <Button
+              type="text"
+              size="small"
+              icon={<ExportOutlined style={{ fontSize: 12 }} />}
+              aria-label="在浏览器打开"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenInBrowser(
+                  treeNode.nodeToken,
+                  scope?.documentId,
+                  treeNode.nodeKind === "bitable" ? "bitable" : "document"
+                );
+              }}
+              style={{ padding: "0 4px" }}
+            />
+          </Tooltip>
         )}
         {isDocumentLike && scope && (
-          <Button
-            type="text"
-            size="small"
-            icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
-            title="使用默认应用打开"
-            aria-label="使用默认应用打开"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenLocal(scope);
-            }}
-            style={{ padding: "0 4px" }}
-          />
+          <Tooltip title="用默认应用打开本地已导出的文件">
+            <Button
+              type="text"
+              size="small"
+              icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
+              aria-label="使用默认应用打开"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenLocal(scope);
+              }}
+              style={{ padding: "0 4px" }}
+            />
+          </Tooltip>
         )}
         {treeNode.nodeKind === "folder" && scope && (
-          <Button
-            type="text"
-            size="small"
-            icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
-            title="使用默认应用打开"
-            aria-label="使用默认应用打开"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenLocal(scope);
-            }}
-            style={{ padding: "0 4px" }}
-          />
+          <Tooltip title="在文件管理器中打开该目录对应的本地同步路径">
+            <Button
+              type="text"
+              size="small"
+              icon={<FolderOpenOutlined style={{ fontSize: 12 }} />}
+              aria-label="使用默认应用打开"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenLocal(scope);
+              }}
+              style={{ padding: "0 4px" }}
+            />
+          </Tooltip>
         )}
       </span>
     </span>
@@ -1348,50 +1355,66 @@ export default function HomePage({
         }
         extra={
           <Space wrap size={[8, 8]}>
-            <Button
-              icon={<ReloadOutlined />}
-              disabled={
-                !canRunSync ||
-                checkedSyncedDocumentIds.length === 0 ||
-                bulkFreshnessAction !== null ||
-                syncTaskBusy
-              }
-              loading={bulkFreshnessAction === "refresh"}
-              data-testid="refresh-all-freshness"
-              onClick={() => void handleBulkFreshnessAction("refresh")}
-            >
-              全部刷新
-            </Button>
-            <Button
-              icon={<ReloadOutlined />}
-              disabled={
-                !canRunSync ||
-                checkedSyncedDocumentIds.length === 0 ||
-                bulkFreshnessAction !== null ||
-                syncTaskBusy
-              }
-              loading={bulkFreshnessAction === "force"}
-              data-testid="force-update-selected-docs"
-              onClick={() => void handleBulkFreshnessAction("force")}
-            >
-              强制更新
-            </Button>
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              disabled={spaces.length === 0 || !canRunSync || checkedSyncedDocumentIds.length === 0}
-              onClick={() => handleBatchDeleteSynced()}
-            >
-              批量删除
-            </Button>
-            <Button
-              type="primary"
-              icon={<SyncOutlined />}
-              disabled={spaces.length === 0 || effectiveSelectedSources.length === 0}
-              onClick={() => void handleStartSync()}
-            >
-              开始同步
-            </Button>
+            <Tooltip title="检查远端版本并更新本地元数据，不删除导出文件，不启动同步任务">
+              <span style={{ display: "inline-flex" }}>
+                <Button
+                  icon={<ReloadOutlined />}
+                  disabled={
+                    !canRunSync ||
+                    checkedSyncedDocumentIds.length === 0 ||
+                    bulkFreshnessAction !== null ||
+                    syncTaskBusy
+                  }
+                  loading={bulkFreshnessAction === "refresh"}
+                  data-testid="refresh-all-freshness"
+                  onClick={() => void handleBulkFreshnessAction("refresh")}
+                >
+                  全部刷新
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title="删除本地导出后从远端重新拉取；成功时会启动同步任务（需有效同步范围）">
+              <span style={{ display: "inline-flex" }}>
+                <Button
+                  icon={<ReloadOutlined />}
+                  disabled={
+                    !canRunSync ||
+                    checkedSyncedDocumentIds.length === 0 ||
+                    bulkFreshnessAction !== null ||
+                    syncTaskBusy
+                  }
+                  loading={bulkFreshnessAction === "force"}
+                  data-testid="force-update-selected-docs"
+                  onClick={() => void handleBulkFreshnessAction("force")}
+                >
+                  强制更新
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title="从本地删除已勾选且已同步的文档文件，状态变为未同步">
+              <span style={{ display: "inline-flex" }}>
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  disabled={spaces.length === 0 || !canRunSync || checkedSyncedDocumentIds.length === 0}
+                  onClick={() => handleBatchDeleteSynced()}
+                >
+                  批量删除
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title="按当前勾选的同步范围创建并开始同步任务">
+              <span style={{ display: "inline-flex" }}>
+                <Button
+                  type="primary"
+                  icon={<SyncOutlined />}
+                  disabled={spaces.length === 0 || effectiveSelectedSources.length === 0}
+                  onClick={() => void handleStartSync()}
+                >
+                  开始同步
+                </Button>
+              </span>
+            </Tooltip>
           </Space>
         }
       >
