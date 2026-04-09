@@ -146,7 +146,11 @@ pub fn render_markdown(
         match block {
             CanonicalBlock::Heading { level, text } => {
                 let heading_level = (*level).clamp(1, 6);
-                lines.push(format!("{} {}", "#".repeat(heading_level.into()), render_rich_text(text)));
+                lines.push(format!(
+                    "{} {}",
+                    "#".repeat(heading_level.into()),
+                    render_rich_text(text)
+                ));
                 lines.push(String::new());
             }
             CanonicalBlock::Paragraph { text } => {
@@ -205,10 +209,7 @@ pub fn render_markdown(
                     let col_count = header.len();
                     let header_rendered: Vec<String> =
                         header.iter().map(render_rich_text).collect();
-                    lines.push(format!(
-                        "| {} |",
-                        header_rendered.join(" | ")
-                    ));
+                    lines.push(format!("| {} |", header_rendered.join(" | ")));
                     lines.push(format!(
                         "| {} |",
                         (0..col_count)
@@ -752,7 +753,9 @@ mod tests {
         )
         .expect("render should succeed");
 
-        assert!(rendered.markdown.contains("[click here](https://example.com)"));
+        assert!(rendered
+            .markdown
+            .contains("[click here](https://example.com)"));
     }
 
     #[test]

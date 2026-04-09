@@ -1974,10 +1974,22 @@ fn list_space_source_tree_from_openapi(
     )
 }
 
+fn looks_like_version_timestamp(value: &str) -> bool {
+    let trimmed = value.trim();
+    (trimmed.len() == 10 || trimmed.len() == 13) && trimmed.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn has_valid_discovery_version(version: &str, update_time: &str) -> bool {
+    let version = version.trim();
+    let update_time = update_time.trim();
+    !version.is_empty()
+        && !update_time.is_empty()
+        && version != update_time
+        && !looks_like_version_timestamp(version)
+}
+
 fn wiki_node_has_discovery_metadata(node: &crate::mcp::FeishuWikiNode) -> bool {
-    !node.title.trim().is_empty()
-        && !node.version.trim().is_empty()
-        && !node.update_time.trim().is_empty()
+    !node.title.trim().is_empty() && has_valid_discovery_version(&node.version, &node.update_time)
 }
 
 fn build_sync_document_from_wiki_node(
@@ -3149,11 +3161,7 @@ pub(crate) fn prepare_force_repulled_documents_impl(
     let mut touched = 0u32;
 
     for id in document_ids {
-        let Some(record) = manifest
-            .records
-            .iter_mut()
-            .find(|r| r.document_id == *id)
-        else {
+        let Some(record) = manifest.records.iter_mut().find(|r| r.document_id == *id) else {
             continue;
         };
 
@@ -3162,10 +3170,7 @@ pub(crate) fn prepare_force_repulled_documents_impl(
             let _ = fs::remove_file(output_path);
         }
         for asset in &record.image_assets {
-            let asset_path = output_path
-                .parent()
-                .unwrap_or(root)
-                .join(asset);
+            let asset_path = output_path.parent().unwrap_or(root).join(asset);
             if asset_path.is_file() {
                 let _ = fs::remove_file(asset_path);
             }
@@ -3815,6 +3820,22 @@ mod tests {
     }
 
     #[test]
+    fn timestamp_like_wiki_node_version_requires_summary_fallback() {
+        let node = crate::mcp::FeishuWikiNode {
+            space_id: "kb-product".into(),
+            node_token: "node-doc-product-overview".into(),
+            obj_token: "doc-product-overview".into(),
+            obj_type: "docx".into(),
+            title: "Product Overview".into(),
+            has_child: false,
+            version: "1773111360".into(),
+            update_time: "1773111360".into(),
+        };
+
+        assert!(!wiki_node_has_discovery_metadata(&node));
+    }
+
+    #[test]
     fn bitable_kind_is_classified_as_non_expandable_leaf() {
         assert_eq!(node_kind_from_obj_type("wiki", false), "folder");
         assert_eq!(node_kind_from_obj_type("folder", false), "folder");
@@ -3992,7 +4013,9 @@ mod tests {
         );
         assert!(!statuses.contains_key("doc-missing"));
         assert_eq!(
-            statuses.get("doc-failed").map(|entry| entry.status.as_str()),
+            statuses
+                .get("doc-failed")
+                .map(|entry| entry.status.as_str()),
             Some("failed")
         );
 
@@ -4034,16 +4057,18 @@ mod tests {
         };
         crate::storage::save_manifest(&sync_root, &manifest).expect("save");
 
-        let n = prepare_force_repulled_documents_impl(
-            sync_root.to_str().unwrap(),
-            &[doc_id.into()],
-        )
-        .expect("prep");
+        let n =
+            prepare_force_repulled_documents_impl(sync_root.to_str().unwrap(), &[doc_id.into()])
+                .expect("prep");
         assert_eq!(n, 1);
         assert!(!out.exists());
         assert!(!asset.exists());
         let loaded = crate::storage::load_manifest(&sync_root).expect("load");
-        let r = loaded.records.iter().find(|r| r.document_id == doc_id).unwrap();
+        let r = loaded
+            .records
+            .iter()
+            .find(|r| r.document_id == doc_id)
+            .unwrap();
         assert!(r.version.is_empty());
         assert!(r.update_time.is_empty());
         assert!(r.content_hash.is_empty());
@@ -4087,8 +4112,9 @@ mod tests {
         };
         crate::storage::save_manifest(&sync_root, &manifest).expect("save");
 
-        let n = prepare_force_repulled_documents_impl(sync_root.to_str().unwrap(), &[doc_id.into()])
-            .expect("prep");
+        let n =
+            prepare_force_repulled_documents_impl(sync_root.to_str().unwrap(), &[doc_id.into()])
+                .expect("prep");
         assert_eq!(n, 1);
         assert!(!parent_md.exists());
         assert!(!child_md.exists());
@@ -4121,11 +4147,7 @@ mod tests {
             ..bitable.clone()
         };
 
-        for (doc, expected) in [
-            (&bitable, true),
-            (&sheet, true),
-            (&docx, false),
-        ] {
+        for (doc, expected) in [(&bitable, true), (&sheet, true), (&docx, false)] {
             assert_eq!(
                 uses_export_download(doc, true),
                 expected,

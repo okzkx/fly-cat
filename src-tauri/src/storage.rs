@@ -47,6 +47,11 @@ pub fn remove_manifest_records(manifest: &mut SyncManifest, document_ids: &[Stri
         .retain(|r| !id_set.contains(r.document_id.as_str()));
 }
 
+fn looks_like_version_timestamp(version: &str) -> bool {
+    let trimmed = version.trim();
+    (trimmed.len() == 10 || trimmed.len() == 13) && trimmed.chars().all(|ch| ch.is_ascii_digit())
+}
+
 fn compare_feishu_versions(local: &str, remote: &str) -> Ordering {
     let local = local.trim();
     let remote = remote.trim();
@@ -55,7 +60,10 @@ fn compare_feishu_versions(local: &str, remote: &str) -> Ordering {
     let remote_is_numeric = !remote.is_empty() && remote.chars().all(|ch| ch.is_ascii_digit());
 
     if local_is_numeric && remote_is_numeric {
-        return local.len().cmp(&remote.len()).then_with(|| local.cmp(remote));
+        return local
+            .len()
+            .cmp(&remote.len())
+            .then_with(|| local.cmp(remote));
     }
 
     local.cmp(remote)
@@ -83,6 +91,9 @@ fn should_align_local_version(freshness: &DocumentFreshnessResult, force: bool) 
     }
 
     if !local.is_empty() && !remote.is_empty() {
+        if looks_like_version_timestamp(local) && !looks_like_version_timestamp(remote) {
+            return true;
+        }
         return compare_feishu_versions(local, remote) == Ordering::Less;
     }
 
@@ -360,7 +371,8 @@ mod tests {
             },
         )]);
 
-        let aligned = align_manifest_versions(&sync_root, &metadata, false).expect("align manifest");
+        let aligned =
+            align_manifest_versions(&sync_root, &metadata, false).expect("align manifest");
         let loaded = load_manifest(&sync_root).expect("load manifest");
 
         assert_eq!(loaded.records[0].version, "101");
@@ -421,6 +433,59 @@ mod tests {
         assert_eq!(aligned["doc-1"].status, "updated");
         assert_eq!(aligned["doc-1"].local_version, "101");
         assert_eq!(aligned["doc-1"].local_update_time, "t2");
+    }
+
+    #[test]
+    fn aligns_manifest_version_when_local_version_looks_like_timestamp() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time works")
+            .as_millis();
+        let sync_root = env::temp_dir().join(format!("feishu-sync-align-timestamp-{unique}"));
+        let mut manifest = SyncManifest::default();
+        upsert_manifest_record(
+            &mut manifest,
+            ManifestRecord {
+                document_id: "doc-1".into(),
+                space_id: "kb-eng".into(),
+                space_name: "研发知识库".into(),
+                node_token: "node-doc-1".into(),
+                title: "Doc".into(),
+                version: "1773111360".into(),
+                update_time: "1773111360".into(),
+                source_path: "研发知识库/Doc".into(),
+                path_segments: vec!["Doc".into()],
+                output_path: "a.md".into(),
+                content_hash: "hash".into(),
+                source_signature: "sig".into(),
+                status: "success".into(),
+                image_assets: vec![],
+                last_synced_at: "now".into(),
+            },
+        );
+        save_manifest(&sync_root, &manifest).expect("save manifest");
+
+        let metadata = HashMap::from([(
+            "doc-1".to_string(),
+            DocumentFreshnessResult {
+                status: "updated".into(),
+                local_version: "1773111360".into(),
+                remote_version: "100".into(),
+                local_update_time: "1773111360".into(),
+                remote_update_time: "t1".into(),
+                error: None,
+            },
+        )]);
+
+        let aligned =
+            align_manifest_versions(&sync_root, &metadata, false).expect("align manifest");
+        let loaded = load_manifest(&sync_root).expect("load manifest");
+
+        assert_eq!(loaded.records[0].version, "100");
+        assert_eq!(loaded.records[0].update_time, "t1");
+        assert_eq!(aligned["doc-1"].status, "current");
+        assert_eq!(aligned["doc-1"].local_version, "100");
+        assert_eq!(aligned["doc-1"].local_update_time, "t1");
     }
 
     #[test]

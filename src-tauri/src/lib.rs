@@ -7,10 +7,10 @@ mod sync;
 
 use commands::{
     align_document_sync_versions, begin_user_authorization, check_document_freshness,
-    clear_all_sync_tasks, clear_freshness_metadata, complete_user_authorization,
-    create_sync_task, delete_sync_task, get_app_bootstrap, get_document_sync_statuses,
-    get_runtime_info, get_synced_document_ids, list_space_source_tree, list_sync_tasks,
-    load_freshness_metadata, logout_user, open_workspace_folder, prepare_force_repulled_documents,
+    clear_all_sync_tasks, clear_freshness_metadata, complete_user_authorization, create_sync_task,
+    delete_sync_task, get_app_bootstrap, get_document_sync_statuses, get_runtime_info,
+    get_synced_document_ids, list_space_source_tree, list_sync_tasks, load_freshness_metadata,
+    logout_user, open_workspace_folder, prepare_force_repulled_documents,
     read_synced_markdown_preview, remove_synced_documents, resume_sync_tasks, retry_sync_task,
     save_app_settings, save_freshness_metadata, start_sync_task, validate_feishu_connection,
     AppState,

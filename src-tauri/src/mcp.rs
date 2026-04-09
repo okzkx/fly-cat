@@ -507,6 +507,21 @@ fn value_to_string(value: Option<&Value>) -> Option<String> {
     })
 }
 
+fn extract_revision_like_version(value: &Value) -> String {
+    value_to_string(value.get("revision_id"))
+        .or_else(|| value_to_string(value.get("revision")))
+        .or_else(|| value_to_string(value.get("version")))
+        .unwrap_or_default()
+}
+
+fn extract_document_update_time(value: &Value) -> String {
+    value_to_string(value.get("obj_edit_time"))
+        .or_else(|| value_to_string(value.get("update_time")))
+        .or_else(|| value_to_string(value.get("updated_at")))
+        .or_else(|| value_to_string(value.get("edit_time")))
+        .unwrap_or_default()
+}
+
 /// Parse a Feishu block JSON into a RawBlock enum.
 ///
 /// Feishu docx v1 BlockType enumeration (official API reference):
@@ -828,13 +843,28 @@ fn merge_consecutive_list_blocks(blocks: Vec<RawBlock>) -> Vec<RawBlock> {
         if should_merge {
             let last = merged.last_mut().unwrap();
             match (block, last) {
-                (RawBlock::BulletList { items }, RawBlock::BulletList { items: ref mut existing }) => {
+                (
+                    RawBlock::BulletList { items },
+                    RawBlock::BulletList {
+                        items: ref mut existing,
+                    },
+                ) => {
                     existing.extend(items);
                 }
-                (RawBlock::OrderedList { items }, RawBlock::OrderedList { items: ref mut existing }) => {
+                (
+                    RawBlock::OrderedList { items },
+                    RawBlock::OrderedList {
+                        items: ref mut existing,
+                    },
+                ) => {
                     existing.extend(items);
                 }
-                (RawBlock::Todo { items }, RawBlock::Todo { items: ref mut existing }) => {
+                (
+                    RawBlock::Todo { items },
+                    RawBlock::Todo {
+                        items: ref mut existing,
+                    },
+                ) => {
                     existing.extend(items);
                 }
                 _ => unreachable!(),
@@ -886,15 +916,15 @@ fn accumulate_rich_text_for_table_cell<F>(
 where
     F: FnMut(&str) -> Result<Value, McpError>,
 {
-    let bid = block
-        .get("block_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let bid = block.get("block_id").and_then(|v| v.as_str()).unwrap_or("");
     if !bid.is_empty() && !visited.insert(bid.to_string()) {
         return Ok(RichText::default());
     }
 
-    let block_type = block.get("block_type").and_then(|v| v.as_i64()).unwrap_or(0);
+    let block_type = block
+        .get("block_type")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     if block_type == 31 {
         return Ok(RichText::plain("[表格]"));
     }
@@ -921,7 +951,10 @@ where
     Ok(join_rich_text_with_separator(pieces, " "))
 }
 
-fn collect_table_cell_rich_text<F>(cell_block_id: &str, fetch_block: &mut F) -> Result<RichText, McpError>
+fn collect_table_cell_rich_text<F>(
+    cell_block_id: &str,
+    fetch_block: &mut F,
+) -> Result<RichText, McpError>
 where
     F: FnMut(&str) -> Result<Value, McpError>,
 {
@@ -931,7 +964,10 @@ where
 }
 
 /// OpenAPI table blocks list cell block IDs in `table.cells` (strings), not embedded element grids.
-fn try_parse_openapi_table_block<F>(block: &Value, fetch_block: &mut F) -> Result<Option<RawBlock>, McpError>
+fn try_parse_openapi_table_block<F>(
+    block: &Value,
+    fetch_block: &mut F,
+) -> Result<Option<RawBlock>, McpError>
 where
     F: FnMut(&str) -> Result<Value, McpError>,
 {
@@ -1211,17 +1247,8 @@ impl FeishuOpenApiClient {
 
         let title =
             value_to_string(document.get("title")).unwrap_or_else(|| document_id.to_string());
-        let version = value_to_string(document.get("revision_id"))
-            .or_else(|| value_to_string(document.get("revision")))
-            .or_else(|| value_to_string(document.get("version")))
-            .or_else(|| value_to_string(document.get("obj_edit_time")))
-            .or_else(|| value_to_string(document.get("update_time")))
-            .unwrap_or_else(|| title.clone());
-        let update_time = value_to_string(document.get("obj_edit_time"))
-            .or_else(|| value_to_string(document.get("update_time")))
-            .or_else(|| value_to_string(document.get("updated_at")))
-            .or_else(|| value_to_string(document.get("edit_time")))
-            .unwrap_or_else(|| version.clone());
+        let version = extract_revision_like_version(document);
+        let update_time = extract_document_update_time(document);
 
         Ok(FeishuDocumentSummary {
             title,
@@ -1284,17 +1311,8 @@ impl FeishuOpenApiClient {
 
             nodes.extend(items.iter().filter_map(|item| {
                 let title = item.get("title")?.as_str()?.to_string();
-                let version = value_to_string(item.get("revision_id"))
-                    .or_else(|| value_to_string(item.get("revision")))
-                    .or_else(|| value_to_string(item.get("version")))
-                    .or_else(|| value_to_string(item.get("obj_edit_time")))
-                    .or_else(|| value_to_string(item.get("update_time")))
-                    .unwrap_or_else(|| title.clone());
-                let update_time = value_to_string(item.get("obj_edit_time"))
-                    .or_else(|| value_to_string(item.get("update_time")))
-                    .or_else(|| value_to_string(item.get("updated_at")))
-                    .or_else(|| value_to_string(item.get("edit_time")))
-                    .unwrap_or_else(|| version.clone());
+                let version = extract_revision_like_version(item);
+                let update_time = extract_document_update_time(item);
                 Some(FeishuWikiNode {
                     space_id: item.get("space_id")?.as_str()?.to_string(),
                     node_token: item.get("node_token")?.as_str()?.to_string(),
@@ -1670,7 +1688,8 @@ mod tests {
     };
     use std::thread;
 
-    fn spawn_document_summary_throttle_server() -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>) {
+    fn spawn_document_summary_throttle_server() -> (String, Arc<AtomicUsize>, thread::JoinHandle<()>)
+    {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
         let address = listener.local_addr().expect("server address");
         let summary_attempts = Arc::new(AtomicUsize::new(0));
@@ -1758,6 +1777,29 @@ mod tests {
         assert_eq!(result.document_id, "doc-eng-architecture");
         assert_eq!(result.space_id, "kb-eng");
         assert!(!result.blocks.is_empty());
+    }
+
+    #[test]
+    fn extract_revision_prefers_revision_fields_over_edit_time() {
+        let payload = json!({
+            "revision_id": "100",
+            "obj_edit_time": "1773111360",
+            "update_time": "1773111360000"
+        });
+
+        assert_eq!(extract_revision_like_version(&payload), "100");
+        assert_eq!(extract_document_update_time(&payload), "1773111360");
+    }
+
+    #[test]
+    fn extract_revision_does_not_fallback_to_edit_time() {
+        let payload = json!({
+            "obj_edit_time": "1773111360",
+            "update_time": "1773111360000"
+        });
+
+        assert_eq!(extract_revision_like_version(&payload), "");
+        assert_eq!(extract_document_update_time(&payload), "1773111360");
     }
 
     #[test]
@@ -2087,7 +2129,11 @@ mod tests {
         )
         .expect("flatten should succeed");
 
-        assert_eq!(blocks.len(), 1, "expected one Table block, not flattened cell paragraphs");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "expected one Table block, not flattened cell paragraphs"
+        );
         match &blocks[0] {
             RawBlock::Table { rows } => {
                 assert_eq!(rows.len(), 2);
@@ -2220,7 +2266,8 @@ mod tests {
                 "elements": [{ "text_run": { "content": "some code" } }]
             }
         });
-        let parsed = parse_block_from_json(&block, 0).expect("code block without language should parse");
+        let parsed =
+            parse_block_from_json(&block, 0).expect("code block without language should parse");
         assert!(
             matches!(parsed, RawBlock::CodeBlock { ref language, ref code }
                 if language.is_empty() && code == "some code")
@@ -2261,8 +2308,14 @@ mod tests {
         let parsed = parse_block_from_json(&block, 0).expect("table block should parse");
         assert!(matches!(parsed, RawBlock::Table { ref rows } if rows.len() == 2));
         if let RawBlock::Table { rows } = parsed {
-            assert_eq!(rows[0], vec![RichText::plain("Header 1"), RichText::plain("Header 2")]);
-            assert_eq!(rows[1], vec![RichText::plain("Cell 1"), RichText::plain("Cell 2")]);
+            assert_eq!(
+                rows[0],
+                vec![RichText::plain("Header 1"), RichText::plain("Header 2")]
+            );
+            assert_eq!(
+                rows[1],
+                vec![RichText::plain("Cell 1"), RichText::plain("Cell 2")]
+            );
         }
     }
 
@@ -2382,7 +2435,10 @@ mod tests {
             }
         })];
         let rich = extract_text_from_elements(&elements);
-        assert_eq!(rich.segments[0].link.as_deref(), Some("https://example.com"));
+        assert_eq!(
+            rich.segments[0].link.as_deref(),
+            Some("https://example.com")
+        );
     }
 
     #[test]
@@ -2414,7 +2470,10 @@ mod tests {
             }
         })];
         let rich = extract_text_from_elements(&elements);
-        assert_eq!(rich.segments[0].link.as_deref(), Some("https://example.com/x%20y"));
+        assert_eq!(
+            rich.segments[0].link.as_deref(),
+            Some("https://example.com/x%20y")
+        );
     }
 
     #[test]
@@ -2432,7 +2491,10 @@ mod tests {
         let rich = extract_text_from_elements(&elements);
         assert!(rich.segments[0].bold);
         assert!(rich.segments[0].italic);
-        assert_eq!(rich.segments[0].link.as_deref(), Some("https://example.com"));
+        assert_eq!(
+            rich.segments[0].link.as_deref(),
+            Some("https://example.com")
+        );
     }
 
     #[test]

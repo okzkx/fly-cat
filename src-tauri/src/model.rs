@@ -38,10 +38,7 @@ impl RichText {
 
     /// Flatten to plain text without any styling.
     pub fn to_plain_text(&self) -> String {
-        self.segments
-            .iter()
-            .map(|s| s.content.as_str())
-            .collect()
+        self.segments.iter().map(|s| s.content.as_str()).collect()
     }
 
     /// Check if the text is empty.
