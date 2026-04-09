@@ -414,53 +414,6 @@ function collectDocumentIdsByTreeKeys(
   return docIds;
 }
 
-function collectDocumentScopesByTreeKeys(
-  nodes: KnowledgeBaseNode[],
-  treeKeys: Set<string>
-): SyncScope[] {
-  const scopes: SyncScope[] = [];
-
-  function collectFromNode(node: KnowledgeBaseNode, shouldCollect: boolean): void {
-    if (shouldCollect || treeKeys.has(node.key)) {
-      const scope = buildScopeFromNode(node);
-      if (scope?.documentId) {
-        scopes.push({
-          ...scope,
-          includesDescendants: false
-        });
-      }
-      if (node.children && node.children.length > 0) {
-        for (const child of node.children) {
-          collectFromNode(child, true);
-        }
-      }
-    } else if (node.children && node.children.length > 0) {
-      for (const child of node.children) {
-        collectFromNode(child, false);
-      }
-    }
-  }
-
-  for (const node of nodes) {
-    collectFromNode(node, false);
-  }
-
-  return scopes;
-}
-
-function freshnessNeedsResync(freshness: DocumentFreshnessResult | undefined): boolean {
-  if (!freshness || freshness.status === "error") {
-    return false;
-  }
-  if (freshness.status === "updated" || freshness.status === "new") {
-    return true;
-  }
-  return (
-    freshness.localVersion.trim() !== freshness.remoteVersion.trim() ||
-    freshness.localUpdateTime.trim() !== freshness.remoteUpdateTime.trim()
-  );
-}
-
 function buildTreeNodes(
   nodes: KnowledgeBaseNode[],
   syncingKeys: Set<string>,
@@ -1074,33 +1027,6 @@ export default function HomePage({
     [checkedSyncedDocumentIdsFromTree, checkedSyncedDocumentIdsFromLeafSources]
   );
 
-  const checkedDocumentScopeMap = useMemo(() => {
-    const scopes = new Map<string, SyncScope>();
-    for (const spaceId of Object.keys(loadedSpaceTrees)) {
-      const tree = loadedSpaceTrees[spaceId];
-      if (!tree) {
-        continue;
-      }
-      for (const scope of collectDocumentScopesByTreeKeys(tree, expandedCheckedKeys)) {
-        if (scope.documentId && !scopes.has(scope.documentId)) {
-          scopes.set(scope.documentId, scope);
-        }
-      }
-    }
-    for (const id of checkedSyncedDocumentIds) {
-      if (scopes.has(id)) {
-        continue;
-      }
-      const source = selectedSources.find(
-        (s) => (s.kind === "document" || s.kind === "bitable") && s.documentId === id
-      );
-      if (source) {
-        scopes.set(id, { ...source, includesDescendants: false });
-      }
-    }
-    return scopes;
-  }, [loadedSpaceTrees, expandedCheckedKeys, selectedSources, checkedSyncedDocumentIds]);
-
   // Build tree data once (needed for tri-state cascade logic)
   const treeData = useMemo(
     () => buildTreeData(spaces, loadedSpaceTrees, syncingKeys, syncedDocumentIds),
@@ -1139,7 +1065,6 @@ export default function HomePage({
     }
     const preparedIds = action === "force" ? [...checkedSyncedDocumentIds] : [];
     let queuedTaskId: string | null = null;
-    let refreshedCount = 0;
     setBulkFreshnessAction(action);
     try {
       if (action === "force") {
@@ -1155,30 +1080,7 @@ export default function HomePage({
         setFreshnessCheckActive(true);
         try {
           const result = await checkDocumentFreshness(action === "force" ? preparedIds : checkedSyncedDocumentIds, syncRoot);
-          let nextFreshnessMap = result;
-          if (action === "refresh") {
-            const outdatedIds = checkedSyncedDocumentIds.filter((id) => freshnessNeedsResync(result[id]));
-            refreshedCount = outdatedIds.length;
-            if (outdatedIds.length > 0) {
-              const outdatedScopes = outdatedIds
-                .map((id) => checkedDocumentScopeMap.get(id))
-                .filter((scope): scope is SyncScope => Boolean(scope));
-              await prepareForceRepulledDocuments(syncRoot, outdatedIds);
-              setForcePreparedIds(new Set(outdatedIds));
-              await onReloadDocumentSyncStatuses();
-              if (outdatedScopes.length > 0) {
-                const queuedTask = await onCreateTask({
-                  startImmediately: false,
-                  selectedSources: outdatedScopes
-                });
-                queuedTaskId = queuedTask?.task?.id ?? null;
-              }
-            } else {
-              setForcePreparedIds(new Set());
-            }
-          } else {
-            nextFreshnessMap = await alignDocumentSyncVersions(syncRoot, result, true);
-          }
+          const nextFreshnessMap = await alignDocumentSyncVersions(syncRoot, result, true);
           setFreshnessMap((current) => ({ ...current, ...nextFreshnessMap }));
           await saveFreshnessMetadata(syncRoot, nextFreshnessMap);
         } finally {
@@ -1187,16 +1089,10 @@ export default function HomePage({
       });
       await onReloadDocumentSyncStatuses();
       if (action === "refresh") {
-        if (refreshedCount === 0) {
-          message.success(`已检查 ${checkedSyncedDocumentIds.length} 个所选文档，当前都无需重新同步`);
-          return;
-        }
-        if (queuedTaskId) {
-          await onResumeTasks();
-          message.success(`已开始重新同步 ${refreshedCount} 个远端版本有变化的所选文档`);
-        } else {
-          message.warning("检测到需要更新的文档，但未能创建同步任务，请检查所选范围后重试");
-        }
+        message.success(
+          `已对 ${checkedSyncedDocumentIds.length} 个所选已同步文档完成远端检查，并将本地版本记录与远端对齐（未删除文件、未启动同步任务）`
+        );
+        return;
       } else {
         if (effectiveSelectedSources.length === 0) {
           message.warning(

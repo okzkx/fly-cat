@@ -118,7 +118,7 @@ In browser (non-Tauri) runtime or when sync statuses are empty, the system SHALL
 
 The system MUST provide labeled controls on the knowledge base home card (same surface as **批量删除** and **开始同步**) for the **currently checked document/bitable leaves that already have sync status `synced`**:
 
-- **全部刷新** refreshes remote document metadata for the checked synced leaves and keeps the existing conditional local-version alignment rule. It MUST NOT delete local files or start a sync task.
+- **全部刷新** MUST fetch remote document metadata for the checked synced leaves using the batch freshness API, update the in-memory freshness map, persist freshness metadata, then align manifest-backed local `version` and `update_time` to the refreshed remote values using the forced alignment rule (the same rule **强制更新** uses after metadata refresh: whenever the check succeeds and local fields differ from remote). It MUST NOT delete local exported files or image assets, MUST NOT call prepare-for-repull or strip helpers, and MUST NOT create, queue, or start a sync task.
 - **强制更新** MUST delete local on-disk outputs (exported document files and their recorded image assets) for the checked synced leaves, immediately refresh the in-memory manifest-backed sync status view so those stripped leaves render as `未同步`, refresh remote metadata, align local manifest-backed version metadata to the refreshed remote metadata with the forced rule, then start a sync task using the same effective selection as **开始同步** so the pipeline re-pulls from Feishu. If a sync task is already `pending` or `syncing`, **强制更新** MUST NOT start another task and MUST surface a clear error. If there is no effective sync selection, **强制更新** MUST still perform strip + metadata steps but MUST NOT create a sync task and MUST warn the user to choose a scope and use **开始同步**.
 
 For each checked synced leaf whose primary exported file is Markdown (`.md`), **强制更新** MUST also remove a sibling directory under the same parent folder whose name equals that file’s stem (filename without extension) when that path exists and is a directory. This matches the wiki layout where child documents are written under `Title/` next to `Title.md`, so child outputs are cleared and the sync pipeline re-downloads them instead of skipping as unchanged.
@@ -127,12 +127,6 @@ Both controls MUST use the same batch freshness API and persistence flow as the 
 
 The checked synced document id set used by **全部刷新**, **强制更新**, and **批量删除** MUST be the union of: (1) document ids collected from loaded knowledge-base tree nodes using the expanded checkbox key set, and (2) `documentId` values from `selectedSources` entries whose kind is `document` or `bitable`, limited to ids that are manifest-backed `synced` and not excluded by the same active-sync rules that gate the bulk controls. The union MUST be deduplicated.
 
-After **全部刷新** completes, the system MUST align the local version metadata for each selected synced document with the refreshed remote version metadata only when any of the following is true:
-
-- the local version is lower than the remote version
-- the local version is missing while the remote version exists
-- the remote version is missing while the local version exists
-
 After **强制更新** completes its metadata phase, the system MUST align the local version metadata for each selected synced document with the refreshed remote version metadata whenever the refresh succeeds, regardless of whether the local version is lower, higher, missing, or simply different.
 
 When **强制更新** has already queued a replacement sync task for a non-empty effective selection, the Home page task summary and the task list MUST show that pending task immediately, without waiting for the freshness refresh/alignment phase to finish. Merely queuing that pending task MUST NOT overwrite the freshly stripped leaves back to a syncing badge before the replacement sync actually starts.
@@ -140,7 +134,7 @@ When **强制更新** has already queued a replacement sync task for a non-empty
 #### Scenario: User refreshes checked synced documents
 
 - **WHEN** the user activates **全部刷新** and at least one checked leaf document has sync status `synced` and `canRunSync` is true
-- **THEN** the system fetches remote freshness for the checked synced document ids, updates the in-memory freshness map, persists metadata, and updates manifest-backed local version state only for the selected synced documents that satisfy the normal alignment rule
+- **THEN** the system fetches remote freshness for the checked synced document ids, persists freshness metadata, applies forced manifest alignment to match remote for successful checks, reloads sync statuses, and does not delete local outputs or start a sync task
 
 #### Scenario: Force update clears synced badges immediately after strip
 
@@ -327,4 +321,13 @@ When **强制更新** creates a replacement sync task for a non-empty effective 
 #### Scenario: Manual resume controls remain available for recovery
 - **WHEN** a pending sync task still exists later because the app was interrupted or the automatic follow-up path did not complete
 - **THEN** the task list still exposes manual resume controls for recovery
+
+### Requirement: Default sync task only downloads unsynced document bodies
+
+The **开始同步** primary action (creating and starting a sync task from the current effective selection) MUST cause the sync pipeline to perform export/download work only for documents that are not classified as unchanged: same `document_id`, successful manifest row, matching `source_path`, expected `output_path`, and an existing primary output file. Documents that satisfy that unchanged classification MUST be skipped. For skipped documents, the pipeline MUST NOT update manifest `version` or `update_time` solely to reconcile remote metadata drift (those documents remain eligible for separate **全部刷新** handling).
+
+#### Scenario: Unchanged synced documents are skipped without manifest drift repair
+
+- **WHEN** a sync task runs after **开始同步** and discovery includes a document that already has local outputs consistent with the manifest unchanged check
+- **THEN** that document is not queued for download/export and its manifest record is not rewritten only to match remote revision metadata
 
