@@ -125,6 +125,8 @@ For each checked synced leaf whose primary exported file is Markdown (`.md`), **
 
 Both controls MUST use the same batch freshness API and persistence flow as the automatic debounced freshness pass for the selected synced document ids. Both controls MUST be disabled when sync cannot run (no usable sync root or connection state disallows sync, matching existing **开始同步** gating) or when there are zero checked synced leaves. While either action is in progress, the triggering control MUST show a loading state and MUST NOT start overlapping refresh calls.
 
+The checked synced document id set used by **全部刷新**, **强制更新**, and **批量删除** MUST be the union of: (1) document ids collected from loaded knowledge-base tree nodes using the expanded checkbox key set, and (2) `documentId` values from `selectedSources` entries whose kind is `document` or `bitable`, limited to ids that are manifest-backed `synced` and not excluded by the same active-sync rules that gate the bulk controls. The union MUST be deduplicated.
+
 After **全部刷新** completes, the system MUST align the local version metadata for each selected synced document with the refreshed remote version metadata only when any of the following is true:
 
 - the local version is lower than the remote version
@@ -185,6 +187,12 @@ When **强制更新** has already queued a replacement sync task for a non-empty
 
 - **WHEN** the user uses **全部刷新**
 - **THEN** the system does not create a sync task or re-download bodies (full re-download remains **强制更新** or per-row re-sync)
+
+#### Scenario: Batch-checked synced leaves enable toolbar when tree id collection is incomplete
+
+- **WHEN** the user has checked one or more **document** or **bitable** leaves with sync status `synced` such that those leaves appear in `selectedSources`
+- **AND** `canRunSync` is true and bulk controls are not disabled by an active `pending` or `syncing` task
+- **THEN** **全部刷新** and **强制更新** MUST be enabled if the merged checked synced id set (tree-derived ∪ explicit `selectedSources` leaf ids) is non-empty
 
 ### Requirement: Missing local outputs clear synced state
 The knowledge tree MUST treat a document or bitable as currently synced only when its manifest-backed successful sync record still points to an existing local output file. If the local output has been deleted after a previous success, the tree MUST stop showing `已同步` for that item and MUST fall back to the unsynced presentation until a later sync writes the file again.
