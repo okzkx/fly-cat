@@ -6,4 +6,4 @@
 ## 2. Validation
 
 - [x] 2.1 Run focused validation for the updated task start flow and record the results.
-- [ ] 2.2 Archive the change with a Chinese execution report after validation passes.
+- [x] 2.2 Archive the change with a Chinese execution report after validation passes.
