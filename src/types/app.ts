@@ -75,6 +75,10 @@ export interface HomeSyncResult {
   message?: string;
 }
 
+export interface HomeTaskCreateOptions {
+  startImmediately?: boolean;
+}
+
 export interface AppBootstrap {
   settings: AppSettings | null;
   resolvedSyncRoot: string | null;
@@ -111,7 +115,9 @@ export interface HomePageProps {
   onLoadTreeChildren: (spaceId: string, parentNodeToken?: string) => Promise<void>;
   onOpenTasks: () => void;
   activeTaskSummary: string;
-  onCreateTask: () => Promise<HomeSyncResult | null>;
+  onCreateTask: (options?: HomeTaskCreateOptions) => Promise<HomeSyncResult | null>;
+  onStartTask: (taskId: string) => Promise<void>;
+  onDeleteTask: (taskId: string) => Promise<void>;
   onBatchDeleteCheckedSyncedDocuments: (documentIds: string[]) => Promise<void>;
   onReloadDocumentSyncStatuses: () => Promise<Record<string, DocumentSyncStatus>>;
   onResyncDocumentScope: (scope: SyncScope) => Promise<void>;

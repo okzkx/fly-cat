@@ -115,12 +115,14 @@ function AggregateSyncStatusTag({
   treeNode,
   syncStatuses,
   syncingIds,
-  activeTask
+  activeTask,
+  forcePreparedIds
 }: {
   treeNode: ScopeTreeDataNode;
   syncStatuses: Record<string, DocumentSyncStatus>;
   syncingIds: Set<string>;
   activeTask: HomePageProps["activeSyncTask"];
+  forcePreparedIds: Set<string>;
 }): React.JSX.Element | null {
   const docIds = collectDescendantDocumentIds(treeNode);
   if (docIds.length === 0) {
@@ -132,6 +134,9 @@ function AggregateSyncStatusTag({
   let failed = 0;
   let syncing = false;
   for (const id of docIds) {
+    if (forcePreparedIds.has(id)) {
+      continue;
+    }
     if (syncingIds.has(id)) {
       syncing = true;
     }
@@ -161,12 +166,14 @@ function DocumentSyncStatusTag({
   documentId,
   syncStatuses,
   syncingIds,
-  activeTask
+  activeTask,
+  forcePreparedIds
 }: {
   documentId: string | undefined;
   syncStatuses: Record<string, DocumentSyncStatus>;
   syncingIds: Set<string>;
   activeTask: HomePageProps["activeSyncTask"];
+  forcePreparedIds: Set<string>;
 }): React.JSX.Element | null {
   const tagStyle = { fontSize: 11, lineHeight: "18px", marginRight: 0 };
   if (!documentId) {
@@ -179,6 +186,9 @@ function DocumentSyncStatusTag({
       return <Tag color="success" style={tagStyle}>已同步 {time}</Tag>;
     }
     return <Tag color="error" style={tagStyle}>同步失败</Tag>;
+  }
+  if (forcePreparedIds.has(documentId)) {
+    return <Tag style={tagStyle}>未同步</Tag>;
   }
   if (syncingIds.has(documentId)) {
     const processed = activeTask?.counters.processed ?? 0;
@@ -290,13 +300,15 @@ function NodeSyncStatusTag({
   hasSyncStatuses,
   syncStatuses,
   syncingIds,
-  activeTask
+  activeTask,
+  forcePreparedIds
 }: {
   treeNode: ScopeTreeDataNode;
   hasSyncStatuses: boolean;
   syncStatuses: Record<string, DocumentSyncStatus>;
   syncingIds: Set<string>;
   activeTask: HomePageProps["activeSyncTask"];
+  forcePreparedIds: Set<string>;
 }): React.JSX.Element | null {
   const nodeKind = treeNode.nodeKind;
   if (!nodeKind || !hasSyncStatuses) {
@@ -311,6 +323,7 @@ function NodeSyncStatusTag({
           syncStatuses={syncStatuses}
           syncingIds={syncingIds}
           activeTask={activeTask}
+          forcePreparedIds={forcePreparedIds}
         />
       );
     }
@@ -320,6 +333,7 @@ function NodeSyncStatusTag({
         syncStatuses={syncStatuses}
         syncingIds={syncingIds}
         activeTask={activeTask}
+        forcePreparedIds={forcePreparedIds}
       />
     );
   }
@@ -329,6 +343,7 @@ function NodeSyncStatusTag({
       syncStatuses={syncStatuses}
       syncingIds={syncingIds}
       activeTask={activeTask}
+      forcePreparedIds={forcePreparedIds}
     />
   );
 }
@@ -468,6 +483,7 @@ type KnowledgeTreeNodeTitleProps = {
   syncStatus: DocumentSyncStatus | undefined;
   syncStatuses: Record<string, DocumentSyncStatus>;
   syncingIds: Set<string>;
+  forcePreparedIds: Set<string>;
   activeTask: HomePageProps["activeSyncTask"];
   freshnessMap: Record<string, DocumentFreshnessResult>;
   freshnessCheckActive: boolean;
@@ -488,6 +504,7 @@ const KnowledgeTreeNodeTitle = memo(function KnowledgeTreeNodeTitle({
   syncStatus,
   syncStatuses,
   syncingIds,
+  forcePreparedIds,
   activeTask,
   freshnessMap,
   freshnessCheckActive,
@@ -550,6 +567,7 @@ const KnowledgeTreeNodeTitle = memo(function KnowledgeTreeNodeTitle({
           syncStatuses={syncStatuses}
           syncingIds={syncingIds}
           activeTask={activeTask}
+          forcePreparedIds={forcePreparedIds}
         />
         <FreshnessIndicator
           documentId={scope?.documentId}
@@ -757,6 +775,8 @@ export default function HomePage({
   onOpenTasks,
   activeTaskSummary,
   onCreateTask,
+  onStartTask,
+  onDeleteTask,
   onBatchDeleteCheckedSyncedDocuments,
   onReloadDocumentSyncStatuses,
   onResyncDocumentScope
@@ -775,6 +795,7 @@ export default function HomePage({
   const freshnessCheckChainRef = useRef(Promise.resolve());
   const [resyncingScopeKey, setResyncingScopeKey] = useState<string | null>(null);
   const [bulkFreshnessAction, setBulkFreshnessAction] = useState<BulkFreshnessAction | null>(null);
+  const [forcePreparedIds, setForcePreparedIds] = useState<Set<string>>(() => new Set());
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewMarkdown, setPreviewMarkdown] = useState<string | null>(null);
@@ -1016,6 +1037,9 @@ export default function HomePage({
     if (bulkFreshnessAction !== null) {
       return;
     }
+    const preparedIds = action === "force" ? [...checkedSyncedDocumentIds] : [];
+    const hasEffectiveSelection = effectiveSelectedSources.length > 0;
+    let queuedTaskId: string | null = null;
     setBulkFreshnessAction(action);
     try {
       if (action === "force") {
@@ -1023,12 +1047,18 @@ export default function HomePage({
           message.error("已有同步任务进行中，请等待结束后再使用强制更新");
           return;
         }
-        await prepareForceRepulledDocuments(syncRoot, checkedSyncedDocumentIds);
+        await prepareForceRepulledDocuments(syncRoot, preparedIds);
+        setForcePreparedIds(new Set(preparedIds));
+        await onReloadDocumentSyncStatuses();
+        if (hasEffectiveSelection) {
+          const queuedTask = await onCreateTask({ startImmediately: false });
+          queuedTaskId = queuedTask?.task?.id ?? null;
+        }
       }
       await enqueueFreshnessCheck(async () => {
         setFreshnessCheckActive(true);
         try {
-          const result = await checkDocumentFreshness(checkedSyncedDocumentIds, syncRoot);
+          const result = await checkDocumentFreshness(action === "force" ? preparedIds : checkedSyncedDocumentIds, syncRoot);
           const alignedResult = await alignDocumentSyncVersions(syncRoot, result, action === "force");
           setFreshnessMap((current) => ({ ...current, ...alignedResult }));
           await saveFreshnessMetadata(syncRoot, alignedResult);
@@ -1038,16 +1068,16 @@ export default function HomePage({
       });
       await onReloadDocumentSyncStatuses();
       if (action === "force") {
-        if (effectiveSelectedSources.length === 0) {
+        if (!hasEffectiveSelection) {
           message.warning(
             "已删除所选文档的本地文件并更新元数据；请勾选同步范围后点击「开始同步」从远端拉取"
           );
           return;
         }
-        const syncResult = await onCreateTask();
-        if (syncResult?.task) {
+        if (queuedTaskId) {
+          await onStartTask(queuedTaskId);
           message.success(
-            `已强制更新 ${checkedSyncedDocumentIds.length} 个所选文档：本地已清理并已创建同步任务`
+            `已强制更新 ${preparedIds.length} 个所选文档：本地已清理并已创建同步任务`
           );
         } else {
           message.warning("本地已清理，但未能创建同步任务，请检查同步范围后重试");
@@ -1056,9 +1086,17 @@ export default function HomePage({
         message.success(`已刷新 ${checkedSyncedDocumentIds.length} 个所选文档远端状态`);
       }
     } catch (error) {
+      if (queuedTaskId) {
+        try {
+          await onDeleteTask(queuedTaskId);
+        } catch (cleanupError) {
+          console.error("Failed to delete queued force-update task:", cleanupError);
+        }
+      }
       console.error("Failed to refresh all document freshness:", error);
-      message.error("刷新远端状态失败，请检查网络或登录状态");
+      message.error(action === "force" ? "强制更新失败，请检查网络或登录状态" : "刷新远端状态失败，请检查网络或登录状态");
     } finally {
+      setForcePreparedIds(new Set());
       setBulkFreshnessAction(null);
     }
   };
@@ -1413,6 +1451,7 @@ export default function HomePage({
                       syncStatus={documentSyncStatuses[treeNode.scopeValue?.documentId || ""]}
                       syncStatuses={documentSyncStatuses}
                       syncingIds={syncingIds}
+                      forcePreparedIds={forcePreparedIds}
                       activeTask={activeSyncTask}
                       freshnessMap={freshnessMap}
                       freshnessCheckActive={freshnessCheckActive}

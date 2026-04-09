@@ -7,11 +7,12 @@ import HomePage from "@/components/HomePage";
 import SettingsPage from "@/components/SettingsPage";
 import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
-import type { AppPage, AppSettings, ConnectionValidation, SyncTask, UserInfo } from "@/types/app";
+import type { AppPage, AppSettings, ConnectionValidation, HomeTaskCreateOptions, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 import {
   createSyncTask,
+  deleteSyncTask,
   getAppBootstrap,
   getDocumentSyncStatuses,
   getRuntimeInfo,
@@ -364,7 +365,7 @@ export default function App(): React.JSX.Element {
                 }}
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
-                onCreateTask={async () => {
+                onCreateTask={async (options?: HomeTaskCreateOptions) => {
                   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
                   if (effectiveSelectedSources.length === 0) {
                     return null;
@@ -373,9 +374,18 @@ export default function App(): React.JSX.Element {
                     selectedSources.length > 0 ? normalizeSelectedSources(selectedSources) : effectiveSelectedSources,
                     syncTarget
                   );
-                  setTasks(await getSyncTasks());
-                  startSyncTask(task.id);
+                  setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
+                  if (options?.startImmediately !== false) {
+                    await startSyncTask(task.id);
+                  }
                   return { task };
+                }}
+                onStartTask={async (taskId: string) => {
+                  await startSyncTask(taskId);
+                }}
+                onDeleteTask={async (taskId: string) => {
+                  await deleteSyncTask(taskId);
+                  setTasks((current) => current.filter((task) => task.id !== taskId));
                 }}
                 onBatchDeleteCheckedSyncedDocuments={async (documentIds: string[]) => {
                   if (!syncTarget || documentIds.length === 0) {
