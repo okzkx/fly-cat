@@ -2202,8 +2202,6 @@ fn is_document_unchanged(
     manifest.records.iter().any(|record| {
         record.document_id == document.document_id
             && record.status == "success"
-            && record.version == document.version
-            && record.update_time == document.update_time
             && record.source_path == document.source_path
             && record.output_path == expected_output_path
             && manifest_record_has_local_output(record)
@@ -3933,6 +3931,53 @@ mod tests {
         };
 
         assert!(!is_document_unchanged(&document, &sync_root, &manifest));
+        let _ = fs::remove_dir_all(&sync_root);
+    }
+
+    #[test]
+    fn unchanged_check_true_when_local_file_exists_even_if_remote_version_changed() {
+        let document = SyncSourceDocument {
+            document_id: "doc-skip-version-mismatch".into(),
+            space_id: "kb-product".into(),
+            space_name: "产品知识库".into(),
+            node_token: "node-1".into(),
+            title: "T".into(),
+            version: "v2".into(),
+            update_time: "u2".into(),
+            path_segments: vec!["A".into(), "B".into()],
+            source_path: "产品知识库/A/B".into(),
+            obj_type: "docx".into(),
+        };
+        let sync_root = std::env::temp_dir().join("feishu-unchanged-version-mismatch-test");
+        let _ = fs::remove_dir_all(&sync_root);
+        fs::create_dir_all(&sync_root).expect("mkdir");
+        let output_path = crate::sync::expected_output_path(&sync_root, &document);
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent).expect("mkdir parent");
+        }
+        fs::write(&output_path, b"x").expect("write output");
+
+        let manifest = crate::model::SyncManifest {
+            records: vec![crate::model::ManifestRecord {
+                document_id: document.document_id.clone(),
+                space_id: document.space_id.clone(),
+                space_name: document.space_name.clone(),
+                node_token: document.node_token.clone(),
+                title: document.title.clone(),
+                version: "v1".into(),
+                update_time: "u1".into(),
+                source_path: document.source_path.clone(),
+                path_segments: document.path_segments.clone(),
+                output_path: output_path.to_string_lossy().to_string(),
+                content_hash: "hash".into(),
+                source_signature: "".into(),
+                status: "success".into(),
+                image_assets: vec![],
+                last_synced_at: "2026-03-30T00:00:00Z".into(),
+            }],
+        };
+
+        assert!(is_document_unchanged(&document, &sync_root, &manifest));
         let _ = fs::remove_dir_all(&sync_root);
     }
 

@@ -367,11 +367,16 @@ export default function App(): React.JSX.Element {
                 activeTaskSummary={activeTaskSummary}
                 onCreateTask={async (options?: HomeTaskCreateOptions) => {
                   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
-                  if (effectiveSelectedSources.length === 0) {
+                  const taskSources = options?.selectedSources
+                    ? normalizeSelectedSources(options.selectedSources)
+                    : selectedSources.length > 0
+                      ? normalizeSelectedSources(selectedSources)
+                      : effectiveSelectedSources;
+                  if (taskSources.length === 0) {
                     return null;
                   }
                   const task = await createSyncTask(
-                    selectedSources.length > 0 ? normalizeSelectedSources(selectedSources) : effectiveSelectedSources,
+                    taskSources,
                     syncTarget
                   );
                   setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);

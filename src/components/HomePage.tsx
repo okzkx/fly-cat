@@ -414,6 +414,53 @@ function collectDocumentIdsByTreeKeys(
   return docIds;
 }
 
+function collectDocumentScopesByTreeKeys(
+  nodes: KnowledgeBaseNode[],
+  treeKeys: Set<string>
+): SyncScope[] {
+  const scopes: SyncScope[] = [];
+
+  function collectFromNode(node: KnowledgeBaseNode, shouldCollect: boolean): void {
+    if (shouldCollect || treeKeys.has(node.key)) {
+      const scope = buildScopeFromNode(node);
+      if (scope?.documentId) {
+        scopes.push({
+          ...scope,
+          includesDescendants: false
+        });
+      }
+      if (node.children && node.children.length > 0) {
+        for (const child of node.children) {
+          collectFromNode(child, true);
+        }
+      }
+    } else if (node.children && node.children.length > 0) {
+      for (const child of node.children) {
+        collectFromNode(child, false);
+      }
+    }
+  }
+
+  for (const node of nodes) {
+    collectFromNode(node, false);
+  }
+
+  return scopes;
+}
+
+function freshnessNeedsResync(freshness: DocumentFreshnessResult | undefined): boolean {
+  if (!freshness || freshness.status === "error") {
+    return false;
+  }
+  if (freshness.status === "updated" || freshness.status === "new") {
+    return true;
+  }
+  return (
+    freshness.localVersion.trim() !== freshness.remoteVersion.trim() ||
+    freshness.localUpdateTime.trim() !== freshness.remoteUpdateTime.trim()
+  );
+}
+
 function buildTreeNodes(
   nodes: KnowledgeBaseNode[],
   syncingKeys: Set<string>,
@@ -1005,6 +1052,22 @@ export default function HomePage({
     return unique.filter((id) => syncedDocumentIds.has(id) && !syncingIds.has(id));
   }, [loadedSpaceTrees, expandedCheckedKeys, syncedDocumentIds, syncingIds]);
 
+  const checkedDocumentScopeMap = useMemo(() => {
+    const scopes = new Map<string, SyncScope>();
+    for (const spaceId of Object.keys(loadedSpaceTrees)) {
+      const tree = loadedSpaceTrees[spaceId];
+      if (!tree) {
+        continue;
+      }
+      for (const scope of collectDocumentScopesByTreeKeys(tree, expandedCheckedKeys)) {
+        if (scope.documentId && !scopes.has(scope.documentId)) {
+          scopes.set(scope.documentId, scope);
+        }
+      }
+    }
+    return scopes;
+  }, [loadedSpaceTrees, expandedCheckedKeys]);
+
   // Build tree data once (needed for tri-state cascade logic)
   const treeData = useMemo(
     () => buildTreeData(spaces, loadedSpaceTrees, syncingKeys, syncedDocumentIds),
@@ -1037,20 +1100,20 @@ export default function HomePage({
     if (bulkFreshnessAction !== null) {
       return;
     }
+    if (syncTaskBusy) {
+      message.error("已有同步任务进行中，请等待结束后再试");
+      return;
+    }
     const preparedIds = action === "force" ? [...checkedSyncedDocumentIds] : [];
-    const hasEffectiveSelection = effectiveSelectedSources.length > 0;
     let queuedTaskId: string | null = null;
+    let refreshedCount = 0;
     setBulkFreshnessAction(action);
     try {
       if (action === "force") {
-        if (syncTaskBusy) {
-          message.error("已有同步任务进行中，请等待结束后再使用强制更新");
-          return;
-        }
         await prepareForceRepulledDocuments(syncRoot, preparedIds);
         setForcePreparedIds(new Set(preparedIds));
         await onReloadDocumentSyncStatuses();
-        if (hasEffectiveSelection) {
+        if (effectiveSelectedSources.length > 0) {
           const queuedTask = await onCreateTask({ startImmediately: false });
           queuedTaskId = queuedTask?.task?.id ?? null;
         }
@@ -1059,16 +1122,50 @@ export default function HomePage({
         setFreshnessCheckActive(true);
         try {
           const result = await checkDocumentFreshness(action === "force" ? preparedIds : checkedSyncedDocumentIds, syncRoot);
-          const alignedResult = await alignDocumentSyncVersions(syncRoot, result, action === "force");
-          setFreshnessMap((current) => ({ ...current, ...alignedResult }));
-          await saveFreshnessMetadata(syncRoot, alignedResult);
+          let nextFreshnessMap = result;
+          if (action === "refresh") {
+            const outdatedIds = checkedSyncedDocumentIds.filter((id) => freshnessNeedsResync(result[id]));
+            refreshedCount = outdatedIds.length;
+            if (outdatedIds.length > 0) {
+              const outdatedScopes = outdatedIds
+                .map((id) => checkedDocumentScopeMap.get(id))
+                .filter((scope): scope is SyncScope => Boolean(scope));
+              await prepareForceRepulledDocuments(syncRoot, outdatedIds);
+              setForcePreparedIds(new Set(outdatedIds));
+              await onReloadDocumentSyncStatuses();
+              if (outdatedScopes.length > 0) {
+                const queuedTask = await onCreateTask({
+                  startImmediately: false,
+                  selectedSources: outdatedScopes
+                });
+                queuedTaskId = queuedTask?.task?.id ?? null;
+              }
+            } else {
+              setForcePreparedIds(new Set());
+            }
+          } else {
+            nextFreshnessMap = await alignDocumentSyncVersions(syncRoot, result, true);
+          }
+          setFreshnessMap((current) => ({ ...current, ...nextFreshnessMap }));
+          await saveFreshnessMetadata(syncRoot, nextFreshnessMap);
         } finally {
           setFreshnessCheckActive(false);
         }
       });
       await onReloadDocumentSyncStatuses();
-      if (action === "force") {
-        if (!hasEffectiveSelection) {
+      if (action === "refresh") {
+        if (refreshedCount === 0) {
+          message.success(`已检查 ${checkedSyncedDocumentIds.length} 个所选文档，当前都无需重新同步`);
+          return;
+        }
+        if (queuedTaskId) {
+          await onResumeTasks();
+          message.success(`已开始重新同步 ${refreshedCount} 个远端版本有变化的所选文档`);
+        } else {
+          message.warning("检测到需要更新的文档，但未能创建同步任务，请检查所选范围后重试");
+        }
+      } else {
+        if (effectiveSelectedSources.length === 0) {
           message.warning(
             "已删除所选文档的本地文件并更新元数据；请勾选同步范围后点击「开始同步」从远端拉取"
           );
@@ -1082,8 +1179,6 @@ export default function HomePage({
         } else {
           message.warning("本地已清理，但未能创建同步任务，请检查同步范围后重试");
         }
-      } else {
-        message.success(`已刷新 ${checkedSyncedDocumentIds.length} 个所选文档远端状态`);
       }
     } catch (error) {
       if (queuedTaskId) {
@@ -1326,7 +1421,12 @@ export default function HomePage({
           <Space wrap size={[8, 8]}>
             <Button
               icon={<ReloadOutlined />}
-              disabled={!canRunSync || checkedSyncedDocumentIds.length === 0 || bulkFreshnessAction !== null}
+              disabled={
+                !canRunSync ||
+                checkedSyncedDocumentIds.length === 0 ||
+                bulkFreshnessAction !== null ||
+                syncTaskBusy
+              }
               loading={bulkFreshnessAction === "refresh"}
               data-testid="refresh-all-freshness"
               onClick={() => void handleBulkFreshnessAction("refresh")}

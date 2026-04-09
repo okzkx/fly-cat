@@ -77,6 +77,7 @@ export interface HomeSyncResult {
 
 export interface HomeTaskCreateOptions {
   startImmediately?: boolean;
+  selectedSources?: SyncScope[];
 }
 
 export interface AppBootstrap {
