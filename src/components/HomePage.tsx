@@ -775,7 +775,7 @@ export default function HomePage({
   onOpenTasks,
   activeTaskSummary,
   onCreateTask,
-  onStartTask,
+  onResumeTasks,
   onDeleteTask,
   onBatchDeleteCheckedSyncedDocuments,
   onReloadDocumentSyncStatuses,
@@ -1020,7 +1020,7 @@ export default function HomePage({
     try {
       const result = await onCreateTask();
       if (result?.task) {
-        message.success(`已创建同步任务：${result.task.name}`);
+        message.success(`已创建并开始同步任务：${result.task.name}`);
       } else {
         message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围或勾选目录、文档");
       }
@@ -1075,9 +1075,9 @@ export default function HomePage({
           return;
         }
         if (queuedTaskId) {
-          await onStartTask(queuedTaskId);
+          await onResumeTasks();
           message.success(
-            `已强制更新 ${preparedIds.length} 个所选文档：本地已清理并已创建同步任务`
+            `已强制更新 ${preparedIds.length} 个所选文档：本地已清理并已自动开始替换同步任务`
           );
         } else {
           message.warning("本地已清理，但未能创建同步任务，请检查同步范围后重试");

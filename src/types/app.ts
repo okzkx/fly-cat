@@ -116,7 +116,7 @@ export interface HomePageProps {
   onOpenTasks: () => void;
   activeTaskSummary: string;
   onCreateTask: (options?: HomeTaskCreateOptions) => Promise<HomeSyncResult | null>;
-  onStartTask: (taskId: string) => Promise<void>;
+  onResumeTasks: () => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onBatchDeleteCheckedSyncedDocuments: (documentIds: string[]) => Promise<void>;
   onReloadDocumentSyncStatuses: () => Promise<Record<string, DocumentSyncStatus>>;
