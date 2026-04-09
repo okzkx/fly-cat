@@ -15,10 +15,12 @@ import {
   getSyncTasks,
   initializeTaskEventBridge,
   retryFailedTask,
-  resumeSyncTasks
+  resumeSyncTasks,
+  startSyncTask
 } from "@/utils/taskManager";
 import { getFriendlyFailureSummary, parsePermissionFailure } from "@/utils/syncFailurePresentation";
 import { buildSelectionSummary } from "@/utils/syncSelection";
+import { startTaskNow } from "@/utils/syncTaskWorkflow";
 
 const { Link, Paragraph, Text } = Typography;
 
@@ -232,7 +234,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
               <Button icon={<ReloadOutlined />} onClick={() => void runTaskAction(() => retryFailedTask(record.id))} />
             )}
             {record.status === "pending" && (
-              <Button icon={<PlayCircleOutlined />} onClick={() => void runTaskAction(() => resumeSyncTasks())} />
+              <Button icon={<PlayCircleOutlined />} onClick={() => void runTaskAction(() => startTaskNow(record.id, startSyncTask))} />
             )}
             <Popconfirm title="确定删除这个同步任务吗？" onConfirm={() => void runTaskAction(() => deleteSyncTask(record.id))}>
               <Button danger icon={<DeleteOutlined />} />

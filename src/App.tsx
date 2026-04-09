@@ -10,6 +10,7 @@ import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, HomeTaskCreateOptions, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
 import { getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
+import { createAndMaybeStartTask } from "@/utils/syncTaskWorkflow";
 import {
   createSyncTask,
   deleteSyncTask,
@@ -375,14 +376,14 @@ export default function App(): React.JSX.Element {
                   if (taskSources.length === 0) {
                     return null;
                   }
-                  const task = await createSyncTask(
-                    taskSources,
-                    syncTarget
-                  );
-                  setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
-                  if (options?.startImmediately !== false) {
-                    void startSyncTask(task.id);
-                  }
+                  const task = await createAndMaybeStartTask({
+                    createTask: () => createSyncTask(taskSources, syncTarget),
+                    onCreated: (createdTask) => {
+                      setTasks((current) => [createdTask, ...current.filter((item) => item.id !== createdTask.id)]);
+                    },
+                    startTask: startSyncTask,
+                    startImmediately: options?.startImmediately !== false
+                  });
                   return { task };
                 }}
                 onResumeTasks={async () => {
