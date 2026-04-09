@@ -1040,7 +1040,7 @@ export default function HomePage({
     return set;
   }, [checkedSourceKeys, loadedSpaceTrees, selectedSources]);
 
-  const checkedSyncedDocumentIds = useMemo(() => {
+  const checkedSyncedDocumentIdsFromTree = useMemo(() => {
     const docIds: string[] = [];
     for (const spaceId of Object.keys(loadedSpaceTrees)) {
       const tree = loadedSpaceTrees[spaceId];
@@ -1051,6 +1051,28 @@ export default function HomePage({
     const unique = [...new Set(docIds)];
     return unique.filter((id) => syncedDocumentIds.has(id) && !syncingIds.has(id));
   }, [loadedSpaceTrees, expandedCheckedKeys, syncedDocumentIds, syncingIds]);
+
+  const checkedSyncedDocumentIdsFromLeafSources = useMemo(() => {
+    const ids: string[] = [];
+    for (const source of selectedSources) {
+      if (source.kind !== "document" && source.kind !== "bitable") {
+        continue;
+      }
+      if (!source.documentId) {
+        continue;
+      }
+      if (!syncedDocumentIds.has(source.documentId) || syncingIds.has(source.documentId)) {
+        continue;
+      }
+      ids.push(source.documentId);
+    }
+    return [...new Set(ids)];
+  }, [selectedSources, syncedDocumentIds, syncingIds]);
+
+  const checkedSyncedDocumentIds = useMemo(
+    () => [...new Set([...checkedSyncedDocumentIdsFromTree, ...checkedSyncedDocumentIdsFromLeafSources])],
+    [checkedSyncedDocumentIdsFromTree, checkedSyncedDocumentIdsFromLeafSources]
+  );
 
   const checkedDocumentScopeMap = useMemo(() => {
     const scopes = new Map<string, SyncScope>();
@@ -1065,8 +1087,19 @@ export default function HomePage({
         }
       }
     }
+    for (const id of checkedSyncedDocumentIds) {
+      if (scopes.has(id)) {
+        continue;
+      }
+      const source = selectedSources.find(
+        (s) => (s.kind === "document" || s.kind === "bitable") && s.documentId === id
+      );
+      if (source) {
+        scopes.set(id, { ...source, includesDescendants: false });
+      }
+    }
     return scopes;
-  }, [loadedSpaceTrees, expandedCheckedKeys]);
+  }, [loadedSpaceTrees, expandedCheckedKeys, selectedSources, checkedSyncedDocumentIds]);
 
   // Build tree data once (needed for tri-state cascade logic)
   const treeData = useMemo(
