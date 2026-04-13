@@ -182,7 +182,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
         dataIndex: "name",
         key: "name",
         render: (name: string, record: SyncTask) => (
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text>{name}</Text>
             <Text type="secondary">{formatTaskTimestamp(record.createdAt)}</Text>
             <Text type="secondary">{scopeLabel(record)}</Text>
@@ -215,7 +215,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
             return <Text type="secondary">正在发现文档...</Text>;
           }
           return (
-            <Space direction="vertical" size={2}>
+            <Space orientation="vertical" size={2}>
               <Text>{`已处理 ${record.counters.processed} / 共 ${record.counters.total}`}</Text>
               <Text>{`${record.counters.succeeded} 成功 / ${record.counters.skipped} 跳过 / ${record.counters.failed} 失败`}</Text>
               {record.failureSummary && (
@@ -249,7 +249,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
   const hasPendingTasks = tasks.some((task) => task.status === "pending");
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <Space orientation="vertical" size="large" style={{ width: "100%" }}>
       <Card
         styles={{
           header: {
@@ -321,7 +321,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
             rowExpandable: (record) =>
               Boolean(record.selectedScope || record.selectionSummary || record.failureSummary || record.errors.length > 0),
             expandedRowRender: (record) => (
-              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+              <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
                 <Text>同步范围：{scopeLabel(record)}</Text>
                 {record.selectionSummary?.includesDescendants && record.selectionSummary.kind === "document" && (
                   <Text type="secondary">该文档分支共解析 {record.selectionSummary.documentCount} 篇文档。</Text>
@@ -354,7 +354,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
                   const tag = failureCategoryToTag(error.category);
                   const permissionFailure = parsePermissionFailure(error.message);
                   return (
-                    <Space key={`${record.id}-${error.documentId}-${index}`} direction="vertical" size={2} style={{ width: "100%" }}>
+                    <Space key={`${record.id}-${error.documentId}-${index}`} orientation="vertical" size={2} style={{ width: "100%" }}>
                       <Space wrap>
                         <Tag color={tag.color}>{tag.text}</Tag>
                         <Text strong>{error.title || error.documentId}</Text>
@@ -365,7 +365,7 @@ export default function TaskListPage({ onGoBack, initialTasks }: TaskListPagePro
                           showIcon
                           message="缺少飞书文档读取权限"
                           description={
-                            <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                            <Space orientation="vertical" size={6} style={{ width: "100%" }}>
                               <Paragraph style={{ marginBottom: 0 }}>
                                 当前飞书应用缺少读取文档详情所需的用户身份权限，因此同步在授权阶段被拦截。请先开通权限，再重新登录授权。
                               </Paragraph>

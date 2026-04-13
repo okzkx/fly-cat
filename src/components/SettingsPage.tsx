@@ -71,7 +71,7 @@ export default function SettingsPage({ initialSettings, onSaved }: SettingsPageP
                 </span>
               ),
               children: (
-                <Space direction="vertical" size="small">
+                <Space orientation="vertical" size="small">
                   <Text>1. 填写飞书应用的 App ID / App Secret。</Text>
                   <Text>2. 在飞书应用中配置桌面 OAuth 回调地址：`{OAUTH_CALLBACK_HINT}`。</Text>
                   <Text>3. 若需在同机浏览器中使用本机桥接能力，请额外把当前浏览器页面地址加入飞书 OAuth 回调地址白名单，例如：`{BROWSER_CALLBACK_HINT}`。</Text>
