@@ -1,0 +1,54 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - generic "飞猫助手" [ref=e8]: FC
+      - generic [ref=e10]:
+        - strong [ref=e13]: 飞猫助手
+        - generic [ref=e14]: FlyCat
+  - main [ref=e15]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic "飞猫助手" [ref=e21]: FC
+        - heading "飞猫助手设置" [level=3] [ref=e22]
+        - generic [ref=e23]: 配置飞猫助手的知识库同步能力，并保持与参考工程一致的设置入口与飞书 OpenAPI 接入方式。
+      - button "collapsed info-circle 配置指南" [ref=e26] [cursor=pointer]:
+        - img "collapsed" [ref=e28]:
+          - img [ref=e29]
+        - generic [ref=e32]:
+          - img "info-circle" [ref=e33]:
+            - img [ref=e34]
+          - text: 配置指南
+      - generic [ref=e37]:
+        - generic [ref=e39]:
+          - generic "App ID" [ref=e41]: "* App ID"
+          - textbox "* App ID" [ref=e45]:
+            - /placeholder: 请输入飞书应用 App ID
+        - generic [ref=e47]:
+          - generic "App Secret" [ref=e49]: "* App Secret"
+          - generic [ref=e53]:
+            - textbox "* App Secret" [ref=e54]:
+              - /placeholder: 请输入飞书应用 App Secret
+            - img "eye-invisible" [ref=e56] [cursor=pointer]:
+              - img [ref=e57]
+        - generic [ref=e61]:
+          - generic "OpenAPI Endpoint" [ref=e63]: "* OpenAPI Endpoint"
+          - textbox "* OpenAPI Endpoint" [ref=e67]: https://open.feishu.cn/open-apis
+        - generic [ref=e69]:
+          - generic "MCP Server Name" [ref=e71]
+          - textbox "MCP Server Name" [ref=e75]:
+            - /placeholder: 当前主要走飞书 OpenAPI，可留空或保留默认值
+            - text: user-feishu-mcp
+        - generic [ref=e77]:
+          - generic "Markdown Sync Root" [ref=e79]: "* Markdown Sync Root"
+          - textbox "* Markdown Sync Root" [ref=e83]: ./synced-docs
+        - generic [ref=e85]:
+          - generic "Image Fallback Directory" [ref=e87]: "* Image Fallback Directory"
+          - textbox "* Image Fallback Directory" [ref=e91]: _assets
+        - generic [ref=e93]:
+          - generic "Wiki Space IDs（可选）" [ref=e95]
+          - textbox "Wiki Space IDs（可选）" [ref=e99]:
+            - /placeholder: 例如：738000000000000001,738000000000000002
+        - button "save 保存配置" [ref=e105] [cursor=pointer]:
+          - img "save" [ref=e107]:
+            - img [ref=e108]
+          - generic [ref=e110]: 保存配置

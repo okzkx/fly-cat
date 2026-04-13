@@ -1,0 +1,5 @@
+[     204ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:1430/node_modules/.vite/deps/chunk-QC7BOYLY.js?v=ff792925:20102
+[     586ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:1430/:0
+[     601ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:1430/favicon.ico:0
+[     956ms] [ERROR] Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead. @ http://localhost:1430/node_modules/.vite/deps/chunk-AQ3FTMGR.js?v=ff792925:1247
+[   67168ms] [ERROR] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead. @ http://localhost:1430/node_modules/.vite/deps/chunk-AQ3FTMGR.js?v=ff792925:1247

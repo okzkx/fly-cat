@@ -1,0 +1,126 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - generic "飞猫助手" [ref=e8]: FC
+      - generic [ref=e10]:
+        - strong [ref=e13]: 飞猫助手
+        - generic [ref=e14]: FlyCat
+    - generic [ref=e112] [cursor=pointer]:
+      - img [ref=e115]
+      - generic [ref=e116]: 曾楷翔
+  - main [ref=e15]:
+    - generic [ref=e454]:
+      - generic [ref=e455]:
+        - generic [ref=e457]:
+          - generic [ref=e459]:
+            - generic [ref=e460]: 飞猫助手知识库同步
+            - button "查看任务列表" [ref=e461] [cursor=pointer]:
+              - generic [ref=e462]: 查看任务列表
+          - generic [ref=e464]:
+            - button "reload 全部刷新" [disabled] [ref=e467]:
+              - generic:
+                - img "reload":
+                  - img
+              - generic: 全部刷新
+            - button "reload 强制更新" [disabled] [ref=e470]:
+              - generic:
+                - img "reload":
+                  - img
+              - generic: 强制更新
+            - button "delete 批量删除" [disabled] [ref=e473]:
+              - generic:
+                - img "delete":
+                  - img
+              - generic: 批量删除
+            - button "sync 开始同步" [ref=e476] [cursor=pointer]:
+              - img "sync" [ref=e478]:
+                - img [ref=e479]
+              - generic [ref=e481]: 开始同步
+        - generic [ref=e483]:
+          - generic [ref=e486]:
+            - generic [ref=e488]:
+              - img "folder-open" [ref=e490]:
+                - img [ref=e491]
+              - generic [ref=e494]: 实际写入目录：C:/Users/zengkaixiang/Documents/synced-docs
+              - button "folder-open 打开" [ref=e496] [cursor=pointer]:
+                - img "folder-open" [ref=e498]:
+                  - img [ref=e499]
+                - generic [ref=e501]: 打开
+            - generic [ref=e503]:
+              - img "folder-open" [ref=e505]:
+                - img [ref=e506]
+              - generic [ref=e508]: 已选同步范围：
+              - generic [ref=e510]: 整个知识库
+              - generic [ref=e511]: Unity
+          - tree [active] [ref=e515]:
+            - generic [ref=e518]:
+              - treeitem "caret-down cloud-sync 知识库" [checked=mixed] [expanded] [ref=e519]:
+                - img "caret-down" [ref=e521] [cursor=pointer]:
+                  - img [ref=e522]
+                - checkbox "caret-down cloud-sync 知识库" [checked=mixed] [disabled] [ref=e524]
+                - generic "知识库" [ref=e525] [cursor=pointer]:
+                  - generic [ref=e527]:
+                    - img "cloud-sync" [ref=e528]:
+                      - img [ref=e529]
+                    - generic [ref=e532]: 知识库
+              - treeitem "caret-down cloud-sync ProjectStorm" [ref=e533]:
+                - img "caret-down" [ref=e536] [cursor=pointer]:
+                  - img [ref=e537]
+                - checkbox "caret-down cloud-sync ProjectStorm" [ref=e539] [cursor=pointer]
+                - generic "ProjectStorm" [ref=e540] [cursor=pointer]:
+                  - generic [ref=e543]:
+                    - img "cloud-sync" [ref=e544]:
+                      - img [ref=e545]
+                    - generic [ref=e548]: ProjectStorm
+              - treeitem "caret-down cloud-sync Unity" [checked] [selected] [ref=e549]:
+                - img "caret-down" [ref=e552] [cursor=pointer]:
+                  - img [ref=e553]
+                - checkbox "caret-down cloud-sync Unity" [checked] [ref=e555] [cursor=pointer]
+                - generic "Unity" [ref=e556] [cursor=pointer]:
+                  - generic [ref=e559]:
+                    - img "cloud-sync" [ref=e560]:
+                      - img [ref=e561]
+                    - generic [ref=e564]: Unity
+              - treeitem "caret-down cloud-sync 个人笔记" [ref=e565]:
+                - img "caret-down" [ref=e568] [cursor=pointer]:
+                  - img [ref=e569]
+                - checkbox "caret-down cloud-sync 个人笔记" [ref=e571] [cursor=pointer]
+                - generic "个人笔记" [ref=e572] [cursor=pointer]:
+                  - generic [ref=e575]:
+                    - img "cloud-sync" [ref=e576]:
+                      - img [ref=e577]
+                    - generic [ref=e580]: 个人笔记
+              - treeitem "caret-down cloud-sync 工具集合" [ref=e581]:
+                - img "caret-down" [ref=e584] [cursor=pointer]:
+                  - img [ref=e585]
+                - checkbox "caret-down cloud-sync 工具集合" [ref=e587] [cursor=pointer]
+                - generic "工具集合" [ref=e588] [cursor=pointer]:
+                  - generic [ref=e591]:
+                    - img "cloud-sync" [ref=e592]:
+                      - img [ref=e593]
+                    - generic [ref=e596]: 工具集合
+              - treeitem "caret-down cloud-sync 游戏制作" [ref=e597]:
+                - img "caret-down" [ref=e600] [cursor=pointer]:
+                  - img [ref=e601]
+                - checkbox "caret-down cloud-sync 游戏制作" [ref=e603] [cursor=pointer]
+                - generic "游戏制作" [ref=e604] [cursor=pointer]:
+                  - generic [ref=e607]:
+                    - img "cloud-sync" [ref=e608]:
+                      - img [ref=e609]
+                    - generic [ref=e612]: 游戏制作
+              - treeitem "caret-down cloud-sync 游戏知识" [ref=e613]:
+                - img "caret-down" [ref=e616] [cursor=pointer]:
+                  - img [ref=e617]
+                - checkbox "caret-down cloud-sync 游戏知识" [ref=e619] [cursor=pointer]
+                - generic "游戏知识" [ref=e620] [cursor=pointer]:
+                  - generic [ref=e623]:
+                    - img "cloud-sync" [ref=e624]:
+                      - img [ref=e625]
+                    - generic [ref=e628]: 游戏知识
+      - generic [ref=e630]:
+        - generic [ref=e634]:
+          - text: 文档预览
+          - generic [ref=e635]: — Unity
+        - generic [ref=e637]:
+          - img "No data" [ref=e639]
+          - generic [ref=e650]: 在左侧选择一篇已同步的飞书文档，即可在此只读预览本地 Markdown。

@@ -1,0 +1,376 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - generic "飞猫助手" [ref=e8]: FC
+      - generic [ref=e10]:
+        - strong [ref=e13]: 飞猫助手
+        - generic [ref=e14]: FlyCat
+    - generic [ref=e112] [cursor=pointer]:
+      - img [ref=e115]
+      - generic [ref=e116]: 曾楷翔
+  - main [ref=e15]:
+    - generic [ref=e117]:
+      - generic [ref=e118]:
+        - generic [ref=e120]:
+          - generic [ref=e122]:
+            - generic [ref=e123]: 飞猫助手知识库同步
+            - button "查看任务列表" [ref=e124] [cursor=pointer]:
+              - generic [ref=e125]: 查看任务列表
+          - generic [ref=e127]:
+            - button "reload 全部刷新" [disabled] [ref=e130]:
+              - generic:
+                - img "reload":
+                  - img
+              - generic: 全部刷新
+            - button "reload 强制更新" [disabled] [ref=e133]:
+              - generic:
+                - img "reload":
+                  - img
+              - generic: 强制更新
+            - button "delete 批量删除" [disabled] [ref=e136]:
+              - generic:
+                - img "delete":
+                  - img
+              - generic: 批量删除
+            - button "sync 开始同步" [ref=e139] [cursor=pointer]:
+              - img "sync" [ref=e141]:
+                - img [ref=e142]
+              - generic [ref=e144]: 开始同步
+        - generic [ref=e146]:
+          - generic [ref=e149]:
+            - generic [ref=e151]:
+              - img "folder-open" [ref=e153]:
+                - img [ref=e154]
+              - generic [ref=e157]: 实际写入目录：C:/Users/zengkaixiang/Documents/synced-docs
+              - button "folder-open 打开" [ref=e159] [cursor=pointer]:
+                - img "folder-open" [ref=e161]:
+                  - img [ref=e162]
+                - generic [ref=e164]: 打开
+            - generic [ref=e166]:
+              - img "folder-open" [ref=e168]:
+                - img [ref=e169]
+              - generic [ref=e171]: 已选同步范围：
+              - generic [ref=e173]: 单个文档
+              - generic [ref=e174]: Unity / 总览
+          - tree [active] [ref=e178]:
+            - generic [ref=e181]:
+              - treeitem "caret-down cloud-sync 知识库" [expanded] [ref=e182]:
+                - img "caret-down" [ref=e184] [cursor=pointer]:
+                  - img [ref=e185]
+                - checkbox "caret-down cloud-sync 知识库" [disabled] [ref=e187]
+                - generic "知识库" [ref=e188] [cursor=pointer]:
+                  - generic [ref=e190]:
+                    - img "cloud-sync" [ref=e191]:
+                      - img [ref=e192]
+                    - generic [ref=e195]: 知识库
+              - treeitem "caret-down cloud-sync ProjectStorm" [ref=e196]:
+                - img "caret-down" [ref=e199] [cursor=pointer]:
+                  - img [ref=e200]
+                - checkbox "caret-down cloud-sync ProjectStorm" [ref=e202] [cursor=pointer]
+                - generic "ProjectStorm" [ref=e203] [cursor=pointer]:
+                  - generic [ref=e206]:
+                    - img "cloud-sync" [ref=e207]:
+                      - img [ref=e208]
+                    - generic [ref=e211]: ProjectStorm
+              - treeitem "caret-down cloud-sync Unity 全部已同步" [expanded] [ref=e314]:
+                - img "caret-down" [ref=e315] [cursor=pointer]:
+                  - img [ref=e316]
+                - checkbox "caret-down cloud-sync Unity 全部已同步" [ref=e318] [cursor=pointer]
+                - generic "Unity" [ref=e219] [cursor=pointer]:
+                  - generic [ref=e221]:
+                    - generic [ref=e222]:
+                      - img "cloud-sync" [ref=e223]:
+                        - img [ref=e224]
+                      - generic [ref=e227]: Unity
+                    - generic [ref=e320]: 全部已同步
+              - treeitem "file-text 总览 本地 1766733132 / 远端 13 已同步 04-09 10:52 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [selected] [ref=e321]:
+                - checkbox "file-text 总览 本地 1766733132 / 远端 13 已同步 04-09 10:52 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e324] [cursor=pointer]
+                - generic "总览" [ref=e325] [cursor=pointer]:
+                  - generic [ref=e327]:
+                    - generic [ref=e328]:
+                      - img "file-text" [ref=e329]:
+                        - img [ref=e330]
+                      - generic [ref=e332]: 总览
+                      - generic [ref=e333]: 本地 1766733132 / 远端 13
+                    - generic [ref=e334]:
+                      - generic [ref=e335]: 已同步 04-09 10:52
+                      - img "exclamation-circle" [ref=e336]:
+                        - img [ref=e337]
+                    - generic [ref=e340]:
+                      - button "重新同步" [ref=e342]:
+                        - img "reload" [ref=e344]:
+                          - img [ref=e345]
+                      - button "在浏览器打开" [ref=e347]:
+                        - img "export" [ref=e349]:
+                          - img [ref=e350]
+                      - button "使用默认应用打开" [ref=e352]:
+                        - img "folder-open" [ref=e354]:
+                          - img [ref=e355]
+              - treeitem "caret-down file-text 网络 本地 1770195821 / 远端 14 已同步 04-09 10:52 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e357]:
+                - img "caret-down" [ref=e360] [cursor=pointer]:
+                  - img [ref=e361]
+                - checkbox "caret-down file-text 网络 本地 1770195821 / 远端 14 已同步 04-09 10:52 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e363] [cursor=pointer]
+                - generic "网络" [ref=e364] [cursor=pointer]:
+                  - generic [ref=e366]:
+                    - generic [ref=e367]:
+                      - img "file-text" [ref=e368]:
+                        - img [ref=e369]
+                      - generic [ref=e371]: 网络
+                      - generic [ref=e372]: 本地 1770195821 / 远端 14
+                    - generic [ref=e373]:
+                      - generic [ref=e374]: 已同步 04-09 10:52
+                      - img "exclamation-circle" [ref=e375]:
+                        - img [ref=e376]
+                    - generic [ref=e379]:
+                      - button "重新同步" [ref=e381]:
+                        - img "reload" [ref=e383]:
+                          - img [ref=e384]
+                      - button "在浏览器打开" [ref=e386]:
+                        - img "export" [ref=e388]:
+                          - img [ref=e389]
+                      - button "使用默认应用打开" [ref=e391]:
+                        - img "folder-open" [ref=e393]:
+                          - img [ref=e394]
+              - treeitem "caret-down file-text 渲染 本地 1756124888 / 远端 2 已同步 04-09 10:56 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e396]:
+                - img "caret-down" [ref=e399] [cursor=pointer]:
+                  - img [ref=e400]
+                - checkbox "caret-down file-text 渲染 本地 1756124888 / 远端 2 已同步 04-09 10:56 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e402] [cursor=pointer]
+                - generic "渲染" [ref=e403] [cursor=pointer]:
+                  - generic [ref=e405]:
+                    - generic [ref=e406]:
+                      - img "file-text" [ref=e407]:
+                        - img [ref=e408]
+                      - generic [ref=e410]: 渲染
+                      - generic [ref=e411]: 本地 1756124888 / 远端 2
+                    - generic [ref=e412]:
+                      - generic [ref=e413]: 已同步 04-09 10:56
+                      - img "exclamation-circle" [ref=e414]:
+                        - img [ref=e415]
+                    - generic [ref=e418]:
+                      - button "重新同步" [ref=e420]:
+                        - img "reload" [ref=e422]:
+                          - img [ref=e423]
+                      - button "在浏览器打开" [ref=e425]:
+                        - img "export" [ref=e427]:
+                          - img [ref=e428]
+                      - button "使用默认应用打开" [ref=e430]:
+                        - img "folder-open" [ref=e432]:
+                          - img [ref=e433]
+              - treeitem "caret-down file-text 资源管理 本地 1756181092 / 远端 3 已同步 04-09 11:14 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e435]:
+                - img "caret-down" [ref=e438] [cursor=pointer]:
+                  - img [ref=e439]
+                - checkbox "caret-down file-text 资源管理 本地 1756181092 / 远端 3 已同步 04-09 11:14 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e441] [cursor=pointer]
+                - generic "资源管理" [ref=e442] [cursor=pointer]:
+                  - generic [ref=e444]:
+                    - generic [ref=e445]:
+                      - img "file-text" [ref=e446]:
+                        - img [ref=e447]
+                      - generic [ref=e449]: 资源管理
+                      - generic [ref=e450]: 本地 1756181092 / 远端 3
+                    - generic [ref=e451]:
+                      - generic [ref=e452]: 已同步 04-09 11:14
+                      - img "exclamation-circle" [ref=e453]:
+                        - img [ref=e454]
+                    - generic [ref=e457]:
+                      - button "重新同步" [ref=e459]:
+                        - img "reload" [ref=e461]:
+                          - img [ref=e462]
+                      - button "在浏览器打开" [ref=e464]:
+                        - img "export" [ref=e466]:
+                          - img [ref=e467]
+                      - button "使用默认应用打开" [ref=e469]:
+                        - img "folder-open" [ref=e471]:
+                          - img [ref=e472]
+              - treeitem "caret-down file-text 笔记 本地 1756262983 / 远端 4 已同步 04-09 11:18 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e474]:
+                - img "caret-down" [ref=e477] [cursor=pointer]:
+                  - img [ref=e478]
+                - checkbox "caret-down file-text 笔记 本地 1756262983 / 远端 4 已同步 04-09 11:18 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e480] [cursor=pointer]
+                - generic "笔记" [ref=e481] [cursor=pointer]:
+                  - generic [ref=e483]:
+                    - generic [ref=e484]:
+                      - img "file-text" [ref=e485]:
+                        - img [ref=e486]
+                      - generic [ref=e488]: 笔记
+                      - generic [ref=e489]: 本地 1756262983 / 远端 4
+                    - generic [ref=e490]:
+                      - generic [ref=e491]: 已同步 04-09 11:18
+                      - img "exclamation-circle" [ref=e492]:
+                        - img [ref=e493]
+                    - generic [ref=e496]:
+                      - button "重新同步" [ref=e498]:
+                        - img "reload" [ref=e500]:
+                          - img [ref=e501]
+                      - button "在浏览器打开" [ref=e503]:
+                        - img "export" [ref=e505]:
+                          - img [ref=e506]
+                      - button "使用默认应用打开" [ref=e508]:
+                        - img "folder-open" [ref=e510]:
+                          - img [ref=e511]
+              - treeitem "caret-down file-text 编辑器 本地 1760444208 / 远端 8 已同步 04-09 11:19 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e513]:
+                - img "caret-down" [ref=e516] [cursor=pointer]:
+                  - img [ref=e517]
+                - checkbox "caret-down file-text 编辑器 本地 1760444208 / 远端 8 已同步 04-09 11:19 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e519] [cursor=pointer]
+                - generic "编辑器" [ref=e520] [cursor=pointer]:
+                  - generic [ref=e522]:
+                    - generic [ref=e523]:
+                      - img "file-text" [ref=e524]:
+                        - img [ref=e525]
+                      - generic [ref=e527]: 编辑器
+                      - generic [ref=e528]: 本地 1760444208 / 远端 8
+                    - generic [ref=e529]:
+                      - generic [ref=e530]: 已同步 04-09 11:19
+                      - img "exclamation-circle" [ref=e531]:
+                        - img [ref=e532]
+                    - generic [ref=e535]:
+                      - button "重新同步" [ref=e537]:
+                        - img "reload" [ref=e539]:
+                          - img [ref=e540]
+                      - button "在浏览器打开" [ref=e542]:
+                        - img "export" [ref=e544]:
+                          - img [ref=e545]
+                      - button "使用默认应用打开" [ref=e547]:
+                        - img "folder-open" [ref=e549]:
+                          - img [ref=e550]
+              - treeitem "caret-down file-text 客户端 本地 1756264334 / 远端 5 已同步 04-09 11:22 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e552]:
+                - img "caret-down" [ref=e555] [cursor=pointer]:
+                  - img [ref=e556]
+                - checkbox "caret-down file-text 客户端 本地 1756264334 / 远端 5 已同步 04-09 11:22 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e558] [cursor=pointer]
+                - generic "客户端" [ref=e559] [cursor=pointer]:
+                  - generic [ref=e561]:
+                    - generic [ref=e562]:
+                      - img "file-text" [ref=e563]:
+                        - img [ref=e564]
+                      - generic [ref=e566]: 客户端
+                      - generic [ref=e567]: 本地 1756264334 / 远端 5
+                    - generic [ref=e568]:
+                      - generic [ref=e569]: 已同步 04-09 11:22
+                      - img "exclamation-circle" [ref=e570]:
+                        - img [ref=e571]
+                    - generic [ref=e574]:
+                      - button "重新同步" [ref=e576]:
+                        - img "reload" [ref=e578]:
+                          - img [ref=e579]
+                      - button "在浏览器打开" [ref=e581]:
+                        - img "export" [ref=e583]:
+                          - img [ref=e584]
+                      - button "使用默认应用打开" [ref=e586]:
+                        - img "folder-open" [ref=e588]:
+                          - img [ref=e589]
+              - treeitem "caret-down file-text 项目分析 本地 1767011639 / 远端 4 已同步 04-09 11:40 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e591]:
+                - img "caret-down" [ref=e594] [cursor=pointer]:
+                  - img [ref=e595]
+                - checkbox "caret-down file-text 项目分析 本地 1767011639 / 远端 4 已同步 04-09 11:40 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e597] [cursor=pointer]
+                - generic "项目分析" [ref=e598] [cursor=pointer]:
+                  - generic [ref=e600]:
+                    - generic [ref=e601]:
+                      - img "file-text" [ref=e602]:
+                        - img [ref=e603]
+                      - generic [ref=e605]: 项目分析
+                      - generic [ref=e606]: 本地 1767011639 / 远端 4
+                    - generic [ref=e607]:
+                      - generic [ref=e608]: 已同步 04-09 11:40
+                      - img "exclamation-circle" [ref=e609]:
+                        - img [ref=e610]
+                    - generic [ref=e613]:
+                      - button "重新同步" [ref=e615]:
+                        - img "reload" [ref=e617]:
+                          - img [ref=e618]
+                      - button "在浏览器打开" [ref=e620]:
+                        - img "export" [ref=e622]:
+                          - img [ref=e623]
+                      - button "使用默认应用打开" [ref=e625]:
+                        - img "folder-open" [ref=e627]:
+                          - img [ref=e628]
+              - treeitem "file-text Unity 下载 本地 1770609406 / 远端 17 已同步 04-09 11:40 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e630]:
+                - checkbox "file-text Unity 下载 本地 1770609406 / 远端 17 已同步 04-09 11:40 exclamation-circle 重新同步 在浏览器打开 使用默认应用打开" [ref=e633] [cursor=pointer]
+                - generic "Unity 下载" [ref=e634] [cursor=pointer]:
+                  - generic [ref=e636]:
+                    - generic [ref=e637]:
+                      - img "file-text" [ref=e638]:
+                        - img [ref=e639]
+                      - generic [ref=e641]: Unity 下载
+                      - generic [ref=e642]: 本地 1770609406 / 远端 17
+                    - generic [ref=e643]:
+                      - generic [ref=e644]: 已同步 04-09 11:40
+                      - img "exclamation-circle" [ref=e645]:
+                        - img [ref=e646]
+                    - generic [ref=e649]:
+                      - button "重新同步" [ref=e651]:
+                        - img "reload" [ref=e653]:
+                          - img [ref=e654]
+                      - button "在浏览器打开" [ref=e656]:
+                        - img "export" [ref=e658]:
+                          - img [ref=e659]
+                      - button "使用默认应用打开" [ref=e661]:
+                        - img "folder-open" [ref=e663]:
+                          - img [ref=e664]
+              - treeitem "caret-down cloud-sync 个人笔记" [ref=e228]:
+                - img "caret-down" [ref=e231] [cursor=pointer]:
+                  - img [ref=e232]
+                - checkbox "caret-down cloud-sync 个人笔记" [ref=e234] [cursor=pointer]
+                - generic "个人笔记" [ref=e235] [cursor=pointer]:
+                  - generic [ref=e238]:
+                    - img "cloud-sync" [ref=e239]:
+                      - img [ref=e240]
+                    - generic [ref=e243]: 个人笔记
+              - treeitem "caret-down cloud-sync 工具集合" [ref=e244]:
+                - img "caret-down" [ref=e247] [cursor=pointer]:
+                  - img [ref=e248]
+                - checkbox "caret-down cloud-sync 工具集合" [ref=e250] [cursor=pointer]
+                - generic "工具集合" [ref=e251] [cursor=pointer]:
+                  - generic [ref=e254]:
+                    - img "cloud-sync" [ref=e255]:
+                      - img [ref=e256]
+                    - generic [ref=e259]: 工具集合
+              - treeitem "caret-down cloud-sync 游戏制作" [ref=e260]:
+                - img "caret-down" [ref=e263] [cursor=pointer]:
+                  - img [ref=e264]
+                - checkbox "caret-down cloud-sync 游戏制作" [ref=e266] [cursor=pointer]
+                - generic "游戏制作" [ref=e267] [cursor=pointer]:
+                  - generic [ref=e270]:
+                    - img "cloud-sync" [ref=e271]:
+                      - img [ref=e272]
+                    - generic [ref=e275]: 游戏制作
+              - treeitem "caret-down cloud-sync 游戏知识" [ref=e276]:
+                - img "caret-down" [ref=e279] [cursor=pointer]:
+                  - img [ref=e280]
+                - checkbox "caret-down cloud-sync 游戏知识" [ref=e282] [cursor=pointer]
+                - generic "游戏知识" [ref=e283] [cursor=pointer]:
+                  - generic [ref=e286]:
+                    - img "cloud-sync" [ref=e287]:
+                      - img [ref=e288]
+                    - generic [ref=e291]: 游戏知识
+      - generic [ref=e293]:
+        - generic [ref=e297]:
+          - text: 文档预览
+          - generic [ref=e298]: — 总览
+        - generic [ref=e666]:
+          - heading "总览" [level=1] [ref=e667]
+          - heading "Turtories" [level=2] [ref=e668]
+          - list [ref=e669]:
+            - listitem [ref=e670]:
+              - link "Code Monkey" [ref=e671] [cursor=pointer]:
+                - /url: https://www.youtube.com/c/CodeMonkeyUnity
+            - listitem [ref=e672]:
+              - link "Unity Turtories Library | raywenderlich.com" [ref=e673] [cursor=pointer]:
+                - /url: https://www.raywenderlich.com/library?category_ids%5B%5D=181&category_ids%5B%5D=177&category_ids%5B%5D=1222&category_ids%5B%5D=159&category_ids%5B%5D=145&category_ids%5B%5D=146&category_ids%5B%5D=161&category_ids%5B%5D=153&category_ids%5B%5D=144&category_ids%5B%5D=156&category_ids%5B%5D=147&category_ids%5B%5D=149&category_ids%5B%5D=150&category_ids%5B%5D=151&category_ids%5B%5D=148&category_ids%5B%5D=152&category_ids%5B%5D=155&category_ids%5B%5D=1223&category_ids%5B%5D=154&category_ids%5B%5D=157&category_ids%5B%5D=158&category_ids%5B%5D=143&category_ids%5B%5D=1224&content_types%5B%5D=article&domain_ids%5B%5D=3&limit_count=12&section_id=70&sort_direction=desc&sort_order=released_at
+            - listitem [ref=e674]:
+              - link "[教程汇总+持续更新]Unity从入门到入坟——收藏这一篇就够了 - 知乎" [ref=e675] [cursor=pointer]:
+                - /url: https://zhuanlan.zhihu.com/p/151238164
+          - heading "Blogs" [level=2] [ref=e676]
+          - list [ref=e677]:
+            - listitem [ref=e678]:
+              - link "烟雨迷离半世殇" [ref=e679] [cursor=pointer]:
+                - /url: https://www.lfzxb.top/
+            - listitem [ref=e680]:
+              - link "Unity 游戏开发总结" [ref=e681] [cursor=pointer]:
+                - /url: https://www.zhihu.com/column/c_199694379
+            - listitem [ref=e682]:
+              - link "Unity开发启示录" [ref=e683] [cursor=pointer]:
+                - /url: https://zhuanlan.zhihu.com/c_1264272462595575808
+            - listitem [ref=e684]:
+              - link "Unity Blog" [ref=e685] [cursor=pointer]:
+                - /url: https://blog.unity.com/
+            - listitem [ref=e686]:
+              - link "一两分钟就能学会的Unity小技巧" [ref=e687] [cursor=pointer]:
+                - /url: https://space.bilibili.com/69585/lists/420578?type=season
