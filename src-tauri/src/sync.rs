@@ -108,17 +108,10 @@ pub fn expected_output_path(
         .as_str()
     {
         "sheet" | "bitable" => {
+            let mut output_path = markdown_output_path(sync_root, source_document);
             let extension = default_extension(&source_document.obj_type);
-            let file_name = format!("{}.{}", source_document.title, extension);
-            let mut output_path = sync_root.to_path_buf();
-            for segment in source_document
-                .path_segments
-                .iter()
-                .take(source_document.path_segments.len().saturating_sub(1))
-            {
-                output_path = output_path.join(segment);
-            }
-            output_path.join(&file_name)
+            output_path.set_extension(extension);
+            output_path
         }
         _ => markdown_output_path(sync_root, source_document),
     }
@@ -457,6 +450,7 @@ mod tests {
         assert_eq!(
             output,
             Path::new("C:/tmp/sync-target")
+                .join("产品知识库")
                 .join("方案库")
                 .join("产品方案总览")
                 .join("需求池.xlsx")

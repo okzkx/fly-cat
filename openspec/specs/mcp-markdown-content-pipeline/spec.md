@@ -76,6 +76,10 @@ The system MUST map each synced document to a stable local output path according
 - **WHEN** a `bitable` or `sheet` document is exported from a nested knowledge-base path
 - **THEN** the local output path uses only the parent path segments as directories and writes the exported file directly as `<title>.xlsx` instead of `.../<title>/<title>.xlsx`
 
+#### Scenario: Export-only paths align with Markdown layout under the sync root
+- **WHEN** a `bitable` or `sheet` document is exported
+- **THEN** the local output path includes the same sanitized knowledge-base directory segment and parent folder segments as a Markdown document for the same source metadata would, differing only by the file extension (for example `.xlsx` instead of `.md`)
+
 #### Scenario: Path update on source move or rename
 - **WHEN** a source document is renamed or moved to a different directory in the knowledge base
 - **THEN** the system updates the local output path deterministically and updates manifest mapping
