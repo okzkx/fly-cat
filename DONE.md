@@ -1,5 +1,7 @@
 # DONE
 
+- [2026-04-13 19:51] 使用体验优化：本地有，但是远端没有的文件也要显示在目录树里，被选择后进行同步时会自动进行删除 — local-only-tree-sync-cleanup
+
 - [2026-04-13 19:33] 修复：同步表格时会把表格下载到父目录里，在浏览器中打开表格对应的链接时页面不存在 — fix-sheet-export-path-space-folder
 
 - [2026-04-13 18:16] 升级 Ant Design 用法：将 `Space` 的 `direction` 改为 `orientation`，`Spin` 的 `tip` 改为 `description`，去掉弃用告警。 — fix-ant-design-deprecation-warnings
