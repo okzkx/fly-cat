@@ -52,6 +52,7 @@ type ScopeTreeDataNode = DataNode & {
   wikiListVersion?: string;
   hasChildren?: boolean;
   isExpandable?: boolean;
+  localOnlyNotOnRemote?: boolean;
   children?: ScopeTreeDataNode[];
 };
 
@@ -440,6 +441,7 @@ function buildTreeNodes(
       wikiListVersion: node.wikiListVersion,
       hasChildren: node.hasChildren,
       isExpandable: node.isExpandable,
+      localOnlyNotOnRemote: node.localOnlyNotOnRemote,
       scopeValue,
       children:
         node.children && node.children.length > 0
@@ -548,6 +550,11 @@ const KnowledgeTreeNodeTitle = memo(function KnowledgeTreeNodeTitle({
         {icon}
         <span className="knowledge-tree-title" data-testid={`tree-label-${String(treeNode.key)}`}>
           {String(treeNode.title)}
+          {treeNode.localOnlyNotOnRemote ? (
+            <Tag color="default" style={{ marginLeft: 6, fontSize: 11 }}>
+              远端无
+            </Tag>
+          ) : null}
         </span>
         {isDocumentLike && (
           <DocumentFeishuRevisionLine

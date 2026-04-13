@@ -54,6 +54,8 @@ export interface KnowledgeBaseNode {
   wikiListVersion?: string;
   hasChildren: boolean;
   isExpandable: boolean;
+  /** Shown when manifest has local output but Feishu listing omits this document id. */
+  localOnlyNotOnRemote?: boolean;
   children?: KnowledgeBaseNode[];
 }
 

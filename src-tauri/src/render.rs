@@ -308,6 +308,7 @@ mod tests {
             path_segments: vec!["研发规范".into(), "研发架构设计".into()],
             source_path: "研发知识库/研发规范/研发架构设计".into(),
             obj_type: String::new(),
+            cleanup_local_only: false,
         };
 
         let output = markdown_output_path(&PathBuf::from("synced-docs"), &document);

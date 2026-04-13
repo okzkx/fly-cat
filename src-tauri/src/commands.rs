@@ -167,6 +167,9 @@ pub struct KnowledgeBaseNode {
     pub wiki_list_version: String,
     pub has_children: bool,
     pub is_expandable: bool,
+    /// Present in the manifest with local output but absent from the remote wiki child listing.
+    #[serde(default)]
+    pub local_only_not_on_remote: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<KnowledgeBaseNode>,
 }
@@ -787,6 +790,7 @@ fn clone_collapsed_nodes(nodes: &[KnowledgeBaseNode]) -> Vec<KnowledgeBaseNode> 
             wiki_list_version: node.wiki_list_version.clone(),
             has_children: node.has_children,
             is_expandable: node.is_expandable,
+            local_only_not_on_remote: node.local_only_not_on_remote,
             children: vec![],
         })
         .collect()
@@ -836,6 +840,7 @@ fn make_fixture_document(
         source_path: join_display_path(space_name, &path_segments).replace(" / ", "/"),
         path_segments,
         obj_type: String::new(),
+        cleanup_local_only: false,
     }
 }
 
@@ -854,6 +859,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
             wiki_list_version: String::new(),
             has_children: true,
             is_expandable: true,
+            local_only_not_on_remote: false,
             children: vec![
                 KnowledgeBaseNode {
                     key: build_scope_key("document", "kb-eng", "doc-eng-architecture"),
@@ -868,6 +874,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     wiki_list_version: "v1".into(),
                     has_children: false,
                     is_expandable: false,
+                    local_only_not_on_remote: false,
                     children: vec![],
                 },
                 KnowledgeBaseNode {
@@ -883,6 +890,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     wiki_list_version: "v1".into(),
                     has_children: false,
                     is_expandable: false,
+                    local_only_not_on_remote: false,
                     children: vec![],
                 },
             ],
@@ -900,6 +908,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
             wiki_list_version: String::new(),
             has_children: true,
             is_expandable: true,
+            local_only_not_on_remote: false,
             children: vec![
                 KnowledgeBaseNode {
                     key: build_scope_key("document", "kb-product", "doc-product-overview"),
@@ -914,6 +923,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     wiki_list_version: "v1".into(),
                     has_children: false,
                     is_expandable: false,
+                    local_only_not_on_remote: false,
                     children: vec![],
                 },
                 KnowledgeBaseNode {
@@ -929,6 +939,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                     wiki_list_version: "v1".into(),
                     has_children: true,
                     is_expandable: true,
+                    local_only_not_on_remote: false,
                     children: vec![
                         KnowledgeBaseNode {
                             key: build_scope_key(
@@ -952,6 +963,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                             wiki_list_version: "v1".into(),
                             has_children: false,
                             is_expandable: false,
+                            local_only_not_on_remote: false,
                             children: vec![],
                         },
                         KnowledgeBaseNode {
@@ -975,6 +987,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
                             wiki_list_version: "v1".into(),
                             has_children: false,
                             is_expandable: false,
+                            local_only_not_on_remote: false,
                             children: vec![],
                         },
                     ],
@@ -994,6 +1007,7 @@ fn fixture_space_tree(space_id: &str) -> Vec<KnowledgeBaseNode> {
             wiki_list_version: "v1".into(),
             has_children: false,
             is_expandable: false,
+            local_only_not_on_remote: false,
             children: vec![],
         }],
         _ => vec![],
@@ -1942,6 +1956,7 @@ fn build_tree_nodes_from_openapi(
             wiki_list_version: node.version.clone(),
             has_children: node.has_child,
             is_expandable,
+            local_only_not_on_remote: false,
             children: vec![],
         });
     }
@@ -1949,11 +1964,104 @@ fn build_tree_nodes_from_openapi(
     Ok(result)
 }
 
+fn infer_obj_type_from_manifest_record(record: &crate::model::ManifestRecord) -> String {
+    let sig = record.source_signature.as_str();
+    if sig.starts_with("export:") {
+        let ext = sig
+            .trim_start_matches("export:")
+            .trim()
+            .to_ascii_lowercase();
+        if ext == "xlsx" || ext == "csv" || ext.contains("sheet") {
+            return "sheet".into();
+        }
+        return "bitable".into();
+    }
+    "docx".into()
+}
+
+fn knowledge_base_node_from_manifest_orphan(
+    record: &crate::model::ManifestRecord,
+    space_name: &str,
+) -> KnowledgeBaseNode {
+    let obj_type = infer_obj_type_from_manifest_record(record);
+    let kind = node_kind_from_obj_type(&obj_type, false);
+    let document_id = record.document_id.clone();
+    let key = build_scope_key(&kind, &record.space_id, document_id.as_str());
+    let title = format!("{}（仅本地）", record.title);
+    KnowledgeBaseNode {
+        key,
+        kind,
+        space_id: record.space_id.clone(),
+        space_name: space_name.to_string(),
+        title,
+        display_path: join_display_path(space_name, &record.path_segments),
+        node_token: record.node_token.clone(),
+        document_id: Some(document_id),
+        path_segments: record.path_segments.clone(),
+        wiki_list_version: String::new(),
+        has_children: false,
+        is_expandable: false,
+        local_only_not_on_remote: true,
+        children: vec![],
+    }
+}
+
+fn merge_remote_missing_manifest_nodes(
+    mut remote: Vec<KnowledgeBaseNode>,
+    space_id: &str,
+    space_name: &str,
+    parent_path: &[String],
+    manifest: &crate::model::SyncManifest,
+) -> Vec<KnowledgeBaseNode> {
+    let remote_doc_ids: HashSet<String> = remote
+        .iter()
+        .filter_map(|node| node.document_id.clone())
+        .collect();
+    let expected_depth = parent_path.len() + 1;
+    let mut extras: Vec<KnowledgeBaseNode> = Vec::new();
+    for record in &manifest.records {
+        if record.status != "success" {
+            continue;
+        }
+        if !manifest_record_has_local_output(record) {
+            continue;
+        }
+        if record.space_id != space_id {
+            continue;
+        }
+        if record.path_segments.len() != expected_depth {
+            continue;
+        }
+        if !parent_path
+            .iter()
+            .enumerate()
+            .all(|(index, segment)| record.path_segments.get(index) == Some(segment))
+        {
+            continue;
+        }
+        if remote_doc_ids.contains(&record.document_id) {
+            continue;
+        }
+        if extras
+            .iter()
+            .chain(remote.iter())
+            .any(|node| node.document_id.as_deref() == Some(record.document_id.as_str()))
+        {
+            continue;
+        }
+        extras.push(knowledge_base_node_from_manifest_orphan(record, space_name));
+    }
+    extras.sort_by(|a, b| a.title.cmp(&b.title));
+    remote.extend(extras);
+    remote
+}
+
 fn list_space_source_tree_from_openapi(
     space_id: &str,
     parent_node_token: Option<&str>,
     settings: &AppSettings,
     session: &StoredUserSession,
+    sync_root_for_manifest: Option<&Path>,
 ) -> Result<Vec<KnowledgeBaseNode>, String> {
     let config = app_settings_to_openapi_config(settings, session)
         .ok_or_else(|| "Feishu OpenAPI user session missing".to_string())?;
@@ -1965,13 +2073,18 @@ fn list_space_source_tree_from_openapi(
         })
         .transpose()?
         .unwrap_or_default();
-    build_tree_nodes_from_openapi(
+    let mut nodes = build_tree_nodes_from_openapi(
         &client,
         space_id,
         &space_name,
         parent_node_token,
         &parent_path,
-    )
+    )?;
+    if let Some(root) = sync_root_for_manifest {
+        let manifest = crate::storage::load_manifest(root).unwrap_or_default();
+        nodes = merge_remote_missing_manifest_nodes(nodes, space_id, &space_name, &parent_path, &manifest);
+    }
+    Ok(nodes)
 }
 
 fn looks_like_version_timestamp(value: &str) -> bool {
@@ -2008,6 +2121,98 @@ fn build_sync_document_from_wiki_node(
         source_path: join_display_path(space_name, path_segments).replace(" / ", "/"),
         path_segments: path_segments.to_vec(),
         obj_type: node.obj_type.clone(),
+        cleanup_local_only: false,
+    }
+}
+
+fn find_manifest_record_for_cleanup<'a>(
+    manifest: &'a crate::model::SyncManifest,
+    document_id: &str,
+) -> Option<&'a crate::model::ManifestRecord> {
+    manifest.records.iter().find(|record| {
+        record.document_id == document_id
+            && record.status == "success"
+            && manifest_record_has_local_output(record)
+    })
+}
+
+fn sync_source_document_from_manifest_cleanup(
+    record: &crate::model::ManifestRecord,
+) -> SyncSourceDocument {
+    let obj_type = infer_obj_type_from_manifest_record(record);
+    SyncSourceDocument {
+        document_id: record.document_id.clone(),
+        space_id: record.space_id.clone(),
+        space_name: record.space_name.clone(),
+        node_token: record.node_token.clone(),
+        title: record.title.clone(),
+        version: record.version.clone(),
+        update_time: record.update_time.clone(),
+        source_path: record.source_path.clone(),
+        path_segments: record.path_segments.clone(),
+        obj_type,
+        cleanup_local_only: true,
+    }
+}
+
+fn manifest_record_in_selected_scope(
+    record: &crate::model::ManifestRecord,
+    selected_sources: &[SelectedSyncScope],
+) -> bool {
+    for scope in selected_sources {
+        match scope.kind.as_str() {
+            "space" => {
+                if scope.space_id == record.space_id {
+                    return true;
+                }
+            }
+            "folder" => {
+                if scope.space_id != record.space_id {
+                    continue;
+                }
+                if record.path_segments.len() <= scope.path_segments.len() {
+                    continue;
+                }
+                if scope.path_segments.iter().enumerate().all(|(index, segment)| {
+                    record.path_segments.get(index) == Some(segment)
+                }) {
+                    return true;
+                }
+            }
+            "document" | "bitable" => {
+                if let Some(id) = scope.document_id.as_deref() {
+                    if id == record.document_id.as_str() && scope.space_id == record.space_id {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn append_manifest_only_documents_missing_from_remote(
+    documents: &mut Vec<SyncSourceDocument>,
+    seen: &mut HashSet<String>,
+    selected_sources: &[SelectedSyncScope],
+    manifest: &crate::model::SyncManifest,
+) {
+    for record in &manifest.records {
+        if record.status != "success" {
+            continue;
+        }
+        if !manifest_record_has_local_output(record) {
+            continue;
+        }
+        if seen.contains(&record.document_id) {
+            continue;
+        }
+        if !manifest_record_in_selected_scope(record, selected_sources) {
+            continue;
+        }
+        seen.insert(record.document_id.clone());
+        documents.push(sync_source_document_from_manifest_cleanup(record));
     }
 }
 
@@ -2015,6 +2220,7 @@ fn discover_documents_from_openapi(
     selected_scope: &SelectedSyncScope,
     settings: &AppSettings,
     session: &StoredUserSession,
+    manifest: &crate::model::SyncManifest,
 ) -> Result<Vec<SyncSourceDocument>, String> {
     let config = app_settings_to_openapi_config(settings, session)
         .ok_or_else(|| "Feishu OpenAPI user session missing".to_string())?;
@@ -2024,6 +2230,7 @@ fn discover_documents_from_openapi(
         client: &FeishuOpenApiClient,
         scope: &SelectedSyncScope,
         base_path: &[String],
+        manifest: &crate::model::SyncManifest,
     ) -> Result<Vec<SyncSourceDocument>, String> {
         let nodes = client
             .list_child_nodes(&scope.space_id, scope.node_token.as_deref())
@@ -2059,6 +2266,7 @@ fn discover_documents_from_openapi(
                             .replace(" / ", "/"),
                         path_segments: path_segments.clone(),
                         obj_type: node.obj_type.clone(),
+                        cleanup_local_only: false,
                     });
                 }
             } else if kind == "bitable" {
@@ -2074,6 +2282,7 @@ fn discover_documents_from_openapi(
                         .replace(" / ", "/"),
                     path_segments: path_segments.clone(),
                     obj_type: node.obj_type.clone(),
+                    cleanup_local_only: false,
                 });
             }
 
@@ -2097,6 +2306,7 @@ fn discover_documents_from_openapi(
                     client,
                     &child_scope,
                     &path_segments,
+                    manifest,
                 )?);
             }
         }
@@ -2109,30 +2319,38 @@ fn discover_documents_from_openapi(
             .document_id
             .as_deref()
             .ok_or_else(|| "缺少文档标识，无法创建同步任务。".to_string())?;
-        let summary = client
-            .fetch_document_summary_with_retry(document_id)
-            .map_err(|err| err.to_string())?;
-        let mut documents = vec![SyncSourceDocument {
-            document_id: document_id.to_string(),
-            space_id: selected_scope.space_id.clone(),
-            space_name: selected_scope.space_name.clone(),
-            node_token: selected_scope.node_token.clone().unwrap_or_default(),
-            title: summary.title,
-            version: summary.version,
-            update_time: summary.update_time,
-            source_path: join_display_path(
-                &selected_scope.space_name,
-                &selected_scope.path_segments,
-            )
-            .replace(" / ", "/"),
-            path_segments: selected_scope.path_segments.clone(),
-            obj_type: "docx".into(),
-        }];
+        let mut documents = match client.fetch_document_summary_with_retry(document_id) {
+            Ok(summary) => vec![SyncSourceDocument {
+                document_id: document_id.to_string(),
+                space_id: selected_scope.space_id.clone(),
+                space_name: selected_scope.space_name.clone(),
+                node_token: selected_scope.node_token.clone().unwrap_or_default(),
+                title: summary.title,
+                version: summary.version,
+                update_time: summary.update_time,
+                source_path: join_display_path(
+                    &selected_scope.space_name,
+                    &selected_scope.path_segments,
+                )
+                .replace(" / ", "/"),
+                path_segments: selected_scope.path_segments.clone(),
+                obj_type: "docx".into(),
+                cleanup_local_only: false,
+            }],
+            Err(error) => {
+                if let Some(record) = find_manifest_record_for_cleanup(manifest, document_id) {
+                    vec![sync_source_document_from_manifest_cleanup(record)]
+                } else {
+                    return Err(error.to_string());
+                }
+            }
+        };
         if selected_scope.includes_descendants {
             documents.extend(collect_documents_from_child_nodes(
                 &client,
                 selected_scope,
                 &selected_scope.path_segments,
+                manifest,
             )?);
         }
         return Ok(documents);
@@ -2144,7 +2362,21 @@ fn discover_documents_from_openapi(
             .as_deref()
             .ok_or_else(|| "缺少文档标识，无法创建同步任务。".to_string())?;
         let node_token = selected_scope.node_token.as_deref().unwrap_or_default();
-        let wiki_node = resolve_wiki_node_by_token(&client, &selected_scope.space_id, node_token)?;
+        let wiki_node = match resolve_wiki_node_by_token(&client, &selected_scope.space_id, node_token)
+        {
+            Ok(node) => node,
+            Err(error) => {
+                if let Some(record) = manifest.records.iter().find(|candidate| {
+                    candidate.document_id == document_id
+                        && candidate.space_id == selected_scope.space_id
+                        && candidate.status == "success"
+                        && manifest_record_has_local_output(candidate)
+                }) {
+                    return Ok(vec![sync_source_document_from_manifest_cleanup(record)]);
+                }
+                return Err(error);
+            }
+        };
         let path_segments = if selected_scope.path_segments.is_empty() {
             resolve_path_segments_for_node(&client, &selected_scope.space_id, node_token)?
         } else {
@@ -2163,6 +2395,7 @@ fn discover_documents_from_openapi(
             source_path,
             path_segments,
             obj_type: wiki_node.obj_type,
+            cleanup_local_only: false,
         }]);
     }
 
@@ -2171,23 +2404,31 @@ fn discover_documents_from_openapi(
     } else {
         vec![]
     };
-    collect_documents_from_child_nodes(&client, selected_scope, &base_path)
+    collect_documents_from_child_nodes(&client, selected_scope, &base_path, manifest)
 }
 
 fn discover_documents_from_sources(
     selected_sources: &[SelectedSyncScope],
     settings: &AppSettings,
     session: &StoredUserSession,
+    output_root: &Path,
 ) -> Result<Vec<SyncSourceDocument>, String> {
+    let manifest = load_manifest(output_root).unwrap_or_default();
     let mut seen = HashSet::new();
     let mut documents = Vec::new();
     for source in selected_sources {
-        for document in discover_documents_from_openapi(source, settings, session)? {
+        for document in discover_documents_from_openapi(source, settings, session, &manifest)? {
             if seen.insert(document.document_id.clone()) {
                 documents.push(document);
             }
         }
     }
+    append_manifest_only_documents_missing_from_remote(
+        &mut documents,
+        &mut seen,
+        selected_sources,
+        &manifest,
+    );
     Ok(documents)
 }
 
@@ -2196,6 +2437,9 @@ fn is_document_unchanged(
     output_root: &Path,
     manifest: &crate::model::SyncManifest,
 ) -> bool {
+    if document.cleanup_local_only {
+        return false;
+    }
     let expected_output_path = expected_output_path(output_root, document)
         .to_string_lossy()
         .to_string();
@@ -2294,6 +2538,11 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
             let selected_scope = selected_sources
                 .as_ref()
                 .and_then(|sources| legacy_selected_scope(sources));
+            let output_root_for_discovery = tasks
+                .iter()
+                .find(|task| task.id == task_id)
+                .map(|task| PathBuf::from(task.output_path.trim()))
+                .unwrap_or_else(|| PathBuf::from("."));
             drop(tasks);
 
             let settings: Option<AppSettings> =
@@ -2304,7 +2553,12 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                 Some(settings) => match authorized_config_for_session(&app, &settings) {
                     Ok((session, _)) => match selected_sources.as_ref() {
                         Some(sources) if !sources.is_empty() => {
-                            match discover_documents_from_sources(sources, &settings, &session) {
+                            match discover_documents_from_sources(
+                                sources,
+                                &settings,
+                                &session,
+                                output_root_for_discovery.as_path(),
+                            ) {
                                 Ok(documents) => (
                                     documents,
                                     None,
@@ -2585,19 +2839,25 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
         for (step, document) in queued_documents.iter().enumerate() {
             let step = (step + 1) as u32;
             let use_export_download = uses_export_download(document, openapi_config.is_some());
-            let result = {
-                if use_export_download {
+            let result: Result<Option<crate::model::ManifestRecord>, SyncPipelineError> =
+                if document.cleanup_local_only {
+                    purge_manifest_documents_for_ids(
+                        sync_root.as_path(),
+                        &mut manifest,
+                        std::slice::from_ref(&document.document_id),
+                    )
+                    .map(|_| None)
+                    .map_err(|message| SyncPipelineError {
+                        stage: "filesystem".into(),
+                        message,
+                    })
+                } else if use_export_download {
                     let config = openapi_config
                         .as_ref()
                         .expect("export download requires OpenAPI config");
                     match sync_document_via_export(document, &sync_root, config, &manifest) {
-                        Ok(record) => Ok(record),
-                        Err(export_err) => {
-                            // Export-only documents can only be synced via export;
-                            // falling back to docx content path would always fail
-                            // with code 1770002 (not found).
-                            Err(export_err)
-                        }
+                        Ok(record) => Ok(Some(record)),
+                        Err(export_err) => Err(export_err),
                     }
                 } else {
                     sync_document_content(
@@ -2608,9 +2868,8 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                         openapi_config.as_ref(),
                         &manifest,
                     )
-                    .map(|(_, record)| record)
-                }
-            };
+                    .map(|(_, record)| Some(record))
+                };
 
             {
                 let state = app.state::<AppState>();
@@ -2620,9 +2879,10 @@ fn spawn_sync_progress(task_id: String, app: AppHandle) {
                     task.progress =
                         ((step as f32 / task.counters.total as f32) * 100.0).round() as u32;
                     match result {
-                        Ok(record) => {
+                        Ok(Some(record)) => {
                             upsert_manifest_record(&mut manifest, record);
                         }
+                        Ok(None) => {}
                         Err(error) => {
                             task.counters.failed = task.counters.failed.saturating_add(1);
                             let mut run_err = classify_pipeline_failure(error);
@@ -2854,6 +3114,7 @@ pub async fn list_space_source_tree(
     app: AppHandle,
     space_id: String,
     parent_node_token: Option<String>,
+    sync_root: Option<String>,
 ) -> Result<Vec<KnowledgeBaseNode>, String> {
     if e2e_fixtures_enabled() {
         return Ok(fixture_space_nodes(&space_id, parent_node_token.as_deref()));
@@ -2864,6 +3125,15 @@ pub async fn list_space_source_tree(
     let (session, _) = authorized_config_for_session(&app, &settings)
         .map_err(|result| result.validation.message)?;
 
+    let sync_root_buf = sync_root
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|raw| resolve_sync_root_path(&app, raw))
+        .transpose()
+        .ok()
+        .flatten();
+
     let space_id = space_id.clone();
     let parent_node_token = parent_node_token.clone();
     tokio::task::spawn_blocking(move || {
@@ -2872,6 +3142,7 @@ pub async fn list_space_source_tree(
             parent_node_token.as_deref(),
             &settings,
             &session,
+            sync_root_buf.as_deref(),
         ) {
             Ok(nodes) => Ok(nodes),
             Err(error) => {
@@ -3097,17 +3368,12 @@ pub struct RemoveSyncedDocumentsRequest {
     pub document_ids: Vec<String>,
 }
 
-#[tauri::command]
-pub fn remove_synced_documents(
-    _app: AppHandle,
-    request: RemoveSyncedDocumentsRequest,
+fn purge_manifest_documents_for_ids(
+    sync_root: &Path,
+    manifest: &mut crate::model::SyncManifest,
+    document_ids: &[String],
 ) -> Result<u32, String> {
-    let path = std::path::Path::new(&request.sync_root);
-    let mut manifest = crate::storage::load_manifest(path).unwrap_or_default();
-
-    // Collect output paths and image assets to delete
-    let to_remove: Vec<(String, Vec<String>)> = request
-        .document_ids
+    let to_remove: Vec<(String, Vec<String>)> = document_ids
         .iter()
         .filter_map(|id| {
             manifest
@@ -3118,33 +3384,35 @@ pub fn remove_synced_documents(
         })
         .collect();
 
-    // Remove files
     let mut deleted_count = 0u32;
     for (output_path, image_assets) in &to_remove {
-        let file_path = std::path::Path::new(output_path);
+        let file_path = Path::new(output_path);
         if file_path.exists() {
             let _ = fs::remove_file(file_path);
             deleted_count += 1;
         }
         for asset in image_assets {
-            let asset_path = std::path::Path::new(output_path)
-                .parent()
-                .unwrap_or(std::path::Path::new(&request.sync_root))
-                .join(asset);
+            let asset_path = file_path.parent().unwrap_or(sync_root).join(asset);
             if asset_path.exists() {
-                let _ = fs::remove_file(&asset_path);
+                let _ = fs::remove_file(asset_path);
             }
         }
     }
 
-    // Remove from manifest
-    remove_manifest_records(&mut manifest, &request.document_ids);
-    crate::storage::save_manifest(path, &manifest)?;
-
-    // Clean up empty directories
-    clean_empty_dirs(path);
-
+    remove_manifest_records(manifest, document_ids);
+    crate::storage::save_manifest(sync_root, manifest)?;
+    clean_empty_dirs(sync_root);
     Ok(deleted_count)
+}
+
+#[tauri::command]
+pub fn remove_synced_documents(
+    _app: AppHandle,
+    request: RemoveSyncedDocumentsRequest,
+) -> Result<u32, String> {
+    let path = Path::new(&request.sync_root);
+    let mut manifest = crate::storage::load_manifest(path).unwrap_or_default();
+    purge_manifest_documents_for_ids(path, &mut manifest, &request.document_ids)
 }
 
 /// Deletes on-disk outputs for the given document ids and clears version fields on manifest
@@ -3857,6 +4125,7 @@ mod tests {
             path_segments: vec!["方案库".into(), "产品方案总览".into(), "需求池".into()],
             source_path: "产品知识库/方案库/产品方案总览/需求池".into(),
             obj_type: "bitable".into(),
+            cleanup_local_only: false,
         };
         let sync_root = std::env::temp_dir().join("feishu-unchanged-bitable-test");
         let _ = fs::remove_dir_all(&sync_root);
@@ -3904,6 +4173,7 @@ mod tests {
             path_segments: vec!["A".into(), "B".into()],
             source_path: "产品知识库/A/B".into(),
             obj_type: "docx".into(),
+            cleanup_local_only: false,
         };
         let sync_root = std::env::temp_dir().join("feishu-unchanged-missing-test");
         let _ = fs::remove_dir_all(&sync_root);
@@ -3947,6 +4217,7 @@ mod tests {
             path_segments: vec!["A".into(), "B".into()],
             source_path: "产品知识库/A/B".into(),
             obj_type: "docx".into(),
+            cleanup_local_only: false,
         };
         let sync_root = std::env::temp_dir().join("feishu-unchanged-version-mismatch-test");
         let _ = fs::remove_dir_all(&sync_root);
@@ -4182,6 +4453,7 @@ mod tests {
             path_segments: vec![],
             source_path: "KB/T".into(),
             obj_type: "bitable".into(),
+            cleanup_local_only: false,
         };
         let sheet = SyncSourceDocument {
             obj_type: "sheet".into(),

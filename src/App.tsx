@@ -362,7 +362,7 @@ export default function App(): React.JSX.Element {
                   if (!parentNodeToken && loadedSpaceTrees[spaceId]) {
                     return;
                   }
-                  const nodes = await listKnowledgeBaseNodes(spaceId, parentNodeToken);
+                  const nodes = await listKnowledgeBaseNodes(spaceId, parentNodeToken, syncTarget);
                   startTransition(() => {
                     setLoadedSpaceTrees((current) => ({
                       ...current,

@@ -65,6 +65,8 @@ struct AuthCompleteRequest {
 #[serde(rename_all = "camelCase")]
 struct TreeQuery {
     parent_node_token: Option<String>,
+    #[serde(default)]
+    sync_root: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -307,8 +309,13 @@ async fn list_space_tree(
     AxumPath(space_id): AxumPath<String>,
     Query(query): Query<TreeQuery>,
 ) -> AgentResult<Vec<KnowledgeBaseNode>> {
-    commands::list_space_source_tree(context.app, space_id, query.parent_node_token)
-        .await
+    commands::list_space_source_tree(
+        context.app,
+        space_id,
+        query.parent_node_token,
+        query.sync_root,
+    )
+    .await
         .map(Json)
         .map_err(into_agent_error)
 }
