@@ -89,6 +89,9 @@ pub struct SyncSourceDocument {
     pub source_path: String,
     #[serde(default)]
     pub obj_type: String,
+    /// When true, the sync worker only removes local outputs and manifest rows (remote node missing).
+    #[serde(default)]
+    pub cleanup_local_only: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

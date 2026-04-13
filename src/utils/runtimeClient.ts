@@ -220,15 +220,20 @@ export async function getSyncTasks(): Promise<SyncTask[]> {
 
 export async function listKnowledgeBaseNodes(
   spaceId: string,
-  parentNodeToken?: string
+  parentNodeToken?: string,
+  syncRoot?: string | null
 ): Promise<KnowledgeBaseNode[]> {
   if (isTauriRuntime()) {
-    return invoke<KnowledgeBaseNode[]>("list_space_source_tree", { spaceId, parentNodeToken });
+    return invoke<KnowledgeBaseNode[]>("list_space_source_tree", {
+      spaceId,
+      parentNodeToken,
+      syncRoot: syncRoot ?? null
+    });
   }
   if (isFixtureRuntime()) {
     return fixtureListKnowledgeBaseNodes(spaceId, parentNodeToken);
   }
-  return localAgentListKnowledgeBaseNodes(spaceId, parentNodeToken);
+  return localAgentListKnowledgeBaseNodes(spaceId, parentNodeToken, syncRoot);
 }
 
 export async function createSyncTask(selectedSources: SyncScope[], outputPath: string): Promise<SyncTask> {

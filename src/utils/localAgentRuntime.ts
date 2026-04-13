@@ -273,10 +273,11 @@ export async function localAgentGetSyncTasks(): Promise<SyncTask[]> {
 
 export function localAgentListKnowledgeBaseNodes(
   spaceId: string,
-  parentNodeToken?: string
+  parentNodeToken?: string,
+  syncRoot?: string | null
 ): Promise<KnowledgeBaseNode[]> {
   return requestLocalAgent<KnowledgeBaseNode[]>(
-    `/spaces/${encodeURIComponent(spaceId)}/tree${buildQuery({ parentNodeToken })}`
+    `/spaces/${encodeURIComponent(spaceId)}/tree${buildQuery({ parentNodeToken, syncRoot: syncRoot ?? undefined })}`
   );
 }
 

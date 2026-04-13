@@ -420,6 +420,7 @@ mod tests {
             path_segments: vec!["研发规范".into(), "研发API概览".into()],
             source_path: "研发知识库/研发规范/研发API概览".into(),
             obj_type: String::new(),
+            cleanup_local_only: false,
         };
 
         let result = sync_document_to_disk(&source, &sync_root, "_assets", "user-feishu-mcp", None)
@@ -443,6 +444,7 @@ mod tests {
             path_segments: vec!["方案库".into(), "产品方案总览".into(), "需求池".into()],
             source_path: "产品知识库/方案库/产品方案总览/需求池".into(),
             obj_type: "bitable".into(),
+            cleanup_local_only: false,
         };
 
         let output = expected_output_path(Path::new("C:/tmp/sync-target"), &source);
