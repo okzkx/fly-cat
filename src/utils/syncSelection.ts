@@ -1,4 +1,16 @@
-import type { SyncScope, SyncSelectionSummary } from "@/types/sync";
+import type { KnowledgeBaseSpace, SyncScope, SyncSelectionSummary } from "@/types/sync";
+
+/** Whole-space roots for every listed knowledge base (used when no checkbox selection). */
+export function buildAllKnowledgeSpaceScopes(spaces: KnowledgeBaseSpace[]): SyncScope[] {
+  return spaces.map((space) => ({
+    kind: "space",
+    spaceId: space.id,
+    spaceName: space.name,
+    title: space.name,
+    displayPath: space.name,
+    pathSegments: []
+  }));
+}
 
 export function scopeKey(scope: SyncScope): string {
   if (scope.kind === "space") {
