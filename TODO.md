@@ -4,8 +4,6 @@
 
 ## P2 >
 
-- 执行 desktop-browser-local-agent-plan
-
 ## P3
 
 - 

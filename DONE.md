@@ -1,5 +1,7 @@
 # DONE
 
+- [2026-04-13 12:20] 执行 desktop-browser-local-agent-plan — desktop-browser-local-agent
+
 - [2026-04-09 16:26] 3. 将按钮的功能能在鼠标悬浮时提示出来 — kb-toolbar-hover-tooltips
 
 - [2026-04-09 16:16] 2. 按钮要确实实现功能：全部刷新按钮将更新版本与远端不同步的文档，让其与远端进行版本同步。开始同步按钮只下载未同步的文档，不更新版本与远端不同步的文档。 — sync-refresh-align-remote-version
