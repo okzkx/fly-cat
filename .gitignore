@@ -8,3 +8,4 @@ src-tauri/target-e2e/
 src-tauri/gen/schemas/
 .e2e-artifacts/
 .tools/
+.playwright-cli
