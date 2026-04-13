@@ -7,6 +7,15 @@ import type { AppSettings, SettingsPageProps } from "@/types/app";
 const { Title, Paragraph, Text } = Typography;
 const OAUTH_CALLBACK_PORTS = Array.from({ length: 11 }, (_, index) => 3000 + index);
 const OAUTH_CALLBACK_HINT = OAUTH_CALLBACK_PORTS.map((port) => `http://localhost:${port}/callback`).join("、");
+const BROWSER_CALLBACK_HINT =
+  typeof window !== "undefined"
+    ? (() => {
+        const current = new URL(window.location.href);
+        current.search = "";
+        current.hash = "";
+        return current.toString();
+      })()
+    : "当前浏览器页面地址";
 
 const DEFAULT_SETTINGS: AppSettings = {
   appId: "",
@@ -26,9 +35,14 @@ export default function SettingsPage({ initialSettings, onSaved }: SettingsPageP
     form.setFieldsValue(initialSettings ?? DEFAULT_SETTINGS);
   }, [form, initialSettings]);
 
-  const handleFinish = (values: AppSettings): void => {
-    message.success("配置保存成功");
-    onSaved(values);
+  const handleFinish = async (values: AppSettings): Promise<void> => {
+    try {
+      await onSaved(values);
+      message.success("配置保存成功");
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      message.error(messageText || "配置保存失败，请稍后重试");
+    }
   };
 
   return (
@@ -60,10 +74,11 @@ export default function SettingsPage({ initialSettings, onSaved }: SettingsPageP
                 <Space direction="vertical" size="small">
                   <Text>1. 填写飞书应用的 App ID / App Secret。</Text>
                   <Text>2. 在飞书应用中配置桌面 OAuth 回调地址：`{OAUTH_CALLBACK_HINT}`。</Text>
-                  <Text>3. 应用需要具备知识库与新版文档读取权限，并且登录账号已加入目标知识库。</Text>
-                  <Text>4. 可选填写 `Wiki Space IDs` 限定同步空间，多个用逗号分隔。</Text>
-                  <Text>5. 输出目录为 Markdown 同步根目录，图片回退到固定子目录。</Text>
-                  <Text>6. 如果登录时提示本地回调初始化失败，请释放上述 localhost 端口范围内的占用后重试。</Text>
+                  <Text>3. 若需在同机浏览器中使用本机桥接能力，请额外把当前浏览器页面地址加入飞书 OAuth 回调地址白名单，例如：`{BROWSER_CALLBACK_HINT}`。</Text>
+                  <Text>4. 应用需要具备知识库与新版文档读取权限，并且登录账号已加入目标知识库。</Text>
+                  <Text>5. 可选填写 `Wiki Space IDs` 限定同步空间，多个用逗号分隔。</Text>
+                  <Text>6. 输出目录为 Markdown 同步根目录，图片回退到固定子目录。</Text>
+                  <Text>7. 如果登录时提示本地回调初始化失败，请释放上述 localhost 端口范围内的占用后重试。</Text>
                 </Space>
               )
             }

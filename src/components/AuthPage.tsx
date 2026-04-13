@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import type { AuthPageProps, ConnectionCheckResult } from "@/types/app";
 import { getConnectionAlert } from "@/utils/connectionValidation";
-import { beginUserAuthorization, completeUserAuthorization, isTauriRuntime } from "@/utils/tauriRuntime";
+import { beginUserAuthorization, completeUserAuthorization, isTauriRuntime } from "@/utils/runtimeClient";
 
 const { Title, Paragraph, Text } = Typography;
 const OAUTH_PORTS = Array.from({ length: 11 }, (_, index) => 3000 + index);
@@ -29,6 +29,13 @@ function getResultMessage(result: ConnectionCheckResult): string {
   }
 }
 
+function getBrowserRedirectUri(): string {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
 export default function AuthPage({ validation, onAuthorized, onGoToSettings }: AuthPageProps): React.JSX.Element {
   const { message } = App.useApp();
   const [connecting, setConnecting] = useState(false);
@@ -37,11 +44,67 @@ export default function AuthPage({ validation, onAuthorized, onGoToSettings }: A
   const [redirectUri, setRedirectUri] = useState("");
   const portRef = useRef<number | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const browserCallbackRef = useRef<string | null>(null);
   const alert = getConnectionAlert(validation);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
-      setRedirectUri("http://localhost/browser-mock/callback");
+      const nextRedirectUri = getBrowserRedirectUri();
+      setRedirectUri(nextRedirectUri);
+      setListenerReady(true);
+
+      const currentUrl = new URL(window.location.href);
+      const callbackKey = currentUrl.search;
+      const code = currentUrl.searchParams.get("code");
+      const oauthError = currentUrl.searchParams.get("error");
+      const oauthErrorDescription = currentUrl.searchParams.get("error_description");
+
+      if (!code && !oauthError) {
+        return;
+      }
+      if (browserCallbackRef.current === callbackKey) {
+        return;
+      }
+
+      browserCallbackRef.current = callbackKey;
+
+      const clearCallbackParams = (): void => {
+        const cleaned = new URL(window.location.href);
+        cleaned.searchParams.delete("code");
+        cleaned.searchParams.delete("error");
+        cleaned.searchParams.delete("error_description");
+        cleaned.searchParams.delete("state");
+        window.history.replaceState({}, document.title, cleaned.toString());
+      };
+
+      void (async () => {
+        try {
+          if (oauthError) {
+            throw new Error(oauthErrorDescription || oauthError);
+          }
+          if (!code) {
+            throw new Error("飞书授权回调中缺少 code，请重试。");
+          }
+
+          setConnecting(true);
+          setErrorMessage(null);
+          const result = await completeUserAuthorization(code, nextRedirectUri);
+          onAuthorized(result);
+          if (result.validation.usable) {
+            message.success(getResultMessage(result));
+          } else {
+            message.warning(result.validation.message);
+          }
+        } catch (error) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          setErrorMessage(messageText || "飞书授权失败，请稍后重试");
+          message.error(messageText || "飞书授权失败，请稍后重试");
+        } finally {
+          clearCallbackParams();
+          setConnecting(false);
+        }
+      })();
+
       return;
     }
 
@@ -120,9 +183,8 @@ export default function AuthPage({ validation, onAuthorized, onGoToSettings }: A
       }
 
       if (!isTauriRuntime()) {
-        const result = await completeUserAuthorization("browser-mock", redirectUri);
-        onAuthorized(result);
-        message.success(getResultMessage(result));
+        const authorizeUrl = await beginUserAuthorization(redirectUri);
+        window.location.assign(authorizeUrl);
         return;
       }
 

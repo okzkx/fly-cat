@@ -100,7 +100,7 @@ export default function App(): React.JSX.Element {
     };
 
     void getRuntimeInfo();
-    void getAppBootstrap().then(async (bootstrap) => {
+      void getAppBootstrap().then(async (bootstrap) => {
       setSettings(bootstrap.settings);
       setResolvedSyncRoot(bootstrap.resolvedSyncRoot);
       setSpaces(bootstrap.spaces);
@@ -109,7 +109,15 @@ export default function App(): React.JSX.Element {
       setUserInfo(bootstrap.user);
       setConnectionValidation(bootstrap.connectionValidation);
       setAuthed(Boolean(bootstrap.user));
-      setCurrentPage(bootstrap.settings ? (bootstrap.user ? "home" : "auth") : "settings");
+        setCurrentPage(
+          bootstrap.settings
+            ? bootstrap.user
+              ? "home"
+              : "auth"
+            : bootstrap.connectionValidation
+              ? "auth"
+              : "settings"
+        );
       if (bootstrap.user) {
         await resumeSyncTasks();
       }
@@ -132,7 +140,7 @@ export default function App(): React.JSX.Element {
     };
   }, []);
 
-  const syncTarget = useMemo(() => resolvedSyncRoot ?? settings?.syncRoot ?? "./synced-docs", [resolvedSyncRoot, settings]);
+  const syncTarget = useMemo(() => resolvedSyncRoot ?? settings?.syncRoot ?? null, [resolvedSyncRoot, settings]);
   const pageTitle = useMemo(() => {
     switch (currentPage) {
       case "settings":
@@ -276,19 +284,19 @@ export default function App(): React.JSX.Element {
             {currentPage === "settings" && (
               <SettingsPage
                 initialSettings={settings}
-                onSaved={(nextSettings) => {
-                  void saveAppSettings(nextSettings).then((saved) => {
-                    setSettings(saved);
-                    setAuthed(false);
-                    setUserInfo(null);
-                    setSpaces([]);
-                    setSelectedScope(null);
-                    setSelectedSources([]);
-                    setLoadedSpaceTrees({});
-                    setConnectionValidation(null);
-                    setCurrentPage("auth");
-                    void getAppBootstrap().then((bootstrap) => setResolvedSyncRoot(bootstrap.resolvedSyncRoot));
-                  });
+                onSaved={async (nextSettings) => {
+                  const saved = await saveAppSettings(nextSettings);
+                  setSettings(saved);
+                  setAuthed(false);
+                  setUserInfo(null);
+                  setSpaces([]);
+                  setSelectedScope(null);
+                  setSelectedSources([]);
+                  setLoadedSpaceTrees({});
+                  setConnectionValidation(null);
+                  setCurrentPage("auth");
+                  const bootstrap = await getAppBootstrap();
+                  setResolvedSyncRoot(bootstrap.resolvedSyncRoot);
                 }}
               />
             )}
@@ -367,6 +375,9 @@ export default function App(): React.JSX.Element {
                 onOpenTasks={() => setCurrentPage("tasks")}
                 activeTaskSummary={activeTaskSummary}
                 onCreateTask={async (options?: HomeTaskCreateOptions) => {
+                  if (!syncTarget) {
+                    return null;
+                  }
                   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
                   const taskSources = options?.selectedSources
                     ? normalizeSelectedSources(options.selectedSources)

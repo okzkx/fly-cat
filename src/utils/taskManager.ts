@@ -18,5 +18,5 @@ export {
   retryFailedTask,
   saveAppSettings,
   startSyncTask
-} from "@/utils/tauriRuntime";
-export { validateFeishuConnection } from "@/utils/tauriRuntime";
+} from "@/utils/runtimeClient";
+export { validateFeishuConnection } from "@/utils/runtimeClient";

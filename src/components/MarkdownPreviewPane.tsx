@@ -4,7 +4,7 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { useMemo, type MouseEvent } from "react";
 import { getSupportedExternalPreviewUrl, rewritePreviewImagesForTauri } from "@/utils/markdownPreview";
-import { isTauriRuntime, openExternalUrl } from "@/utils/tauriRuntime";
+import { isTauriRuntime, openExternalUrl } from "@/utils/runtimeClient";
 
 const { Text } = Typography;
 
@@ -70,19 +70,6 @@ export default function MarkdownPreviewPane({
   };
 
   const body = (() => {
-    if (!isTauriRuntime()) {
-      return (
-        <Empty
-          description={
-            <span>
-              浏览器模式下无法读取本机同步目录。
-              <br />
-              请在飞猫助手桌面版中打开本页，即可预览已同步 Markdown。
-            </span>
-          }
-        />
-      );
-    }
     if (loading) {
       return (
         <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
