@@ -2,9 +2,6 @@
 
 ## P1 >
 
-- **补 favicon**，消除无意义的 404 与控制台噪音。
-- **升级 Ant Design 用法**：将 `Space` 的 `direction` 改为 `orientation`，`Spin` 的 `tip` 改为 `description`，去掉弃用告警。
-
 ## P2 >
 
 ## P3

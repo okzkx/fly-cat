@@ -1,5 +1,9 @@
 # DONE
 
+- [2026-04-13 18:16] 升级 Ant Design 用法：将 `Space` 的 `direction` 改为 `orientation`，`Spin` 的 `tip` 改为 `description`，去掉弃用告警。 — fix-ant-design-deprecation-warnings
+
+- [2026-04-13 18:07] 补 favicon，消除无意义的 404 与控制台噪音。 — fix-favicon-404-noise
+
 - [2026-04-13 12:20] 执行 desktop-browser-local-agent-plan — desktop-browser-local-agent
 
 - [2026-04-09 16:26] 3. 将按钮的功能能在鼠标悬浮时提示出来 — kb-toolbar-hover-tooltips
