@@ -73,7 +73,7 @@ export default function MarkdownPreviewPane({
     if (loading) {
       return (
         <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
-          <Spin tip="加载预览…" />
+          <Spin description="加载预览…" />
         </div>
       );
     }

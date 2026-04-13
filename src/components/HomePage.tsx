@@ -1408,9 +1408,9 @@ export default function HomePage({
           </Space>
         }
       >
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
           <div style={{ padding: 12, background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0" }}>
-            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
               <Space>
                 <FolderOpenOutlined />
                 <Text>实际写入目录：{syncRoot}</Text>
