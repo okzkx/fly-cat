@@ -103,7 +103,7 @@ export interface HomePageProps {
   selectedScope: SyncScope | null;
   selectedSources: SyncScope[];
   loadedSpaceTrees: Record<string, KnowledgeBaseNode[]>;
-  syncRoot: string;
+  syncRoot: string | null;
   connectionValidation: ConnectionValidation | null;
   downloadedDocumentIds: Set<string>;
   documentSyncStatuses: Record<string, DocumentSyncStatus>;
@@ -137,5 +137,5 @@ export interface AuthPageProps {
 
 export interface SettingsPageProps {
   initialSettings: AppSettings | null;
-  onSaved: (settings: AppSettings) => void;
+  onSaved: (settings: AppSettings) => Promise<void>;
 }

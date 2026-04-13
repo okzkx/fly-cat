@@ -30,14 +30,13 @@ import { mapFolderPath, mapSyncedMarkdownPathFromScope } from "@/services/path-m
 import {
   alignDocumentSyncVersions,
   checkDocumentFreshness,
-  isTauriRuntime,
   loadFreshnessMetadata,
   openDocumentInBrowser,
   openWorkspaceFolder,
   prepareForceRepulledDocuments,
   readSyncedMarkdownPreview,
   saveFreshnessMetadata
-} from "@/utils/tauriRuntime";
+} from "@/utils/runtimeClient";
 
 const { Text } = Typography;
 
@@ -868,15 +867,6 @@ export default function HomePage({
   }, [allSyncedIdsForFreshness, syncRoot, enqueueFreshnessCheck]);
 
   useEffect(() => {
-    if (!isTauriRuntime()) {
-      setPreviewLoading(false);
-      setPreviewError(null);
-      setPreviewMarkdown(null);
-      setPreviewOutputPath(null);
-      setPreviewDisplayTitle(selectedScope?.title ?? null);
-      return;
-    }
-
     if (!syncRoot || !selectedScope) {
       setPreviewLoading(false);
       setPreviewError(null);

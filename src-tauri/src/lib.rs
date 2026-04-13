@@ -1,4 +1,5 @@
 mod commands;
+mod local_agent;
 mod mcp;
 mod model;
 mod render;
@@ -15,6 +16,7 @@ use commands::{
     save_app_settings, save_freshness_metadata, start_sync_task, validate_feishu_connection,
     AppState,
 };
+use local_agent::start_local_agent;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +24,10 @@ pub fn run() {
         .plugin(tauri_plugin_oauth::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .setup(|app| {
+            start_local_agent(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             get_synced_document_ids,
