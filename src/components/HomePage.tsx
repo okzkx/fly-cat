@@ -1031,6 +1031,15 @@ export default function HomePage({
     [checkedSyncedDocumentIdsFromTree, checkedSyncedDocumentIdsFromLeafSources]
   );
 
+  /** Explicit checkboxes, or when none checked treat as all locally synced docs (for refresh-only). */
+  const refreshFreshnessDocumentIds = useMemo(
+    () =>
+      checkedSyncedDocumentIds.length > 0
+        ? checkedSyncedDocumentIds
+        : [...syncedDocumentIds].filter((id) => !syncingIds.has(id)),
+    [checkedSyncedDocumentIds, syncedDocumentIds, syncingIds]
+  );
+
   // Build tree data once (needed for tri-state cascade logic)
   const treeData = useMemo(
     () => buildTreeData(spaces, loadedSpaceTrees, syncingKeys, syncedDocumentIds),
@@ -1048,7 +1057,9 @@ export default function HomePage({
       if (result?.task) {
         message.success(`已创建并开始同步任务：${result.task.name}`);
       } else {
-        message.warning(spaces.length === 0 ? "当前没有可同步的知识空间" : "请先选择一个同步范围或勾选目录、文档");
+        message.warning(
+          spaces.length === 0 ? "当前没有可同步的知识空间" : "未能创建同步任务，请检查同步目录、网络或登录状态"
+        );
       }
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
@@ -1057,7 +1068,14 @@ export default function HomePage({
   };
 
   const handleBulkFreshnessAction = async (action: BulkFreshnessAction): Promise<void> => {
-    if (!syncRoot || checkedSyncedDocumentIds.length === 0) {
+    if (!syncRoot) {
+      return;
+    }
+    if (action === "refresh") {
+      if (refreshFreshnessDocumentIds.length === 0) {
+        return;
+      }
+    } else if (checkedSyncedDocumentIds.length === 0) {
       return;
     }
     if (bulkFreshnessAction !== null) {
@@ -1083,7 +1101,10 @@ export default function HomePage({
       await enqueueFreshnessCheck(async () => {
         setFreshnessCheckActive(true);
         try {
-          const result = await checkDocumentFreshness(action === "force" ? preparedIds : checkedSyncedDocumentIds, syncRoot);
+          const result = await checkDocumentFreshness(
+            action === "force" ? preparedIds : refreshFreshnessDocumentIds,
+            syncRoot
+          );
           const nextFreshnessMap = await alignDocumentSyncVersions(syncRoot, result, true);
           setFreshnessMap((current) => ({ ...current, ...nextFreshnessMap }));
           await saveFreshnessMetadata(syncRoot, nextFreshnessMap);
@@ -1094,7 +1115,7 @@ export default function HomePage({
       await onReloadDocumentSyncStatuses();
       if (action === "refresh") {
         message.success(
-          `已对 ${checkedSyncedDocumentIds.length} 个所选已同步文档完成远端检查，并将本地版本记录与远端对齐（未删除文件、未启动同步任务）`
+          `已对 ${refreshFreshnessDocumentIds.length} 个已同步文档完成远端检查，并将本地版本记录与远端对齐（未删除文件、未启动同步任务）`
         );
         return;
       } else {
@@ -1352,13 +1373,13 @@ export default function HomePage({
         }
         extra={
           <Space wrap size={[8, 8]}>
-            <Tooltip title="检查远端版本并更新本地元数据，不删除导出文件，不启动同步任务">
+            <Tooltip title="检查远端版本并更新本地元数据，不删除导出文件，不启动同步任务；未勾选已同步节点时默认检查全部已同步文档">
               <span style={{ display: "inline-flex" }}>
                 <Button
                   icon={<ReloadOutlined />}
                   disabled={
                     !canRunSync ||
-                    checkedSyncedDocumentIds.length === 0 ||
+                    refreshFreshnessDocumentIds.length === 0 ||
                     bulkFreshnessAction !== null ||
                     syncTaskBusy
                   }
@@ -1400,12 +1421,12 @@ export default function HomePage({
                 </Button>
               </span>
             </Tooltip>
-            <Tooltip title="按当前勾选的同步范围创建并开始同步任务">
+            <Tooltip title="按当前勾选的同步范围创建并开始同步任务；未勾选任何节点时默认同步全部知识库">
               <span style={{ display: "inline-flex" }}>
                 <Button
                   type="primary"
                   icon={<SyncOutlined />}
-                  disabled={spaces.length === 0 || effectiveSelectedSources.length === 0}
+                  disabled={spaces.length === 0}
                   onClick={() => void handleStartSync()}
                 >
                   开始同步

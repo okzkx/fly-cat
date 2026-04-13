@@ -9,7 +9,7 @@ import TaskListPage from "@/components/TaskListPage";
 import "./styles.css";
 import type { AppPage, AppSettings, ConnectionValidation, HomeTaskCreateOptions, SyncTask, UserInfo } from "@/types/app";
 import type { DocumentSyncStatus, KnowledgeBaseNode, KnowledgeBaseSpace, SyncScope } from "@/types/sync";
-import { getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
+import { buildAllKnowledgeSpaceScopes, getEffectiveSelectedSources, scopeKey } from "@/utils/syncSelection";
 import { createAndMaybeStartTask } from "@/utils/syncTaskWorkflow";
 import {
   createSyncTask,
@@ -379,11 +379,17 @@ export default function App(): React.JSX.Element {
                     return null;
                   }
                   const effectiveSelectedSources = getEffectiveSelectedSources(selectedScope, selectedSources);
+                  const defaultAllSpaceSources =
+                    selectedSources.length === 0 && spaces.length > 0
+                      ? normalizeSelectedSources(buildAllKnowledgeSpaceScopes(spaces))
+                      : [];
                   const taskSources = options?.selectedSources
                     ? normalizeSelectedSources(options.selectedSources)
                     : selectedSources.length > 0
                       ? normalizeSelectedSources(selectedSources)
-                      : effectiveSelectedSources;
+                      : defaultAllSpaceSources.length > 0
+                        ? defaultAllSpaceSources
+                        : effectiveSelectedSources;
                   if (taskSources.length === 0) {
                     return null;
                   }
